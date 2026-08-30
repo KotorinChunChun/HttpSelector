@@ -298,8 +298,28 @@ impl Page {
 
     pub fn reveal(&mut self, window: HWND, focus: HWND, dpi: u32) {
         if let Some((_, bounds)) = self.controls.iter().find(|(child, _)| *child == focus) {
-            let top = scale(bounds.y, dpi);
-            let bottom = scale(bounds.bottom(), dpi);
+            let mut top = scale(bounds.y, dpi);
+            let mut bottom = scale(bounds.bottom(), dpi);
+            // 一覧全体が画面より高い場合も、キーボードで選択中の行を見せる。
+            let mut class = [0_u16; 32];
+            let length = unsafe { GetClassNameW(focus, class.as_mut_ptr(), class.len() as i32) };
+            if String::from_utf16_lossy(&class[..length as usize]).eq_ignore_ascii_case("ListBox") {
+                unsafe {
+                    let selected = SendMessageW(focus, LB_GETCURSEL, 0, 0);
+                    let mut row: RECT = std::mem::zeroed();
+                    if selected != LB_ERR as isize
+                        && SendMessageW(
+                            focus,
+                            LB_GETITEMRECT,
+                            selected as usize,
+                            &mut row as *mut RECT as isize,
+                        ) != LB_ERR as isize
+                    {
+                        bottom = top + row.bottom;
+                        top += row.top;
+                    }
+                }
+            }
             let previous = self.offset;
             if top < self.offset {
                 self.offset = top;
@@ -352,4 +372,33 @@ pub fn is_button(window: HWND) -> bool {
         GetClassNameW(window, class.as_mut_ptr(), class.len() as i32);
     }
     &class[..6] == unsafe { std::slice::from_raw_parts(WC_BUTTONW, 6) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn japanese_font_fits_card_lines_at_each_dpi() {
+        for dpi in [96, 120, 144, 192] {
+            let theme = Theme::new(dpi);
+            unsafe {
+                let dc = CreateCompatibleDC(null_mut());
+                assert!(!dc.is_null());
+                for (font, height) in [(theme.font, 22), (theme.bold, 24), (theme.title, 32)] {
+                    assert!(!font.is_null());
+                    let previous = SelectObject(dc, font);
+                    let mut metrics: TEXTMETRICW = std::mem::zeroed();
+                    assert_ne!(GetTextMetricsW(dc, &mut metrics), 0);
+                    assert!(
+                        metrics.tmHeight <= scale(height, dpi),
+                        "DPI {dpi}: 文字高 {} が領域を超える",
+                        metrics.tmHeight
+                    );
+                    SelectObject(dc, previous);
+                }
+                DeleteDC(dc);
+            }
+        }
+    }
 }

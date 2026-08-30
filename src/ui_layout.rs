@@ -67,6 +67,7 @@ impl SettingsLayout {
 }
 
 pub struct SelectorLayout {
+    pub fixed: Vec<Bounds>,
     pub favorites_heading: Bounds,
     pub normal_heading: Bounds,
     pub favorite_empty: Bounds,
@@ -113,6 +114,19 @@ impl SelectorLayout {
             }
         }
         Self {
+            fixed: vec![
+                Bounds::new(24, 16, available - 110, 32),
+                Bounds::new(24, 54, available, 22),
+                Bounds::new(width - 120, 18, 96, 32),
+                Bounds::new(24, 82, available, 32),
+                Bounds::new(24, 118, available, 22),
+                Bounds::new(24, 144, available, 42),
+                Bounds::new(24, 198, available, 22),
+                Bounds::new(24, 224, available, 42),
+                Bounds::new(24, 284, 44, 24),
+                Bounds::new(76, 280, available - 160, 32),
+                Bounds::new(width - 120, 280, 96, 32),
+            ],
             favorites_heading,
             normal_heading,
             favorite_empty: Bounds::new(MARGIN, favorite_top, available, 36),
@@ -169,6 +183,7 @@ mod tests {
                         slots[5..5 + normal].fill(Some(0));
                         let layout = SelectorLayout::new(width, &slots);
                         let mut regions = vec![layout.favorites_heading, layout.normal_heading];
+                        regions.extend(layout.fixed.iter().copied());
                         regions.extend(layout.tiles.iter().flatten().copied());
                         if favorites == 0 {
                             regions.push(layout.favorite_empty);

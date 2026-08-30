@@ -482,11 +482,7 @@ fn create_controls(window: HWND, state: &mut SettingsState) {
     refresh_list(state, Some(0));
     layout_controls(window, state);
     unsafe {
-        SetFocus(if state.profiles.is_empty() {
-            rescan
-        } else {
-            state.list
-        });
+        SetFocus(state.list);
     }
 }
 

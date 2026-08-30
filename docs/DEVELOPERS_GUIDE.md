@@ -22,6 +22,20 @@ cargo build --release
 pwsh ./dev/scripts/run-test.ps1
 ```
 
+実データやブラウザ起動に触れないUIプレビュー:
+
+```powershell
+cargo run --example ui_preview
+cargo run --example ui_preview -- --no-url
+cargo run --example ui_preview -- --empty
+cargo run --example ui_preview -- --settings
+cargo run --example ui_preview -- --settings --empty
+```
+
+プレビューは長い日本語名・複数行メモ・25件のサンプルを使用します。選択してもブラウザは起動せず、設定画面の保存操作もDBへ書き込みません。アイコン未指定時の代替表示を確認できます。
+
+UIの回帰テストでは、100/125/150/200%相当の幅・お気に入り0〜5件/通常0〜20件の配置、設定画面の1列/2列配置、矢印移動、日本語フォントの文字高を検証します。実GUIでは表示倍率、モニター移動、長文の表示とコピー、検索、Tab/Shift+Tab、矢印、Enter、ESC長押し、スクロール、保存/キャンセル/再スキャンを別途確認してください。
+
 ## データ保存先
 
 ```text

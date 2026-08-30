@@ -1,6 +1,6 @@
 use crate::model::Profile;
 use crate::ui_layout::SelectorLayout;
-use crate::ui_support::{self as common, Bounds, Page, Theme};
+use crate::ui_support::{self as common, Page, Theme};
 use crate::url_input::ValidatedUrl;
 use anyhow::ensure;
 use std::collections::HashMap;
@@ -352,7 +352,7 @@ unsafe extern "system" fn window_proc(
                     common::set_text(
                         state.status,
                         &format!(
-                            "終了まであと {:.1} 秒 — ESCを離すと取り消し",
+                            "終了まで {:.1} 秒（離すと取り消し）",
                             (HOLD_DURATION - elapsed).as_secs_f32()
                         ),
                     );
@@ -493,25 +493,11 @@ fn create_controls(window: HWND, state: &mut UiState) {
 
 fn layout_controls(window: HWND, state: &mut UiState) {
     let width = Page::width(window, state.theme.dpi).max(360);
-    let content = width - 48;
     state.page.controls.clear();
-    let bounds = [
-        Bounds::new(24, 16, content - 110, 32),
-        Bounds::new(24, 54, content, 22),
-        Bounds::new(width - 120, 18, 96, 32),
-        Bounds::new(24, 82, content, 32),
-        Bounds::new(24, 118, content, 22),
-        Bounds::new(24, 144, content, 42),
-        Bounds::new(24, 198, content, 22),
-        Bounds::new(24, 224, content, 42),
-        Bounds::new(24, 284, 44, 24),
-        Bounds::new(76, 280, content - 160, 32),
-        Bounds::new(width - 120, 280, 96, 32),
-    ];
-    for (control, rect) in state.fixed.iter().zip(bounds) {
-        state.page.place(*control, rect);
-    }
     let layout = SelectorLayout::new(width, &state.filtered_indices);
+    for (control, rect) in state.fixed.iter().zip(&layout.fixed) {
+        state.page.place(*control, *rect);
+    }
     state
         .page
         .place(state.favorites_heading, layout.favorites_heading);
@@ -535,9 +521,9 @@ fn refresh_status(state: &UiState) {
     common::set_text(
         state.status,
         if state.url.is_some() {
-            "クリック / Enterで開く · ESCは3秒長押しで終了"
+            "Enterで開く / ESCは3秒長押しで終了"
         } else {
-            "URL未指定です。設定からプロファイルを管理できます。"
+            "URL未指定：設定でプロファイルを管理"
         },
     );
 }
@@ -677,14 +663,14 @@ fn draw_tile(state: &UiState, item: &DRAWITEMSTRUCT) {
         common::draw_text(
             dc,
             profile.browser_type.display_name(),
-            text_rect(38, 20),
+            text_rect(38, 22),
             state.theme.font,
             common::ACCENT,
         );
         common::draw_text(
             dc,
             &profile.comment,
-            text_rect(62, 18),
+            text_rect(62, 22),
             state.theme.font,
             common::MUTED,
         );
