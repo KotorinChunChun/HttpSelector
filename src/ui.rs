@@ -107,8 +107,25 @@ pub fn run_selector(
     url: Option<ValidatedUrl>,
     profiles: Vec<Profile>,
 ) -> anyhow::Result<SelectorResult> {
+    run_selector_window(url, profiles, WS_EX_TOOLWINDOW)
+}
+
+/// 実データを使わないプレビューでは、画面操作ツールから検出できる通常ウィンドウを使う。
+#[cfg(debug_assertions)]
+pub fn run_selector_preview(
+    url: Option<ValidatedUrl>,
+    profiles: Vec<Profile>,
+) -> anyhow::Result<SelectorResult> {
+    run_selector_window(url, profiles, WS_EX_APPWINDOW)
+}
+
+fn run_selector_window(
+    url: Option<ValidatedUrl>,
+    profiles: Vec<Profile>,
+    window_style: u32,
+) -> anyhow::Result<SelectorResult> {
     let style = WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_VSCROLL;
-    let ex_style = WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_CONTROLPARENT;
+    let ex_style = WS_EX_TOPMOST | window_style | WS_EX_CONTROLPARENT;
     let bounds = common::initial_bounds(1120, 900, style, ex_style);
     register_window_class()?;
     let state_pointer = Box::into_raw(Box::new(UiState::new(url, profiles)));
@@ -147,6 +164,9 @@ pub fn run_selector(
         ensure!(status != -1, "Windowsメッセージを取得できません");
         if status == 0 {
             break;
+        }
+        if common::handle_edit_shortcut(&message) {
+            continue;
         }
         if handle_navigation_message(window, state_pointer, &message) {
             continue;

@@ -1,7 +1,11 @@
 //! 実データやブラウザ起動に触れず、長文・最大件数・空状態を確認するUIプレビュー。
 use http_selector::model::{BrowserType, Profile};
 use http_selector::settings_ui::run_settings;
-use http_selector::ui::{SelectorResult, run_selector};
+use http_selector::ui::SelectorResult;
+#[cfg(not(debug_assertions))]
+use http_selector::ui::run_selector;
+#[cfg(debug_assertions)]
+use http_selector::ui::run_selector_preview as run_selector;
 use http_selector::url_input::ValidatedUrl;
 
 fn main() -> anyhow::Result<()> {

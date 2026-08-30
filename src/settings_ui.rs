@@ -142,6 +142,9 @@ pub fn run_settings(
         if status == 0 {
             break;
         }
+        if common::handle_edit_shortcut(&message) {
+            continue;
+        }
         if message.message == WM_KEYDOWN {
             let focus = unsafe { GetFocus() };
             if message.wParam == VK_ESCAPE as usize {
@@ -479,8 +482,8 @@ fn create_controls(window: HWND, state: &mut SettingsState) {
         save,
         rescan,
     ];
-    refresh_list(state, Some(0));
     layout_controls(window, state);
+    refresh_list(state, Some(0));
     unsafe {
         SetFocus(state.list);
     }

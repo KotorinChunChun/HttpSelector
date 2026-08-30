@@ -5,8 +5,11 @@ use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::SystemServices::{SS_LEFT, SS_NOPREFIX};
-use windows_sys::Win32::UI::Controls::{EM_SETCUEBANNER, EM_SETMARGINS, SetScrollInfo, WC_BUTTONW};
+use windows_sys::Win32::UI::Controls::{
+    EM_SETCUEBANNER, EM_SETMARGINS, EM_SETSEL, SetScrollInfo, WC_BUTTONW,
+};
 use windows_sys::Win32::UI::HiDpi::*;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetFocus, GetKeyState, VK_CONTROL};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 pub const BACKGROUND: u32 = 0x00FAF7F4;
@@ -255,16 +258,23 @@ impl Page {
             };
             SetScrollInfo(window, SB_VERT, &info, 1);
             for (child, bounds) in &self.controls {
-                MoveWindow(
+                SetWindowPos(
                     *child,
+                    null_mut(),
                     scale(bounds.x, dpi),
                     scale(bounds.y, dpi) - self.offset,
                     scale(bounds.width, dpi),
                     scale(bounds.height, dpi),
-                    1,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW | SWP_NOCOPYBITS,
                 );
             }
-            InvalidateRect(window, null(), 1);
+            // 移動前の画素をコピーしない。兄弟コントロールの旧描画が残らないよう一括再描画する。
+            RedrawWindow(
+                window,
+                null(),
+                null_mut(),
+                RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN,
+            );
         }
     }
 
@@ -372,6 +382,26 @@ pub fn is_button(window: HWND) -> bool {
         GetClassNameW(window, class.as_mut_ptr(), class.len() as i32);
     }
     &class[..6] == unsafe { std::slice::from_raw_parts(WC_BUTTONW, 6) }
+}
+
+/// 標準EDITでは自動提供されないCtrl+Aを、検索・URL・設定入力欄へ共通で提供する。
+pub fn handle_edit_shortcut(message: &MSG) -> bool {
+    if message.message != WM_KEYDOWN
+        || message.wParam != b'A' as usize
+        || unsafe { GetKeyState(VK_CONTROL as i32) } >= 0
+    {
+        return false;
+    }
+    let focus = unsafe { GetFocus() };
+    let mut class = [0_u16; 32];
+    let length = unsafe { GetClassNameW(focus, class.as_mut_ptr(), class.len() as i32) };
+    if !String::from_utf16_lossy(&class[..length as usize]).eq_ignore_ascii_case("Edit") {
+        return false;
+    }
+    unsafe {
+        SendMessageW(focus, EM_SETSEL, 0, -1);
+    }
+    true
 }
 
 #[cfg(test)]
