@@ -218,6 +218,11 @@ unsafe extern "system" fn window_proc(
             let state = unsafe { &mut *pointer };
             let theme = Theme::new(low_word(wparam) as u32);
             common::update_fonts(&state.page, &state.theme, &theme);
+            for button in &state.profile_buttons {
+                unsafe {
+                    SendMessageW(*button, WM_SETFONT, theme.font as usize, 1);
+                }
+            }
             state.theme = theme;
             let bounds = unsafe { &*(lparam as *const RECT) };
             unsafe {

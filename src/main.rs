@@ -96,15 +96,19 @@ fn run() -> anyhow::Result<()> {
                 if outcome.pending_url.is_some() {
                     url = outcome.pending_url;
                 }
-                match outcome.action {
-                    SettingsAction::Saved => {
-                        integrity.backup_current()?;
-                        for profile in &outcome.profiles {
-                            storage.save_profile(profile)?;
-                        }
-                        storage.set_record_url_history_enabled(outcome.record_url_history)?;
-                        integrity.sign_current()?;
+                // 再スキャンでも編集中の表示名・メモ・並び順を先に保存する。
+                if matches!(
+                    outcome.action,
+                    SettingsAction::Saved | SettingsAction::Rescan
+                ) {
+                    integrity.backup_current()?;
+                    for profile in &outcome.profiles {
+                        storage.save_profile(profile)?;
                     }
+                    storage.set_record_url_history_enabled(outcome.record_url_history)?;
+                    integrity.sign_current()?;
+                }
+                match outcome.action {
                     SettingsAction::Rescan => {
                         let mut detected = profile_scan::scan_all()
                             .context("プロファイル再スキャンに失敗しました")?;
@@ -118,7 +122,7 @@ fn run() -> anyhow::Result<()> {
                             &format!("{}件のプロファイルを検出しました。", detected.len()),
                         );
                     }
-                    SettingsAction::Cancelled => {}
+                    SettingsAction::Saved | SettingsAction::Cancelled => {}
                 }
             }
             SelectorResult::Cancelled => break,

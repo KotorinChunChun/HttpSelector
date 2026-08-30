@@ -5,6 +5,67 @@ pub const TILE_HEIGHT: i32 = 92;
 pub const GAP: i32 = 12;
 pub const MARGIN: i32 = 24;
 
+pub struct SettingsLayout {
+    pub fixed: Vec<Bounds>,
+    pub height: i32,
+}
+
+impl SettingsLayout {
+    pub fn new(width: i32) -> Self {
+        let content = width - 48;
+        let split = width >= 760;
+        let list_width = if split {
+            (content - 24) * 2 / 5
+        } else {
+            content
+        };
+        let list_height = if split { 350 } else { 240 };
+        let editor_x = if split { 48 + list_width } else { 24 };
+        let editor_width = if split {
+            content - list_width - 24
+        } else {
+            content
+        };
+        let editor_top = if split { 112 } else { 142 + list_height + 80 };
+        let general_top = (editor_top + 380).max(142 + list_height + 44) + 28;
+        let actions_top = general_top + 150;
+        let half = (content - 12) / 2;
+        let fixed = vec![
+            Bounds::new(24, 18, content, 34),
+            Bounds::new(24, 62, content, 36),
+            Bounds::new(24, 112, list_width, 24),
+            Bounds::new(24, 142, list_width, list_height),
+            Bounds::new(24, 142 + list_height + 12, (list_width - 12) / 2, 32),
+            Bounds::new(
+                24 + (list_width - 12) / 2 + 12,
+                142 + list_height + 12,
+                (list_width - 12) / 2,
+                32,
+            ),
+            Bounds::new(editor_x, editor_top, editor_width, 24),
+            Bounds::new(editor_x, editor_top + 30, editor_width, 44),
+            Bounds::new(editor_x, editor_top + 86, editor_width, 22),
+            Bounds::new(editor_x, editor_top + 112, editor_width, 32),
+            Bounds::new(editor_x, editor_top + 152, editor_width, 36),
+            Bounds::new(editor_x, editor_top + 200, editor_width, 22),
+            Bounds::new(editor_x, editor_top + 226, editor_width, 76),
+            Bounds::new(editor_x, editor_top + 314, editor_width, 28),
+            Bounds::new(editor_x, editor_top + 352, editor_width, 28),
+            Bounds::new(24, general_top, content, 24),
+            Bounds::new(24, general_top + 32, content, 28),
+            Bounds::new(24, general_top + 68, content, 68),
+            Bounds::new(24, actions_top, content, 32),
+            Bounds::new(24, actions_top + 44, half, 36),
+            Bounds::new(24 + half + 12, actions_top + 44, half, 36),
+            Bounds::new(24, actions_top + 92, content, 36),
+        ];
+        Self {
+            fixed,
+            height: actions_top + 152,
+        }
+    }
+}
+
 pub struct SelectorLayout {
     pub favorites_heading: Bounds,
     pub normal_heading: Bounds,
@@ -141,5 +202,22 @@ mod tests {
         assert_eq!(layout.neighbor(7, 0, -1), Some(0));
         assert_eq!(layout.neighbor(5, 0, 1), Some(8));
         assert_eq!(layout.neighbor(7, 1, 0), None);
+    }
+
+    #[test]
+    fn settings_controls_never_overlap_in_one_or_two_columns() {
+        for width in [360, 400, 512, 640, 759, 760, 900, 1120, 1920] {
+            let layout = SettingsLayout::new(width);
+            for (index, rect) in layout.fixed.iter().enumerate() {
+                assert!(rect.x >= 24 && rect.x + rect.width <= width - 24);
+                assert!(rect.height > 0 && rect.bottom() <= layout.height - 24);
+                assert!(
+                    layout.fixed[index + 1..]
+                        .iter()
+                        .all(|other| !overlaps(*rect, *other)),
+                    "幅{width}: 項目{index}が重なる"
+                );
+            }
+        }
     }
 }

@@ -1,12 +1,18 @@
 use crate::model::Profile;
+use crate::ui_layout::SettingsLayout;
+use crate::ui_support::{self as common, Page, Theme, wide, window_text};
 use anyhow::ensure;
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
-use windows_sys::Win32::Foundation::{GetLastError, HWND, LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::Graphics::Gdi::{COLOR_WINDOW, DEFAULT_GUI_FONT, GetStockObject};
+use windows_sys::Win32::Foundation::{GetLastError, HWND, LPARAM, LRESULT, RECT, SIZE, WPARAM};
+use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
+use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const WINDOW_CLASS: &str = "HttpSelector.SettingsWindow";
@@ -38,11 +44,18 @@ pub struct SettingsOutcome {
 
 struct SettingsState {
     profiles: Vec<Profile>,
+    theme: Theme,
+    page: Page,
+    fixed: Vec<HWND>,
     list: HWND,
+    list_heading: HWND,
+    identity: HWND,
     alias: HWND,
     comment: HWND,
     favorite: HWND,
     enabled: HWND,
+    up: HWND,
+    down: HWND,
     record_url_history: HWND,
     record_url_history_enabled: bool,
     selected: Option<usize>,
@@ -55,11 +68,18 @@ impl SettingsState {
         profiles.sort_by_key(|profile| (profile.sort_order, profile.id));
         Self {
             profiles,
+            theme: Theme::new(96),
+            page: Page::default(),
+            fixed: Vec::new(),
             list: null_mut(),
+            list_heading: null_mut(),
+            identity: null_mut(),
             alias: null_mut(),
             comment: null_mut(),
             favorite: null_mut(),
             enabled: null_mut(),
+            up: null_mut(),
+            down: null_mut(),
             record_url_history: null_mut(),
             record_url_history_enabled,
             selected: None,
@@ -73,35 +93,40 @@ pub fn run_settings(
     profiles: Vec<Profile>,
     record_url_history_enabled: bool,
 ) -> anyhow::Result<SettingsOutcome> {
+    let style = WS_OVERLAPPED
+        | WS_CAPTION
+        | WS_SYSMENU
+        | WS_THICKFRAME
+        | WS_MAXIMIZEBOX
+        | WS_CLIPCHILDREN
+        | WS_VSCROLL;
+    let ex_style = WS_EX_TOPMOST | WS_EX_CONTROLPARENT;
+    let bounds = common::initial_bounds(940, 800, style, ex_style);
     register_window_class()?;
-    let state_pointer = Box::into_raw(Box::new(SettingsState::new(
+    let pointer = Box::into_raw(Box::new(SettingsState::new(
         profiles,
         record_url_history_enabled,
     )));
-    let class = wide(WINDOW_CLASS);
-    let title = wide("HttpSelector 設定");
-    let width = 820;
-    let height = 600;
-    let x = ((unsafe { GetSystemMetrics(SM_CXSCREEN) } - width) / 2).max(0);
-    let y = ((unsafe { GetSystemMetrics(SM_CYSCREEN) } - height) / 2).max(0);
     let window = unsafe {
         CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_CONTROLPARENT,
-            class.as_ptr(),
-            title.as_ptr(),
-            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
-            x,
-            y,
-            width,
-            height,
+            ex_style,
+            wide(WINDOW_CLASS).as_ptr(),
+            wide("HttpSelector 設定").as_ptr(),
+            style,
+            bounds.x,
+            bounds.y,
+            bounds.width,
+            bounds.height,
             null_mut(),
             null_mut(),
             GetModuleHandleW(null()),
-            state_pointer.cast(),
+            pointer.cast(),
         )
     };
     if window.is_null() {
-        unsafe { drop(Box::from_raw(state_pointer)) };
+        unsafe {
+            drop(Box::from_raw(pointer));
+        }
         anyhow::bail!("設定画面を作成できません: Win32 error {}", unsafe {
             GetLastError()
         });
@@ -117,14 +142,35 @@ pub fn run_settings(
         if status == 0 {
             break;
         }
+        if message.message == WM_KEYDOWN {
+            let focus = unsafe { GetFocus() };
+            if message.wParam == VK_ESCAPE as usize {
+                unsafe {
+                    SendMessageW(window, WM_CLOSE, 0, 0);
+                }
+                continue;
+            }
+            if message.wParam == VK_RETURN as usize && common::is_button(focus) {
+                unsafe {
+                    SendMessageW(focus, BM_CLICK, 0, 0);
+                }
+                continue;
+            }
+        }
         if unsafe { IsDialogMessageW(window, &message) } == 0 {
             unsafe {
                 TranslateMessage(&message);
                 DispatchMessageW(&message);
             }
         }
+        if message.message == WM_KEYDOWN && unsafe { IsWindow(window) } != 0 {
+            let state = unsafe { &mut *pointer };
+            state
+                .page
+                .reveal(window, unsafe { GetFocus() }, state.theme.dpi);
+        }
     }
-    let state = unsafe { Box::from_raw(state_pointer) };
+    let state = unsafe { Box::from_raw(pointer) };
     Ok(SettingsOutcome {
         action: state.action,
         profiles: state.profiles,
@@ -137,13 +183,12 @@ fn register_window_class() -> anyhow::Result<()> {
     let class = wide(WINDOW_CLASS);
     let mut window_class: WNDCLASSEXW = unsafe { std::mem::zeroed() };
     window_class.cbSize = size_of::<WNDCLASSEXW>() as u32;
+    window_class.style = CS_HREDRAW | CS_VREDRAW;
     window_class.lpfnWndProc = Some(window_proc);
     window_class.hInstance = unsafe { GetModuleHandleW(null()) };
     window_class.hCursor = unsafe { LoadCursorW(null_mut(), IDC_ARROW) };
-    window_class.hbrBackground = (COLOR_WINDOW + 1) as usize as _;
     window_class.lpszClassName = class.as_ptr();
-    let atom = unsafe { RegisterClassExW(&window_class) };
-    if atom == 0 {
+    if unsafe { RegisterClassExW(&window_class) } == 0 {
         let error = unsafe { GetLastError() };
         ensure!(error == 1410, "設定画面クラスを登録できません: {error}");
     }
@@ -158,53 +203,128 @@ unsafe extern "system" fn window_proc(
 ) -> LRESULT {
     if message == WM_NCCREATE {
         let create = unsafe { &*(lparam as *const CREATESTRUCTW) };
-        unsafe { SetWindowLongPtrW(window, GWLP_USERDATA, create.lpCreateParams as isize) };
+        unsafe {
+            SetWindowLongPtrW(window, GWLP_USERDATA, create.lpCreateParams as isize);
+        }
     }
     let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut SettingsState };
     match message {
-        WM_CREATE => {
-            if pointer.is_null() {
-                return -1;
-            }
-            unsafe { create_controls(window, &mut *pointer) };
+        WM_CREATE if !pointer.is_null() => {
+            let state = unsafe { &mut *pointer };
+            state.theme = Theme::new(unsafe { GetDpiForWindow(window) }.max(96));
+            create_controls(window, state);
             0
         }
-        WM_COMMAND => {
-            if pointer.is_null() {
-                return 0;
-            }
+        WM_SIZE if !pointer.is_null() => {
             let state = unsafe { &mut *pointer };
-            let id = low_word(wparam) as i32;
-            let notification = high_word(wparam);
+            if !state.list.is_null() {
+                layout_controls(window, state);
+            }
+            0
+        }
+        WM_DPICHANGED if !pointer.is_null() => {
+            let state = unsafe { &mut *pointer };
+            let theme = Theme::new((wparam & 0xffff) as u32);
+            common::update_fonts(&state.page, &state.theme, &theme);
+            state.theme = theme;
+            let bounds = unsafe { &*(lparam as *const RECT) };
+            unsafe {
+                SetWindowPos(
+                    window,
+                    null_mut(),
+                    bounds.left,
+                    bounds.top,
+                    bounds.right - bounds.left,
+                    bounds.bottom - bounds.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+            update_list_extent(state);
+            0
+        }
+        WM_GETMINMAXINFO => {
+            let info = unsafe { &mut *(lparam as *mut MINMAXINFO) };
+            let dpi = unsafe { GetDpiForWindow(window) }.max(96);
+            info.ptMinTrackSize.x = common::scale(400, dpi).min(info.ptMaxTrackSize.x);
+            info.ptMinTrackSize.y = common::scale(320, dpi).min(info.ptMaxTrackSize.y);
+            0
+        }
+        WM_VSCROLL | WM_MOUSEWHEEL if !pointer.is_null() => {
+            let state = unsafe { &mut *pointer };
+            state.page.scroll(window, message, wparam, state.theme.dpi);
+            0
+        }
+        WM_ERASEBKGND if !pointer.is_null() => {
+            let mut rect: RECT = unsafe { std::mem::zeroed() };
+            unsafe {
+                GetClientRect(window, &mut rect);
+                FillRect(wparam as _, &rect, (*pointer).theme.background);
+            }
+            1
+        }
+        WM_CTLCOLORSTATIC | WM_CTLCOLOREDIT | WM_CTLCOLORBTN if !pointer.is_null() => {
+            let state = unsafe { &*pointer };
+            let field = lparam as HWND == state.identity || message == WM_CTLCOLOREDIT;
+            unsafe {
+                SetBkColor(
+                    wparam as _,
+                    if field {
+                        0x00FFFFFF
+                    } else {
+                        common::BACKGROUND
+                    },
+                );
+                SetTextColor(wparam as _, common::TEXT);
+            }
+            if field {
+                state.theme.surface as isize
+            } else {
+                state.theme.background as isize
+            }
+        }
+        WM_COMMAND if !pointer.is_null() => {
+            let state = unsafe { &mut *pointer };
+            let id = (wparam & 0xffff) as i32;
+            let notification = ((wparam >> 16) & 0xffff) as u16;
             if id == ID_LIST && notification == LBN_SELCHANGE as u16 {
-                unsafe { change_selection(state) };
-            } else if id == ID_UP && notification == BN_CLICKED as u16 {
-                unsafe { move_selected(state, -1) };
-            } else if id == ID_DOWN && notification == BN_CLICKED as u16 {
-                unsafe { move_selected(state, 1) };
-            } else if id == ID_SAVE && notification == BN_CLICKED as u16 {
-                unsafe { save_current_editor(state) };
+                let selected = unsafe { SendMessageW(state.list, LB_GETCURSEL, 0, 0) };
+                save_current_editor(state);
+                if selected != LB_ERR as isize {
+                    refresh_list(state, Some(selected as usize));
+                }
+            } else if (id == ID_UP || id == ID_DOWN) && notification == BN_CLICKED as u16 {
+                move_selected(state, if id == ID_UP { -1 } else { 1 });
+            } else if (id == ID_SAVE || id == ID_RESCAN) && notification == BN_CLICKED as u16 {
+                save_current_editor(state);
                 state.record_url_history_enabled =
                     unsafe { SendMessageW(state.record_url_history, BM_GETCHECK, 0, 0) }
                         == BST_CHECKED as isize;
                 normalize_sort_order(&mut state.profiles);
-                state.action = SettingsAction::Saved;
-                unsafe { DestroyWindow(window) };
-            } else if id == ID_RESCAN && notification == BN_CLICKED as u16 {
-                unsafe { save_current_editor(state) };
-                state.action = SettingsAction::Rescan;
-                unsafe { DestroyWindow(window) };
+                state.action = if id == ID_SAVE {
+                    SettingsAction::Saved
+                } else {
+                    SettingsAction::Rescan
+                };
+                unsafe {
+                    DestroyWindow(window);
+                }
             } else if id == ID_CANCEL && notification == BN_CLICKED as u16 {
                 state.action = SettingsAction::Cancelled;
-                unsafe { DestroyWindow(window) };
+                unsafe {
+                    DestroyWindow(window);
+                }
             }
             0
         }
         WM_CLOSE => {
             if !pointer.is_null() {
-                unsafe { (*pointer).action = SettingsAction::Cancelled };
+                unsafe {
+                    (*pointer).action = SettingsAction::Cancelled;
+                }
             }
-            unsafe { DestroyWindow(window) };
+            unsafe {
+                DestroyWindow(window);
+            }
             0
         }
         WM_COPYDATA => {
@@ -244,193 +364,149 @@ unsafe extern "system" fn window_proc(
             1
         }
         WM_DESTROY => {
-            unsafe { PostQuitMessage(0) };
+            unsafe {
+                PostQuitMessage(0);
+            }
             0
         }
-        WM_NCDESTROY => {
-            unsafe { SetWindowLongPtrW(window, GWLP_USERDATA, 0) };
-            unsafe { DefWindowProcW(window, message, wparam, lparam) }
-        }
+        WM_NCDESTROY => unsafe {
+            SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+            DefWindowProcW(window, message, wparam, lparam)
+        },
         _ => unsafe { DefWindowProcW(window, message, wparam, lparam) },
     }
 }
 
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn create_controls(window: HWND, state: &mut SettingsState) {
-    let font = GetStockObject(DEFAULT_GUI_FONT);
-    create_static(window, "◫ プロファイル", 20, 18, 300, 24, font);
-    state.list = create_control(
+fn create_controls(window: HWND, state: &mut SettingsState) {
+    let font = state.theme.font;
+    let title = common::label(window, "プロファイル設定", state.theme.title);
+    let subtitle = common::label(
+        window,
+        "一覧から選んで編集します。変更は「保存」で反映されます。",
+        font,
+    );
+    state.list_heading = common::label(window, "", state.theme.bold);
+    state.list = common::control(
         window,
         "LISTBOX",
         "",
         ID_LIST,
-        20,
-        45,
-        330,
-        450,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | WS_VSCROLL | LBS_NOTIFY as u32,
+        WS_TABSTOP
+            | WS_BORDER
+            | WS_VSCROLL
+            | WS_HSCROLL
+            | LBS_NOTIFY as u32
+            | LBS_NOINTEGRALHEIGHT as u32,
         font,
     );
-    create_static(window, "✎ 表示名", 380, 55, 160, 24, font);
-    state.alias = create_control(
-        window,
-        "EDIT",
-        "",
-        ID_ALIAS,
-        380,
-        80,
-        400,
-        30,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL as u32,
-        font,
-    );
-    create_static(window, "☰ メモ", 380, 130, 160, 24, font);
-    state.comment = create_control(
-        window,
-        "EDIT",
-        "",
-        ID_COMMENT,
-        380,
-        155,
-        400,
-        80,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_MULTILINE as u32,
-        font,
-    );
-    state.favorite = create_control(
+    state.up = common::button(window, "上へ", ID_UP, font);
+    state.down = common::button(window, "下へ", ID_DOWN, font);
+    let identity_label = common::label(window, "選択中のプロファイル", state.theme.bold);
+    state.identity = common::edit(window, 0, true, true, font);
+    let alias_label = common::label(window, "表示名", state.theme.bold);
+    state.alias = common::edit(window, ID_ALIAS, false, false, font);
+    common::cue(state.alias, "空欄の場合は検出名を使用");
+    let alias_help = common::label(window, "ブラウザ側のプロファイル名は変更しません。", font);
+    let comment_label = common::label(window, "メモ", state.theme.bold);
+    state.comment = common::edit(window, ID_COMMENT, true, false, font);
+    unsafe {
+        SetWindowLongPtrW(
+            state.comment,
+            GWL_STYLE,
+            GetWindowLongPtrW(state.comment, GWL_STYLE) | ES_WANTRETURN as isize,
+        );
+    }
+    state.favorite = common::control(
         window,
         "BUTTON",
-        "お気に入り",
+        "お気に入り（表示は先頭5件）",
         ID_FAVORITE,
-        380,
-        260,
-        170,
-        32,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+        WS_TABSTOP | BS_AUTOCHECKBOX as u32,
         font,
     );
-    state.enabled = create_control(
+    state.enabled = common::control(
         window,
         "BUTTON",
-        "選択画面に表示",
+        "選択画面に表示する",
         ID_ENABLED,
-        580,
-        260,
-        180,
-        32,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+        WS_TABSTOP | BS_AUTOCHECKBOX as u32,
         font,
     );
-    state.record_url_history = create_control(
+    let general = common::label(window, "全体設定", state.theme.bold);
+    state.record_url_history = common::control(
         window,
         "BUTTON",
         "URLパターンを記録する（既定OFF）",
         ID_RECORD_URL_HISTORY,
-        380,
-        300,
-        400,
-        32,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+        WS_TABSTOP | BS_AUTOCHECKBOX as u32,
         font,
     );
-    SendMessageW(
+    set_check(state.record_url_history, state.record_url_history_enabled);
+    let history_help = common::label(
+        window,
+        "生のURLは保存しません。末尾・パラメータ値・フラグメントを * に置き換えたパターンを記録します。\r\n例: /folder/*?tenant=*",
+        font,
+    );
+    let save_help = common::label(
+        window,
+        "再検出する場合も、編集中の内容を先に保存します。",
+        font,
+    );
+    let cancel = common::button(window, "キャンセル", ID_CANCEL, font);
+    let save = common::button(window, "保存", ID_SAVE, state.theme.bold);
+    let rescan = common::button(window, "保存して再スキャン", ID_RESCAN, font);
+    state.fixed = vec![
+        title,
+        subtitle,
+        state.list_heading,
+        state.list,
+        state.up,
+        state.down,
+        identity_label,
+        state.identity,
+        alias_label,
+        state.alias,
+        alias_help,
+        comment_label,
+        state.comment,
+        state.favorite,
+        state.enabled,
+        general,
         state.record_url_history,
-        BM_SETCHECK,
-        if state.record_url_history_enabled {
-            BST_CHECKED as usize
-        } else {
-            BST_UNCHECKED as usize
-        },
-        0,
-    );
-    create_static(
-        window,
-        "URLは生の値ではなく、末尾・値・フラグメントを * に置き換えた\r\nパターンとして記録されます。例: /folder/*?tenant=*",
-        380,
-        345,
-        400,
-        55,
-        font,
-    );
-    create_control(
-        window,
-        "BUTTON",
-        "↑ 上へ",
-        ID_UP,
-        380,
-        420,
-        120,
-        34,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-        font,
-    );
-    create_control(
-        window,
-        "BUTTON",
-        "↓ 下へ",
-        ID_DOWN,
-        515,
-        420,
-        120,
-        34,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-        font,
-    );
-    create_control(
-        window,
-        "BUTTON",
-        "再スキャン",
-        ID_RESCAN,
-        650,
-        420,
-        130,
-        34,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-        font,
-    );
-    create_control(
-        window,
-        "BUTTON",
-        "保存",
-        ID_SAVE,
-        525,
-        515,
-        120,
-        36,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON as u32,
-        font,
-    );
-    create_control(
-        window,
-        "BUTTON",
-        "キャンセル",
-        ID_CANCEL,
-        660,
-        515,
-        120,
-        36,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-        font,
-    );
+        history_help,
+        save_help,
+        cancel,
+        save,
+        rescan,
+    ];
     refresh_list(state, Some(0));
-}
-
-unsafe fn change_selection(state: &mut SettingsState) {
-    unsafe { save_current_editor(state) };
-    let selected = unsafe { SendMessageW(state.list, LB_GETCURSEL, 0, 0) };
-    if selected != LB_ERR as isize {
-        state.selected = Some(selected as usize);
-        unsafe { load_editor(state) };
+    layout_controls(window, state);
+    unsafe {
+        SetFocus(if state.profiles.is_empty() {
+            rescan
+        } else {
+            state.list
+        });
     }
 }
 
-unsafe fn save_current_editor(state: &mut SettingsState) {
+fn layout_controls(window: HWND, state: &mut SettingsState) {
+    let layout = SettingsLayout::new(Page::width(window, state.theme.dpi).max(360));
+    state.page.controls.clear();
+    for (control, bounds) in state.fixed.iter().zip(layout.fixed) {
+        state.page.place(*control, bounds);
+    }
+    state.page.height = layout.height;
+    state.page.apply(window, state.theme.dpi);
+}
+
+fn save_current_editor(state: &mut SettingsState) {
     let Some(index) = state.selected else {
         return;
     };
     if let Some(profile) = state.profiles.get_mut(index) {
-        profile.alias_name = unsafe { window_text(state.alias) };
-        profile.comment = unsafe { window_text(state.comment) };
+        profile.alias_name = window_text(state.alias);
+        profile.comment = window_text(state.comment);
         profile.favorite =
             unsafe { SendMessageW(state.favorite, BM_GETCHECK, 0, 0) } == BST_CHECKED as isize;
         profile.enabled =
@@ -438,40 +514,70 @@ unsafe fn save_current_editor(state: &mut SettingsState) {
     }
 }
 
-unsafe fn load_editor(state: &SettingsState) {
-    let Some(profile) = state.selected.and_then(|index| state.profiles.get(index)) else {
-        return;
-    };
-    let alias = wide(&profile.alias_name);
-    let comment = wide(&profile.comment);
+fn set_check(window: HWND, checked: bool) {
     unsafe {
-        SetWindowTextW(state.alias, alias.as_ptr());
-        SetWindowTextW(state.comment, comment.as_ptr());
         SendMessageW(
-            state.favorite,
+            window,
             BM_SETCHECK,
-            if profile.favorite {
-                BST_CHECKED as usize
-            } else {
-                BST_UNCHECKED as usize
-            },
-            0,
-        );
-        SendMessageW(
-            state.enabled,
-            BM_SETCHECK,
-            if profile.enabled {
-                BST_CHECKED as usize
-            } else {
-                BST_UNCHECKED as usize
-            },
+            if checked { BST_CHECKED } else { BST_UNCHECKED } as usize,
             0,
         );
     }
 }
 
-unsafe fn move_selected(state: &mut SettingsState, direction: isize) {
-    unsafe { save_current_editor(state) };
+fn load_editor(state: &SettingsState) {
+    let profile = state.selected.and_then(|index| state.profiles.get(index));
+    for control in [state.alias, state.comment, state.favorite, state.enabled] {
+        unsafe {
+            EnableWindow(control, i32::from(profile.is_some()));
+        }
+    }
+    unsafe {
+        EnableWindow(
+            state.up,
+            i32::from(state.selected.is_some_and(|index| index > 0)),
+        );
+        EnableWindow(
+            state.down,
+            i32::from(
+                state
+                    .selected
+                    .is_some_and(|index| index + 1 < state.profiles.len()),
+            ),
+        );
+    }
+    if let Some(profile) = profile {
+        common::set_text(
+            state.identity,
+            &format!(
+                "{} / {}{}",
+                profile.browser_type.display_name(),
+                profile.detected_name,
+                if profile.available {
+                    ""
+                } else {
+                    "（未検出）"
+                }
+            ),
+        );
+        common::set_text(state.alias, &profile.alias_name);
+        common::set_text(state.comment, &profile.comment);
+        set_check(state.favorite, profile.favorite);
+        set_check(state.enabled, profile.enabled);
+    } else {
+        common::set_text(
+            state.identity,
+            "プロファイルがありません。再スキャンで検出できます。",
+        );
+        common::set_text(state.alias, "");
+        common::set_text(state.comment, "");
+        set_check(state.favorite, false);
+        set_check(state.enabled, false);
+    }
+}
+
+fn move_selected(state: &mut SettingsState, direction: isize) {
+    save_current_editor(state);
     let Some(current) = state.selected else {
         return;
     };
@@ -481,29 +587,71 @@ unsafe fn move_selected(state: &mut SettingsState, direction: isize) {
     }
     state.profiles.swap(current, target as usize);
     normalize_sort_order(&mut state.profiles);
-    unsafe { refresh_list(state, Some(target as usize)) };
+    refresh_list(state, Some(target as usize));
 }
 
-unsafe fn refresh_list(state: &mut SettingsState, selected: Option<usize>) {
-    unsafe { SendMessageW(state.list, LB_RESETCONTENT, 0, 0) };
-    for profile in &state.profiles {
-        let availability = if profile.available {
+fn list_text(profile: &Profile) -> String {
+    format!(
+        "{}{} | {}{}{}",
+        if profile.favorite { "★ " } else { "" },
+        profile
+            .display_name()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" "),
+        profile.browser_type.display_name(),
+        if profile.enabled { "" } else { " [非表示]" },
+        if profile.available {
             ""
         } else {
             " [未検出]"
-        };
-        let favorite = if profile.favorite { "★ " } else { "" };
-        let text = wide(&format!(
-            "{favorite}{} | {}{availability}",
-            profile.browser_type.display_name(),
-            profile.display_name()
-        ));
-        unsafe { SendMessageW(state.list, LB_ADDSTRING, 0, text.as_ptr() as isize) };
+        }
+    )
+}
+
+fn refresh_list(state: &mut SettingsState, selected: Option<usize>) {
+    unsafe {
+        let top = SendMessageW(state.list, LB_GETTOPINDEX, 0, 0).max(0);
+        SendMessageW(state.list, WM_SETREDRAW, 0, 0);
+        SendMessageW(state.list, LB_RESETCONTENT, 0, 0);
+        for profile in &state.profiles {
+            SendMessageW(
+                state.list,
+                LB_ADDSTRING,
+                0,
+                wide(&list_text(profile)).as_ptr() as isize,
+            );
+        }
+        state.selected = selected.filter(|index| *index < state.profiles.len());
+        SendMessageW(state.list, LB_SETTOPINDEX, top as usize, 0);
+        if let Some(index) = state.selected {
+            SendMessageW(state.list, LB_SETCURSEL, index, 0);
+        }
+        SendMessageW(state.list, WM_SETREDRAW, 1, 0);
+        InvalidateRect(state.list, null(), 1);
     }
-    state.selected = selected.filter(|index| *index < state.profiles.len());
-    if let Some(index) = state.selected {
-        unsafe { SendMessageW(state.list, LB_SETCURSEL, index, 0) };
-        unsafe { load_editor(state) };
+    common::set_text(
+        state.list_heading,
+        &format!("プロファイル一覧  {}件", state.profiles.len()),
+    );
+    update_list_extent(state);
+    load_editor(state);
+}
+
+fn update_list_extent(state: &SettingsState) {
+    unsafe {
+        let dc = GetDC(state.list);
+        let previous = SelectObject(dc, state.theme.font);
+        let mut extent = 0;
+        for profile in &state.profiles {
+            let text = wide(&list_text(profile));
+            let mut size = SIZE { cx: 0, cy: 0 };
+            GetTextExtentPoint32W(dc, text.as_ptr(), (text.len() - 1) as i32, &mut size);
+            extent = extent.max(size.cx + common::scale(20, state.theme.dpi));
+        }
+        SelectObject(dc, previous);
+        ReleaseDC(state.list, dc);
+        SendMessageW(state.list, LB_SETHORIZONTALEXTENT, extent as usize, 0);
     }
 }
 
@@ -511,85 +659,4 @@ fn normalize_sort_order(profiles: &mut [Profile]) {
     for (index, profile) in profiles.iter_mut().enumerate() {
         profile.sort_order = index as i64;
     }
-}
-
-unsafe fn create_static(
-    parent: HWND,
-    text: &str,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-    font: *mut core::ffi::c_void,
-) -> HWND {
-    unsafe {
-        create_control(
-            parent,
-            "STATIC",
-            text,
-            0,
-            x,
-            y,
-            width,
-            height,
-            WS_CHILD | WS_VISIBLE,
-            font,
-        )
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-unsafe fn create_control(
-    parent: HWND,
-    class: &str,
-    text: &str,
-    id: i32,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-    style: u32,
-    font: *mut core::ffi::c_void,
-) -> HWND {
-    let class = wide(class);
-    let text = wide(text);
-    let control = unsafe {
-        CreateWindowExW(
-            0,
-            class.as_ptr(),
-            text.as_ptr(),
-            style,
-            x,
-            y,
-            width,
-            height,
-            parent,
-            id as usize as _,
-            GetModuleHandleW(null()),
-            null_mut(),
-        )
-    };
-    if !control.is_null() {
-        unsafe { SendMessageW(control, WM_SETFONT, font as usize, 1) };
-    }
-    control
-}
-
-unsafe fn window_text(window: HWND) -> String {
-    let length = unsafe { GetWindowTextLengthW(window) };
-    let mut buffer = vec![0_u16; length as usize + 1];
-    unsafe { GetWindowTextW(window, buffer.as_mut_ptr(), buffer.len() as i32) };
-    String::from_utf16_lossy(&buffer[..length as usize])
-}
-
-fn wide(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain(std::iter::once(0)).collect()
-}
-
-const fn low_word(value: usize) -> u16 {
-    (value & 0xffff) as u16
-}
-
-const fn high_word(value: usize) -> u16 {
-    ((value >> 16) & 0xffff) as u16
 }
