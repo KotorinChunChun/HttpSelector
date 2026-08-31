@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "entryScript": "dev/scripts/release-msix.ps1",
-  "packageVersion": "1.0.2.0",
+  "packageVersion": "1.0.3.0",
   "architecture": "x64",
   "minimumOSVersion": "10.0.17763.0",
   "maximumTestedOSVersion": "10.0.22631.0",
