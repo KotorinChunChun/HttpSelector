@@ -332,7 +332,13 @@ impl Page {
             // 一覧全体が画面より高い場合も、キーボードで選択中の行を見せる。
             let mut class = [0_u16; 32];
             let length = unsafe { GetClassNameW(focus, class.as_mut_ptr(), class.len() as i32) };
-            if String::from_utf16_lossy(&class[..length as usize]).eq_ignore_ascii_case("ListBox") {
+            let class = String::from_utf16_lossy(&class[..length as usize]);
+            if class.eq_ignore_ascii_case("ComboBox") {
+                // 配置用の高さには展開一覧を含むが、スクロールで見せるのは閉じた入力欄。
+                let mut rect: RECT = unsafe { std::mem::zeroed() };
+                unsafe { GetWindowRect(focus, &mut rect) };
+                bottom = top + rect.bottom - rect.top;
+            } else if class.eq_ignore_ascii_case("ListBox") {
                 unsafe {
                     let selected = SendMessageW(focus, LB_GETCURSEL, 0, 0);
                     let mut row: RECT = std::mem::zeroed();
@@ -496,6 +502,56 @@ pub fn handle_edit_shortcut(message: &MSG) -> bool {
         SendMessageW(focus, EM_SETSEL, 0, -1);
     }
     true
+}
+
+/// 実データ・外部プロセス・表示中のアプリに触れないWin32回帰テスト用。
+#[cfg(test)]
+pub(crate) struct HiddenTestWindow(pub HWND);
+
+#[cfg(test)]
+impl HiddenTestWindow {
+    pub fn new(proc: WNDPROC, state: *mut std::ffi::c_void) -> Self {
+        unsafe {
+            let class = wide(&format!(
+                "HttpSelector.Test.{:?}",
+                std::thread::current().id()
+            ));
+            let mut descriptor: WNDCLASSW = std::mem::zeroed();
+            descriptor.lpfnWndProc = proc;
+            descriptor.hInstance = GetModuleHandleW(null());
+            descriptor.lpszClassName = class.as_ptr();
+            RegisterClassW(&descriptor);
+            let window = CreateWindowExW(
+                0,
+                class.as_ptr(),
+                wide("test").as_ptr(),
+                WS_OVERLAPPED | WS_CLIPCHILDREN,
+                0,
+                0,
+                940,
+                800,
+                null_mut(),
+                null_mut(),
+                descriptor.hInstance,
+                state,
+            );
+            assert!(!window.is_null());
+            Self(window)
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for HiddenTestWindow {
+    fn drop(&mut self) {
+        unsafe {
+            if IsWindow(self.0) != 0 {
+                DestroyWindow(self.0);
+            }
+            let mut message = std::mem::zeroed();
+            while PeekMessageW(&mut message, null_mut(), WM_QUIT, WM_QUIT, PM_REMOVE) != 0 {}
+        }
+    }
 }
 
 #[cfg(test)]

@@ -9,8 +9,8 @@ use http_selector::settings_ui::{SettingsAction, run_settings};
 use http_selector::single_instance::{InstanceStatus, acquire};
 use http_selector::storage::Storage;
 use http_selector::ui::{
-    IntegrityRecoveryAction, SelectorResult, ask_integrity_recovery, run_selector, show_error,
-    show_information,
+    IntegrityRecoveryAction, SelectorResult, ask_integrity_recovery,
+    run_selector_with_selection as run_selector, show_error, show_information,
 };
 use http_selector::url_input::ValidatedUrl;
 
@@ -67,6 +67,7 @@ fn run() -> anyhow::Result<()> {
     let mut escape_hold_duration_tenths = storage.escape_hold_duration_tenths()?;
     let mut open_profile_on_double_click = storage.open_profile_on_double_click()?;
     let mut apply_default_rules = url.is_some();
+    let mut selected_profile_id = None;
 
     loop {
         if apply_default_rules {
@@ -111,13 +112,18 @@ fn run() -> anyhow::Result<()> {
             }
         }
         apply_default_rules = false;
-        let profiles = storage.load_selection_profiles()?;
+        let profiles = storage.load_all_profiles()?;
         match run_selector(
             url.clone(),
             profiles,
             escape_hold_duration_tenths,
             open_profile_on_double_click,
+            selected_profile_id,
         )? {
+            SelectorResult::UrlReceived(incoming) => {
+                url = Some(incoming);
+                apply_default_rules = true;
+            }
             SelectorResult::Profile {
                 profile_id,
                 url: selected_url,
@@ -197,6 +203,7 @@ fn run() -> anyhow::Result<()> {
                     integrity.sign_current()?;
                 }
                 url = current_url;
+                selected_profile_id = Some(profile_id);
             }
             SelectorResult::Settings { url: current_url } => {
                 url = current_url;
@@ -216,14 +223,13 @@ fn run() -> anyhow::Result<()> {
                     SettingsAction::Saved | SettingsAction::Rescan | SettingsAction::RuleList
                 ) {
                     integrity.backup_current()?;
-                    for profile in &outcome.profiles {
-                        storage.save_profile(profile)?;
-                    }
-                    storage.set_record_url_history_enabled(outcome.record_url_history)?;
-                    storage.set_escape_hold_duration_tenths(outcome.escape_hold_duration_tenths)?;
+                    storage.save_preferences(
+                        &outcome.profiles,
+                        outcome.record_url_history,
+                        outcome.escape_hold_duration_tenths,
+                        outcome.open_profile_on_double_click,
+                    )?;
                     escape_hold_duration_tenths = outcome.escape_hold_duration_tenths;
-                    storage
-                        .set_open_profile_on_double_click(outcome.open_profile_on_double_click)?;
                     open_profile_on_double_click = outcome.open_profile_on_double_click;
                     integrity.sign_current()?;
                 }

@@ -165,6 +165,10 @@ impl Storage {
 
     pub fn save_profile(&self, profile: &Profile) -> anyhow::Result<()> {
         let connection = self.open()?;
+        Self::write_profile(&connection, profile)
+    }
+
+    fn write_profile(connection: &Connection, profile: &Profile) -> anyhow::Result<()> {
         connection.execute(
             "UPDATE Profiles
              SET AliasName=?1, Comment=?2, SortOrder=?3, Favorite=?4, Enabled=?5, UpdatedAt=?6
@@ -179,6 +183,48 @@ impl Storage {
                 profile.id
             ],
         )?;
+        Ok(())
+    }
+
+    pub fn save_preferences(
+        &self,
+        profiles: &[Profile],
+        record_url_history: bool,
+        escape_hold_duration_tenths: u32,
+        open_profile_on_double_click: bool,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            profiles.iter().filter(|profile| profile.favorite).count() <= 5,
+            "お気に入りに登録できるプロファイルは5件までです"
+        );
+        anyhow::ensure!(
+            (MIN_ESCAPE_HOLD_DURATION_TENTHS..=MAX_ESCAPE_HOLD_DURATION_TENTHS)
+                .contains(&escape_hold_duration_tenths),
+            "ESC長押し時間が範囲外です"
+        );
+        let mut connection = self.open()?;
+        let transaction = connection.transaction()?;
+        for profile in profiles {
+            Self::write_profile(&transaction, profile)?;
+        }
+        for (key, value) in [
+            (SETTING_RECORD_URL_HISTORY, u32::from(record_url_history)),
+            (
+                SETTING_ESCAPE_HOLD_DURATION_TENTHS,
+                escape_hold_duration_tenths,
+            ),
+            (
+                SETTING_OPEN_PROFILE_ON_DOUBLE_CLICK,
+                u32::from(open_profile_on_double_click),
+            ),
+        ] {
+            transaction.execute(
+                "INSERT INTO Settings(Key, Value) VALUES (?1, ?2)
+                ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value",
+                params![key, value.to_string()],
+            )?;
+        }
+        transaction.commit()?;
         Ok(())
     }
 
@@ -372,6 +418,61 @@ mod tests {
     use super::*;
 
     #[test]
+    fn preferences_are_atomic_and_reject_more_than_five_favorites() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage::new(temp.path().join("test.db"));
+        storage.initialize().unwrap();
+        storage
+            .sync_detected(
+                &(0..6)
+                    .map(|i| DetectedProfile {
+                        browser_type: BrowserType::Edge,
+                        profile_id: format!("Profile {i}"),
+                        detected_name: format!("Profile {i}"),
+                        icon_path: None,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+        let original = storage.load_all_profiles().unwrap();
+        storage
+            .save_preferences(&original, false, 10, true)
+            .unwrap();
+        let mut changed = original.clone();
+        for profile in &mut changed {
+            profile.favorite = true;
+        }
+        assert!(storage.save_preferences(&changed, true, 23, false).is_err());
+        assert_eq!(storage.load_all_profiles().unwrap(), original);
+        changed[5].favorite = false;
+        changed[0].alias_name = "更新後".into();
+        storage
+            .open()
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER reject_click BEFORE UPDATE ON Settings
+            WHEN NEW.Key='open_profile_on_double_click' BEGIN SELECT RAISE(ABORT, 'test'); END;",
+            )
+            .unwrap();
+        let before = std::fs::read(storage.database_path()).unwrap();
+        assert!(storage.save_preferences(&changed, true, 23, false).is_err());
+        assert_eq!(storage.load_all_profiles().unwrap(), original);
+        assert!(!storage.record_url_history_enabled().unwrap());
+        assert_eq!(storage.escape_hold_duration_tenths().unwrap(), 10);
+        assert_eq!(std::fs::read(storage.database_path()).unwrap(), before);
+        storage
+            .open()
+            .unwrap()
+            .execute_batch("DROP TRIGGER reject_click;")
+            .unwrap();
+        storage.save_preferences(&changed, true, 23, false).unwrap();
+        assert_eq!(storage.load_all_profiles().unwrap()[0].alias_name, "更新後");
+        assert!(storage.record_url_history_enabled().unwrap());
+        assert_eq!(storage.escape_hold_duration_tenths().unwrap(), 23);
+        assert!(!storage.open_profile_on_double_click().unwrap());
+    }
+
+    #[test]
     fn sync_preserves_user_fields_and_marks_missing_unavailable() {
         let temp = tempfile::tempdir().unwrap();
         let storage = Storage::new(temp.path().join("test.db"));
@@ -509,6 +610,19 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let storage = Storage::new(temp.path().join("test.db"));
         storage.initialize().unwrap();
+        storage
+            .sync_detected(&[DetectedProfile {
+                browser_type: BrowserType::Edge,
+                profile_id: "Default".into(),
+                detected_name: "移行前".into(),
+                icon_path: None,
+            }])
+            .unwrap();
+        let mut profile = storage.load_all_profiles().unwrap()[0].clone();
+        profile.alias_name = "表示名".into();
+        profile.favorite = true;
+        storage.save_profile(&profile).unwrap();
+        let profiles = storage.load_all_profiles().unwrap();
         storage.set_escape_hold_duration_tenths(27).unwrap();
         storage.set_open_profile_on_double_click(false).unwrap();
         let connection = storage.open().unwrap();
@@ -523,6 +637,7 @@ mod tests {
         assert_eq!(storage.escape_hold_duration_tenths().unwrap(), 27);
         assert!(!storage.open_profile_on_double_click().unwrap());
         assert!(storage.load_default_rules().unwrap().is_empty());
+        assert_eq!(storage.load_all_profiles().unwrap(), profiles);
     }
 
     #[test]

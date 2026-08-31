@@ -10,7 +10,6 @@ use std::ptr::{null, null_mut};
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{GetLastError, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::*;
-use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{DRAWITEMSTRUCT, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED};
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
@@ -23,6 +22,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 const WINDOW_CLASS: &str = "HttpSelector.MainWindow";
 const MAX_TILES: usize = 25;
 const TIMER_HOLD: usize = 1;
+const WM_URL_RECEIVED: u32 = WM_APP + 1;
 const ID_SETTINGS: i32 = 101;
 const ID_CLOSE: i32 = 102;
 const ID_WINDOWS_SETTINGS: i32 = 103;
@@ -33,6 +33,7 @@ const ID_PROFILE_BASE: i32 = 1000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SelectorResult {
+    UrlReceived(ValidatedUrl),
     Profile {
         profile_id: i64,
         url: Option<ValidatedUrl>,
@@ -91,8 +92,15 @@ impl UiState {
         profiles: Vec<Profile>,
         escape_hold_duration_tenths: u32,
         open_profile_on_double_click: bool,
+        selected_profile_id: Option<i64>,
     ) -> Self {
         let filtered_indices = profile_slots(&profiles);
+        let focused_profile = filtered_indices
+            .iter()
+            .flatten()
+            .copied()
+            .find(|index| Some(profiles[*index].id) == selected_profile_id)
+            .or_else(|| filtered_indices.iter().flatten().next().copied());
         Self {
             url,
             profiles,
@@ -114,7 +122,7 @@ impl UiState {
             preview_edit: null_mut(),
             escape_hold_duration_tenths,
             open_profile_on_double_click,
-            focused_profile: None,
+            focused_profile,
             escape_started: None,
             result: SelectorResult::Cancelled,
         }
@@ -137,12 +145,29 @@ pub fn run_selector(
     escape_hold_duration_tenths: u32,
     open_profile_on_double_click: bool,
 ) -> anyhow::Result<SelectorResult> {
+    run_selector_with_selection(
+        url,
+        profiles,
+        escape_hold_duration_tenths,
+        open_profile_on_double_click,
+        None,
+    )
+}
+
+pub fn run_selector_with_selection(
+    url: Option<ValidatedUrl>,
+    profiles: Vec<Profile>,
+    escape_hold_duration_tenths: u32,
+    open_profile_on_double_click: bool,
+    selected_profile_id: Option<i64>,
+) -> anyhow::Result<SelectorResult> {
     run_selector_window(
         url,
         profiles,
         escape_hold_duration_tenths,
         open_profile_on_double_click,
         WS_EX_TOOLWINDOW,
+        selected_profile_id,
     )
 }
 
@@ -160,6 +185,7 @@ pub fn run_selector_preview(
         escape_hold_duration_tenths,
         open_profile_on_double_click,
         WS_EX_APPWINDOW,
+        None,
     )
 }
 
@@ -169,6 +195,7 @@ fn run_selector_window(
     escape_hold_duration_tenths: u32,
     open_profile_on_double_click: bool,
     window_style: u32,
+    selected_profile_id: Option<i64>,
 ) -> anyhow::Result<SelectorResult> {
     let style = WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_VSCROLL;
     let ex_style = WS_EX_TOPMOST | window_style | WS_EX_CONTROLPARENT;
@@ -183,6 +210,7 @@ fn run_selector_window(
         profiles,
         escape_hold_duration_tenths,
         open_profile_on_double_click,
+        selected_profile_id,
     )));
     let window = unsafe {
         CreateWindowExW(
@@ -451,7 +479,12 @@ unsafe extern "system" fn window_proc(
                 unsafe {
                     DestroyWindow(window);
                 }
-            } else if (notification == BN_CLICKED as u16 || notification == BN_DOUBLECLICKED as u16)
+            } else if [
+                BN_CLICKED as u16,
+                BN_DOUBLECLICKED as u16,
+                BN_SETFOCUS as u16,
+            ]
+            .contains(&notification)
                 && (ID_PROFILE_BASE..ID_PROFILE_BASE + MAX_TILES as i32).contains(&id)
             {
                 if let Some(index) = state.filtered_indices[(id - ID_PROFILE_BASE) as usize] {
@@ -504,39 +537,27 @@ unsafe extern "system" fn window_proc(
             0
         }
         WM_COPYDATA if !pointer.is_null() => {
-            let copy_data = unsafe { &*(lparam as *const COPYDATASTRUCT) };
-            if copy_data.dwData != 1
-                || copy_data.lpData.is_null()
-                || copy_data.cbData < 2
-                || copy_data.cbData % 2 != 0
-                || copy_data.cbData as usize > (crate::url_input::MAX_URL_BYTES + 1) * 2
-            {
-                return 0;
-            }
-            let utf16 = unsafe {
-                std::slice::from_raw_parts(
-                    copy_data.lpData as *const u16,
-                    copy_data.cbData as usize / 2,
-                )
-            };
-            let end = utf16
-                .iter()
-                .position(|value| *value == 0)
-                .unwrap_or(utf16.len());
-            let Ok(value) = String::from_utf16(&utf16[..end]) else {
-                return 0;
-            };
-            let Ok(url) = ValidatedUrl::parse(value) else {
+            let Some(url) = (unsafe { crate::single_instance::received_url(lparam) }) else {
                 return 0;
             };
             let state = unsafe { &mut *pointer };
             state.url = Some(url);
             refresh_url(window, state);
+            // 同期IPCへの応答後に画面を閉じ、通常起動と同じ既定ルール評価へ戻す。
+            unsafe { PostMessageW(window, WM_URL_RECEIVED, 0, 0) };
             unsafe {
                 ShowWindow(window, SW_RESTORE);
                 SetForegroundWindow(window);
             }
             1
+        }
+        WM_URL_RECEIVED if !pointer.is_null() => {
+            let state = unsafe { &mut *pointer };
+            if let Some(url) = state.url.clone() {
+                state.result = SelectorResult::UrlReceived(url);
+                unsafe { DestroyWindow(window) };
+            }
+            0
         }
         WM_ACTIVATE if !pointer.is_null() => {
             let state = unsafe { &mut *pointer };
@@ -603,7 +624,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
             "BUTTON",
             "",
             ID_PROFILE_BASE + index as i32,
-            WS_TABSTOP | BS_OWNERDRAW as u32,
+            WS_TABSTOP | BS_OWNERDRAW as u32 | BS_NOTIFY as u32,
             font,
         ));
     }
@@ -630,11 +651,11 @@ fn create_controls(window: HWND, state: &mut UiState) {
             });
     }
     refresh_url(window, state);
-    let first_profile = state.filtered_indices.iter().position(Option::is_some);
-    if let Some(index) = first_profile {
-        state.focused_profile = state.filtered_indices[index];
-        refresh_selection_visuals(state);
-    }
+    let first_profile = state
+        .filtered_indices
+        .iter()
+        .position(|index| index.is_some() && *index == state.focused_profile);
+    refresh_selection_visuals(state);
     let focus = first_profile
         .map(|index| state.profile_buttons[index])
         .or_else(|| state.fixed.get(8).copied())
@@ -1031,7 +1052,7 @@ fn profile_slots(profiles: &[Profile]) -> Vec<Option<usize>> {
     for (slot, (profile_index, _)) in profiles
         .iter()
         .enumerate()
-        .filter(|(_, profile)| profile.favorite)
+        .filter(|(_, profile)| profile.favorite && profile.available && profile.enabled)
         .take(5)
         .enumerate()
     {
@@ -1040,7 +1061,7 @@ fn profile_slots(profiles: &[Profile]) -> Vec<Option<usize>> {
     for (offset, (profile_index, _)) in profiles
         .iter()
         .enumerate()
-        .filter(|(_, profile)| !profile.favorite)
+        .filter(|(_, profile)| !profile.favorite && profile.available && profile.enabled)
         .take(20)
         .enumerate()
     {
@@ -1143,6 +1164,142 @@ fn _rect_width(rect: RECT) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keyboard_focus_changes_the_favorite_action_target() {
+        let mut state = Box::new(UiState::new(
+            None,
+            vec![profile(1, true), profile(2, false)],
+            10,
+            true,
+            None,
+        ));
+        let window =
+            common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
+        let tile = state.profile_buttons[5];
+        assert_ne!(unsafe { GetWindowLongW(tile, GWL_STYLE) } & BS_NOTIFY, 0);
+        unsafe { SendMessageW(tile, WM_SETFOCUS, 0, 0) };
+        assert_eq!(state.focused_profile, Some(1));
+        assert_ne!(
+            unsafe {
+                windows_sys::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled(state.favorite_up)
+            },
+            0
+        );
+        unsafe {
+            SendMessageW(
+                window.0,
+                WM_COMMAND,
+                ID_FAVORITE_UP as usize,
+                state.favorite_up as isize,
+            )
+        };
+        assert_eq!(
+            state.result,
+            SelectorResult::FavoriteChanged {
+                profile_id: 2,
+                favorite: true,
+                url: None
+            }
+        );
+    }
+
+    #[test]
+    fn click_mode_requires_the_configured_activation_and_keeps_original_url() {
+        let url = ValidatedUrl::parse("https://example.com/a?x=%20").unwrap();
+        for double_click in [true, false] {
+            let mut state = Box::new(UiState::new(
+                Some(url.clone()),
+                vec![profile(9, false)],
+                10,
+                double_click,
+                None,
+            ));
+            let window = common::HiddenTestWindow::new(
+                Some(window_proc),
+                (&mut *state as *mut UiState).cast(),
+            );
+            unsafe { SendMessageW(window.0, WM_COMMAND, (ID_PROFILE_BASE + 5) as usize, 0) };
+            if double_click {
+                assert_eq!(state.result, SelectorResult::Cancelled);
+                assert_ne!(unsafe { IsWindow(window.0) }, 0);
+                unsafe {
+                    SendMessageW(
+                        window.0,
+                        WM_COMMAND,
+                        (ID_PROFILE_BASE + 5) as usize | ((BN_DOUBLECLICKED as usize) << 16),
+                        0,
+                    )
+                };
+            }
+            assert_eq!(
+                state.result,
+                SelectorResult::Profile {
+                    profile_id: 9,
+                    url: Some(url.clone())
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn selection_survives_favorite_reordering_and_skips_unavailable_profiles() {
+        let mut hidden = profile(1, true);
+        hidden.enabled = false;
+        let profiles = vec![hidden, profile(2, true), profile(3, false)];
+        let state = UiState::new(None, profiles, 10, true, Some(3));
+        assert_eq!(state.focused_profile, Some(2));
+        assert_eq!(state.filtered_indices[0], Some(1));
+        assert_eq!(state.filtered_indices[5], Some(2));
+    }
+
+    #[test]
+    fn deferred_url_returns_to_rule_evaluation_and_hidden_favorites_count_toward_limit() {
+        let profiles = (0..6)
+            .map(|id| {
+                let mut profile = profile(id, id < 5);
+                profile.available = id == 5;
+                profile
+            })
+            .collect();
+        let incoming = ValidatedUrl::parse("https://example.net/new?x=%20").unwrap();
+        let mut state = Box::new(UiState::new(
+            Some(incoming.clone()),
+            profiles,
+            10,
+            true,
+            None,
+        ));
+        let window =
+            common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
+        assert_eq!(
+            unsafe {
+                windows_sys::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled(state.favorite_up)
+            },
+            0
+        );
+        unsafe { SendMessageW(window.0, WM_URL_RECEIVED, 0, 0) };
+        assert_eq!(state.result, SelectorResult::UrlReceived(incoming));
+    }
+
+    #[test]
+    fn releasing_escape_cancels_the_timer_before_the_next_hold() {
+        let mut state = Box::new(UiState::new(None, vec![], 1, true, None));
+        let window =
+            common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
+        let mut message: MSG = unsafe { std::mem::zeroed() };
+        message.message = WM_KEYDOWN;
+        message.wParam = VK_ESCAPE as usize;
+        handle_navigation_message(window.0, &mut *state, &message);
+        assert!(state.escape_started.is_some());
+        message.message = WM_KEYUP;
+        handle_navigation_message(window.0, &mut *state, &message);
+        unsafe { SendMessageW(window.0, WM_TIMER, TIMER_HOLD, 0) };
+        assert_ne!(unsafe { IsWindow(window.0) }, 0);
+        state.escape_started = Some(Instant::now() - Duration::from_millis(150));
+        unsafe { SendMessageW(window.0, WM_TIMER, TIMER_HOLD, 0) };
+        assert_eq!(unsafe { IsWindow(window.0) }, 0);
+    }
     use crate::model::BrowserType;
 
     fn profile(id: i64, favorite: bool) -> Profile {

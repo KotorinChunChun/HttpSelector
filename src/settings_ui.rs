@@ -8,7 +8,6 @@ use std::mem::size_of;
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{GetLastError, HWND, LPARAM, LRESULT, RECT, SIZE, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::*;
-use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED, DRAWITEMSTRUCT};
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
@@ -381,29 +380,7 @@ unsafe extern "system" fn window_proc(
             if pointer.is_null() {
                 return 0;
             }
-            let copy_data = unsafe { &*(lparam as *const COPYDATASTRUCT) };
-            if copy_data.dwData != 1
-                || copy_data.lpData.is_null()
-                || copy_data.cbData < 2
-                || copy_data.cbData % 2 != 0
-                || copy_data.cbData as usize > (crate::url_input::MAX_URL_BYTES + 1) * 2
-            {
-                return 0;
-            }
-            let utf16 = unsafe {
-                std::slice::from_raw_parts(
-                    copy_data.lpData as *const u16,
-                    copy_data.cbData as usize / 2,
-                )
-            };
-            let end = utf16
-                .iter()
-                .position(|value| *value == 0)
-                .unwrap_or(utf16.len());
-            let Ok(value) = String::from_utf16(&utf16[..end]) else {
-                return 0;
-            };
-            let Ok(url) = crate::url_input::ValidatedUrl::parse(value) else {
+            let Some(url) = (unsafe { crate::single_instance::received_url(lparam) }) else {
                 return 0;
             };
             unsafe { (*pointer).pending_url = Some(url) };
@@ -587,6 +564,20 @@ fn save_current_editor(state: &mut SettingsState) {
 }
 
 fn capture_general_settings(window: HWND, state: &mut SettingsState) -> bool {
+    if state
+        .profiles
+        .iter()
+        .filter(|profile| profile.favorite)
+        .count()
+        > 5
+    {
+        show_error_for(
+            window,
+            "HttpSelector 設定",
+            "お気に入りは5件までです。不要な項目のチェックを外してください。",
+        );
+        return false;
+    }
     let Some(escape_hold_duration_tenths) =
         parse_escape_hold_duration(&window_text(state.escape_hold_duration))
     else {

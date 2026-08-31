@@ -1,6 +1,7 @@
 use crate::model::{DefaultRule, Profile};
 use crate::rules;
 use crate::ui::{show_error_for, show_information_for};
+use crate::ui_layout::RulesLayout;
 use crate::ui_support::{self as common, Page, Theme, wide, window_text};
 use crate::url_input::ValidatedUrl;
 use anyhow::ensure;
@@ -8,7 +9,6 @@ use std::mem::size_of;
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{GetLastError, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::*;
-use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::DRAWITEMSTRUCT;
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
@@ -19,6 +19,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const WINDOW_CLASS: &str = "HttpSelector.RuleWindow";
 const ID_LIST: i32 = 100;
+const ID_PROFILE: i32 = 101;
 const ID_PATTERN: i32 = 102;
 const ID_SITE: i32 = 103;
 const ID_LEADING_PATH: i32 = 104;
@@ -116,7 +117,8 @@ pub fn run_rules(
     rules: Vec<DefaultRule>,
     draft: Option<RuleDraft>,
 ) -> anyhow::Result<RulesOutcome> {
-    let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN;
+    let style =
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN | WS_VSCROLL;
     let ex_style = WS_EX_CONTROLPARENT;
     let bounds = common::initial_bounds(940, 620, style, ex_style);
     register_window_class()?;
@@ -235,8 +237,8 @@ unsafe extern "system" fn window_proc(
         WM_GETMINMAXINFO => {
             let info = unsafe { &mut *(lparam as *mut MINMAXINFO) };
             let dpi = unsafe { GetDpiForWindow(window) }.max(96);
-            info.ptMinTrackSize.x = common::scale(940, dpi);
-            info.ptMinTrackSize.y = common::scale(560, dpi);
+            info.ptMinTrackSize.x = common::scale(400, dpi).min(info.ptMaxTrackSize.x);
+            info.ptMinTrackSize.y = common::scale(320, dpi).min(info.ptMaxTrackSize.y);
             0
         }
         WM_DPICHANGED if !pointer.is_null() => {
@@ -256,6 +258,11 @@ unsafe extern "system" fn window_proc(
                     SWP_NOZORDER | SWP_NOACTIVATE,
                 );
             }
+            0
+        }
+        WM_VSCROLL | WM_MOUSEWHEEL if !pointer.is_null() => {
+            let state = unsafe { &mut *pointer };
+            state.page.scroll(window, message, wparam, state.theme.dpi);
             0
         }
         WM_ERASEBKGND if !pointer.is_null() => {
@@ -294,29 +301,7 @@ unsafe extern "system" fn window_proc(
             1
         }
         WM_COPYDATA if !pointer.is_null() => {
-            let copy_data = unsafe { &*(lparam as *const COPYDATASTRUCT) };
-            if copy_data.dwData != 1
-                || copy_data.lpData.is_null()
-                || copy_data.cbData < 2
-                || copy_data.cbData % 2 != 0
-                || copy_data.cbData as usize > (crate::url_input::MAX_URL_BYTES + 1) * 2
-            {
-                return 0;
-            }
-            let utf16 = unsafe {
-                std::slice::from_raw_parts(
-                    copy_data.lpData as *const u16,
-                    copy_data.cbData as usize / 2,
-                )
-            };
-            let end = utf16
-                .iter()
-                .position(|value| *value == 0)
-                .unwrap_or(utf16.len());
-            let Ok(value) = String::from_utf16(&utf16[..end]) else {
-                return 0;
-            };
-            let Ok(url) = ValidatedUrl::parse(value) else {
+            let Some(url) = (unsafe { crate::single_instance::received_url(lparam) }) else {
                 return 0;
             };
             let state = unsafe { &mut *pointer };
@@ -340,14 +325,20 @@ unsafe extern "system" fn window_proc(
                     state.source_url = None;
                     load_editor(state);
                 }
+            } else if id == ID_PROFILE && notification == CBN_SELCHANGE as u16 {
+                let selected = unsafe { SendMessageW(state.profile, CB_GETCURSEL, 0, 0) };
+                state.selected_profile_id = usize::try_from(selected)
+                    .ok()
+                    .and_then(|index| state.profiles.get(index))
+                    .map(|profile| profile.id);
             } else if [ID_SITE, ID_LEADING_PATH, ID_WILDCARD].contains(&id)
                 && notification == BN_CLICKED as u16
             {
                 apply_pattern_preset(window, state, id);
             } else if id == ID_NEW && notification == BN_CLICKED as u16 {
                 state.selected = None;
-                state.selected_profile_id = None;
                 state.source_url = None;
+                refresh_list(state);
                 load_editor(state);
             } else if id == ID_SAVE && notification == BN_CLICKED as u16 {
                 save_rule(window, state);
@@ -396,7 +387,34 @@ fn create_controls(window: HWND, state: &mut RulesState) {
         font,
     );
     let profile_label = common::label(window, "対象プロファイル", state.theme.bold);
-    state.profile = common::edit(window, 0, false, true, font);
+    state.profile = common::control(
+        window,
+        "COMBOBOX",
+        "",
+        ID_PROFILE,
+        WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST as u32,
+        font,
+    );
+    for profile in &state.profiles {
+        let text = format!(
+            "{} | {}{}",
+            profile.display_name(),
+            profile.browser_type,
+            if profile.available && profile.enabled {
+                ""
+            } else {
+                "（利用不可）"
+            }
+        );
+        unsafe {
+            SendMessageW(
+                state.profile,
+                CB_ADDSTRING,
+                0,
+                wide(&text).as_ptr() as isize,
+            )
+        };
+    }
     let pattern_label = common::label(window, "URLパターン", state.theme.bold);
     state.pattern = common::edit(window, ID_PATTERN, false, false, font);
     let preset_label = common::label(window, "パターン作成（URL指定時のみ）", state.theme.bold);
@@ -431,34 +449,16 @@ fn create_controls(window: HWND, state: &mut RulesState) {
 }
 
 fn layout_controls(window: HWND, state: &mut RulesState) {
-    let width = Page::width(window, state.theme.dpi).max(860);
+    let layout = RulesLayout::new(Page::width(window, state.theme.dpi).max(360));
     state.page.controls.clear();
-    let content = width - 48;
-    let left_width = 320;
-    let right_x = 24 + left_width + 24;
-    let right_width = content - left_width - 24;
-    let bounds = [
-        common::Bounds::new(24, 18, content, 34),
-        common::Bounds::new(24, 62, content, 24),
-        common::Bounds::new(24, 100, left_width, 24),
-        common::Bounds::new(24, 130, left_width, 350),
-        common::Bounds::new(right_x, 100, right_width, 24),
-        common::Bounds::new(right_x, 130, right_width, 36),
-        common::Bounds::new(right_x, 188, right_width, 24),
-        common::Bounds::new(right_x, 218, right_width, 36),
-        common::Bounds::new(right_x, 272, right_width, 24),
-        common::Bounds::new(right_x, 304, 112, 36),
-        common::Bounds::new(right_x + 124, 304, 112, 36),
-        common::Bounds::new(right_x + 248, 304, right_width - 248, 36),
-        common::Bounds::new(right_x, 420, 112, 36),
-        common::Bounds::new(right_x + 124, 420, 112, 36),
-        common::Bounds::new(right_x + 248, 420, 112, 36),
-        common::Bounds::new(right_x + 372, 420, right_width - 372, 36),
-    ];
-    for (control, bound) in state.fixed.iter().zip(bounds) {
+    for (control, mut bound) in state.fixed.iter().zip(layout.fixed) {
+        if *control == state.profile {
+            // コンボボックスの高さには展開時の一覧も含まれる。
+            bound.height = 240;
+        }
         state.page.place(*control, bound);
     }
-    state.page.height = 490;
+    state.page.height = layout.height;
     state.page.apply(window, state.theme.dpi);
 }
 
@@ -480,16 +480,18 @@ fn refresh_list(state: &mut RulesState) {
 }
 
 fn load_editor(state: &RulesState) {
-    let profile_id = state
-        .selected_profile_id
-        .and_then(|id| state.profiles.iter().find(|profile| profile.id == id));
-    common::set_text(
-        state.profile,
-        profile_id
-            .map(|profile| profile.display_name().to_owned())
-            .unwrap_or_else(|| "プロファイルを選択してください".to_owned())
-            .as_str(),
-    );
+    let selected = state
+        .profiles
+        .iter()
+        .position(|profile| Some(profile.id) == state.selected_profile_id);
+    unsafe {
+        SendMessageW(
+            state.profile,
+            CB_SETCURSEL,
+            selected.unwrap_or(usize::MAX),
+            0,
+        )
+    };
     common::set_text(
         state.pattern,
         state
@@ -611,6 +613,47 @@ fn list_text(rule: &DefaultRule, profiles: &[Profile]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_rule_can_select_a_profile_and_save_the_entered_pattern() {
+        let profile = Profile {
+            id: 8,
+            browser_type: crate::model::BrowserType::Edge,
+            profile_id: "Default".into(),
+            detected_name: "検証用".into(),
+            alias_name: String::new(),
+            comment: String::new(),
+            sort_order: 0,
+            favorite: false,
+            enabled: true,
+            available: true,
+            icon_path: None,
+            created_at: 0,
+            updated_at: 0,
+        };
+        let mut state = Box::new(RulesState::new(vec![profile], vec![], None));
+        let window = common::HiddenTestWindow::new(
+            Some(window_proc),
+            (&mut *state as *mut RulesState).cast(),
+        );
+        unsafe {
+            SendMessageW(window.0, WM_COMMAND, ID_NEW as usize, 0);
+            SendMessageW(state.profile, CB_SETCURSEL, 0, 0);
+            SendMessageW(
+                window.0,
+                WM_COMMAND,
+                ID_PROFILE as usize | ((CBN_SELCHANGE as usize) << 16),
+                0,
+            );
+        }
+        common::set_text(state.pattern, "https://example.com/team/*");
+        unsafe { SendMessageW(window.0, WM_COMMAND, ID_SAVE as usize, 0) };
+        assert_eq!(state.rules.len(), 1);
+        assert_eq!(state.rules[0].profile_id, 8);
+        assert_eq!(state.rules[0].pattern, "https://example.com/team/*");
+        unsafe { SendMessageW(window.0, WM_COMMAND, ID_CLOSE as usize, 0) };
+        assert_eq!(state.action, RulesAction::Saved);
+    }
 
     #[test]
     fn incoming_url_survives_close_without_replacing_the_rule_draft() {

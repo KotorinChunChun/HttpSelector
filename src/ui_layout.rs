@@ -5,6 +5,56 @@ pub const TILE_HEIGHT: i32 = 92;
 pub const GAP: i32 = 12;
 pub const MARGIN: i32 = 24;
 
+pub struct RulesLayout {
+    pub fixed: Vec<Bounds>,
+    pub height: i32,
+}
+
+impl RulesLayout {
+    pub fn new(width: i32) -> Self {
+        let content = width - 48;
+        let split = width >= 860;
+        let list_width = if split { 300 } else { content };
+        let list_height = if split { 350 } else { 200 };
+        let editor_x = if split { 348 } else { 24 };
+        let editor_width = if split {
+            width - editor_x - 24
+        } else {
+            content
+        };
+        let top = if split { 100 } else { 354 };
+        let preset_width = (editor_width - 16) / 3;
+        let action_width = (editor_width - 12) / 2;
+        let fixed = vec![
+            Bounds::new(24, 18, content, 34),
+            Bounds::new(24, 62, content, 32),
+            Bounds::new(24, 100, list_width, 24),
+            Bounds::new(24, 130, list_width, list_height),
+            Bounds::new(editor_x, top, editor_width, 24),
+            Bounds::new(editor_x, top + 30, editor_width, 36),
+            Bounds::new(editor_x, top + 88, editor_width, 24),
+            Bounds::new(editor_x, top + 118, editor_width, 36),
+            Bounds::new(editor_x, top + 172, editor_width, 24),
+            Bounds::new(editor_x, top + 204, preset_width, 36),
+            Bounds::new(editor_x + preset_width + 8, top + 204, preset_width, 36),
+            Bounds::new(
+                editor_x + 2 * (preset_width + 8),
+                top + 204,
+                preset_width,
+                36,
+            ),
+            Bounds::new(editor_x, top + 262, action_width, 36),
+            Bounds::new(editor_x + action_width + 12, top + 262, action_width, 36),
+            Bounds::new(editor_x, top + 310, action_width, 36),
+            Bounds::new(editor_x + action_width + 12, top + 310, action_width, 36),
+        ];
+        Self {
+            fixed,
+            height: (top + 346).max(130 + list_height) + 24,
+        }
+    }
+}
+
 pub struct SettingsLayout {
     pub fixed: Vec<Bounds>,
     pub height: i32,
@@ -217,6 +267,23 @@ mod tests {
     use super::*;
     fn overlaps(a: Bounds, b: Bounds) -> bool {
         a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.bottom() && a.bottom() > b.y
+    }
+
+    #[test]
+    fn rules_controls_fit_small_screens_without_overlap() {
+        for width in [360, 400, 512, 640, 859, 860, 940, 1120] {
+            let layout = RulesLayout::new(width);
+            for (index, rect) in layout.fixed.iter().enumerate() {
+                assert!(rect.width > 0 && rect.x >= 24 && rect.x + rect.width <= width - 24);
+                assert!(rect.bottom() <= layout.height - 24);
+                assert!(
+                    layout.fixed[index + 1..]
+                        .iter()
+                        .all(|other| !overlaps(*rect, *other)),
+                    "幅{width}: 項目{index}"
+                );
+            }
+        }
     }
 
     #[test]
