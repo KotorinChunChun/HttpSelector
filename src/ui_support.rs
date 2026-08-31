@@ -6,7 +6,8 @@ use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::SystemServices::{SS_LEFT, SS_NOPREFIX};
 use windows_sys::Win32::UI::Controls::{
-    EM_SETCUEBANNER, EM_SETMARGINS, EM_SETSEL, SetScrollInfo, WC_BUTTONW,
+    DRAWITEMSTRUCT, EM_SETCUEBANNER, EM_SETMARGINS, EM_SETSEL, ODS_DISABLED, ODS_FOCUS,
+    ODS_SELECTED, SetScrollInfo, WC_BUTTONW,
 };
 use windows_sys::Win32::UI::HiDpi::*;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetFocus, GetKeyState, VK_CONTROL};
@@ -169,7 +170,7 @@ pub fn button(parent: HWND, text: &str, id: i32, font: HFONT) -> HWND {
         "BUTTON",
         text,
         id,
-        WS_TABSTOP | BS_PUSHBUTTON as u32,
+        WS_TABSTOP | BS_PUSHBUTTON as u32 | BS_OWNERDRAW as u32,
         font,
     )
 }
@@ -376,6 +377,81 @@ pub fn draw_text(dc: HDC, text: &str, mut rect: RECT, font: HFONT, color: u32) {
     }
 }
 
+/// 共通の操作ボタンを、アプリの配色に合わせて描画する。
+pub fn draw_button(item: &DRAWITEMSTRUCT) {
+    let rect = item.rcItem;
+    let disabled = item.itemState & ODS_DISABLED != 0;
+    let selected = item.itemState & ODS_SELECTED != 0;
+    let focused = item.itemState & ODS_FOCUS != 0;
+    let (fill, border, text) = if disabled {
+        (0x00F1EFEC, 0x00D8D3CD, MUTED)
+    } else if selected {
+        (ACCENT, ACCENT, 0x00FFFFFF)
+    } else if focused {
+        (0x00F7EBDD, ACCENT, TEXT)
+    } else {
+        (0x00FFFFFF, 0x00CDBDAA, TEXT)
+    };
+    unsafe {
+        let background = CreateSolidBrush(BACKGROUND);
+        FillRect(item.hDC, &rect, background);
+        DeleteObject(background);
+
+        let fill_brush = CreateSolidBrush(fill);
+        let border_pen = CreatePen(PS_SOLID, 1, border);
+        let old_brush = SelectObject(item.hDC, fill_brush);
+        let old_pen = SelectObject(item.hDC, border_pen);
+        RoundRect(
+            item.hDC,
+            rect.left + 1,
+            rect.top + 1,
+            rect.right - 1,
+            rect.bottom - 1,
+            10,
+            10,
+        );
+        SelectObject(item.hDC, old_brush);
+        SelectObject(item.hDC, old_pen);
+        DeleteObject(fill_brush);
+        DeleteObject(border_pen);
+
+        let font = SendMessageW(item.hwndItem, WM_GETFONT, 0, 0) as HFONT;
+        let old_font = if !font.is_null() {
+            SelectObject(item.hDC, font)
+        } else {
+            null_mut()
+        };
+        SetBkMode(item.hDC, TRANSPARENT as i32);
+        SetTextColor(item.hDC, text);
+        let mut text_rect = RECT {
+            left: rect.left + 10,
+            top: rect.top + 2,
+            right: rect.right - 10,
+            bottom: rect.bottom - 2,
+        };
+        let value = wide(&window_text(item.hwndItem));
+        DrawTextW(
+            item.hDC,
+            value.as_ptr(),
+            (value.len() - 1) as i32,
+            &mut text_rect,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
+        );
+        if !font.is_null() {
+            SelectObject(item.hDC, old_font);
+        }
+        if focused && !disabled {
+            let focus_rect = RECT {
+                left: rect.left + 5,
+                top: rect.top + 5,
+                right: rect.right - 5,
+                bottom: rect.bottom - 5,
+            };
+            DrawFocusRect(item.hDC, &focus_rect);
+        }
+    }
+}
+
 pub fn is_button(window: HWND) -> bool {
     let mut class = [0_u16; 32];
     unsafe {
@@ -384,7 +460,7 @@ pub fn is_button(window: HWND) -> bool {
     &class[..6] == unsafe { std::slice::from_raw_parts(WC_BUTTONW, 6) }
 }
 
-/// 標準EDITでは自動提供されないCtrl+Aを、検索・URL・設定入力欄へ共通で提供する。
+/// 標準EDITでは自動提供されないCtrl+Aを、URL・設定入力欄へ共通で提供する。
 pub fn handle_edit_shortcut(message: &MSG) -> bool {
     if message.message != WM_KEYDOWN
         || message.wParam != b'A' as usize

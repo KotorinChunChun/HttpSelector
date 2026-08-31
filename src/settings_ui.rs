@@ -10,7 +10,7 @@ use windows_sys::Win32::Foundation::{GetLastError, HWND, LPARAM, LRESULT, RECT, 
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
+use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED, DRAWITEMSTRUCT};
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN,
@@ -317,6 +317,11 @@ unsafe extern "system" fn window_proc(
             } else {
                 state.theme.background as isize
             }
+        }
+        WM_DRAWITEM if !pointer.is_null() => {
+            let item = unsafe { &*(lparam as *const DRAWITEMSTRUCT) };
+            common::draw_button(item);
+            1
         }
         WM_COMMAND if !pointer.is_null() => {
             let state = unsafe { &mut *pointer };

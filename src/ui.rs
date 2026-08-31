@@ -373,7 +373,13 @@ unsafe extern "system" fn window_proc(
         WM_DRAWITEM if !pointer.is_null() => {
             let item = unsafe { &*(lparam as *const DRAWITEMSTRUCT) };
             let state = unsafe { &*pointer };
-            draw_tile(state, item);
+            if (ID_PROFILE_BASE as u32..ID_PROFILE_BASE as u32 + MAX_TILES as u32)
+                .contains(&item.CtlID)
+            {
+                draw_tile(state, item);
+            } else {
+                common::draw_button(item);
+            }
             1
         }
         WM_COMMAND if !pointer.is_null() => {
