@@ -1,7 +1,9 @@
 //! 実データやブラウザ起動に触れず、長文・最大件数・空状態を確認するUIプレビュー。
 use http_selector::model::{BrowserType, Profile};
 use http_selector::settings_ui::run_settings;
-use http_selector::storage::DEFAULT_ESCAPE_HOLD_DURATION_TENTHS;
+use http_selector::storage::{
+    DEFAULT_ESCAPE_HOLD_DURATION_TENTHS, DEFAULT_OPEN_PROFILE_ON_DOUBLE_CLICK,
+};
 use http_selector::ui::SelectorResult;
 #[cfg(not(debug_assertions))]
 use http_selector::ui::run_selector;
@@ -41,7 +43,12 @@ fn main() -> anyhow::Result<()> {
             .collect()
     };
     if args.iter().any(|arg| arg == "--settings") {
-        let result = run_settings(profiles, false, DEFAULT_ESCAPE_HOLD_DURATION_TENTHS)?;
+        let result = run_settings(
+            profiles,
+            false,
+            DEFAULT_ESCAPE_HOLD_DURATION_TENTHS,
+            DEFAULT_OPEN_PROFILE_ON_DOUBLE_CLICK,
+        )?;
         println!("設定プレビュー: {:?}（保存先なし）", result.action);
     } else {
         let url = if args.iter().any(|arg| arg == "--no-url") {
@@ -51,9 +58,19 @@ fn main() -> anyhow::Result<()> {
                 "https://example.com/projects/%E9%96%8B%E7%99%BA/details?message=long%20URL%20preview&environment=testing#section",
             )?)
         };
-        match run_selector(url, profiles.clone(), DEFAULT_ESCAPE_HOLD_DURATION_TENTHS)? {
+        match run_selector(
+            url,
+            profiles.clone(),
+            DEFAULT_ESCAPE_HOLD_DURATION_TENTHS,
+            DEFAULT_OPEN_PROFILE_ON_DOUBLE_CLICK,
+        )? {
             SelectorResult::Settings { .. } => {
-                run_settings(profiles, false, DEFAULT_ESCAPE_HOLD_DURATION_TENTHS)?;
+                run_settings(
+                    profiles,
+                    false,
+                    DEFAULT_ESCAPE_HOLD_DURATION_TENTHS,
+                    DEFAULT_OPEN_PROFILE_ON_DOUBLE_CLICK,
+                )?;
             }
             result => println!("選択プレビュー: {result:?}（ブラウザ起動なし）"),
         }

@@ -11,7 +11,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     ShowWindow, WM_COPYDATA,
 };
 
-const WINDOW_CLASSES: [&str; 2] = ["HttpSelector.MainWindow", "HttpSelector.SettingsWindow"];
+const WINDOW_CLASSES: [&str; 3] = [
+    "HttpSelector.MainWindow",
+    "HttpSelector.SettingsWindow",
+    "HttpSelector.RuleWindow",
+];
 
 pub enum InstanceStatus {
     Primary(SingleInstanceGuard),

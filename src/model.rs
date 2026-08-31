@@ -103,3 +103,14 @@ pub struct DetectedProfile {
     pub detected_name: String,
     pub icon_path: Option<String>,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DefaultRule {
+    pub id: i64,
+    pub profile_id: i64,
+    pub pattern: String,
+    pub enabled: bool,
+    pub sort_order: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}

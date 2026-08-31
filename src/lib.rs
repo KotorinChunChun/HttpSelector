@@ -1,9 +1,11 @@
 pub mod app_identity;
 pub mod app_paths;
 pub mod browser;
+pub mod default_rule_ui;
 pub mod integrity;
 pub mod model;
 pub mod profile_scan;
+pub mod rules;
 pub mod settings_ui;
 pub mod single_instance;
 pub mod storage;

@@ -30,11 +30,14 @@ const ID_RESCAN: i32 = 108;
 const ID_CANCEL: i32 = 109;
 const ID_RECORD_URL_HISTORY: i32 = 110;
 const ID_ESCAPE_HOLD_DURATION: i32 = 111;
+const ID_OPEN_PROFILE_ON_DOUBLE_CLICK: i32 = 112;
+const ID_RULE_LIST: i32 = 113;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SettingsAction {
     Saved,
     Rescan,
+    RuleList,
     Cancelled,
 }
 
@@ -44,6 +47,7 @@ pub struct SettingsOutcome {
     pub pending_url: Option<crate::url_input::ValidatedUrl>,
     pub record_url_history: bool,
     pub escape_hold_duration_tenths: u32,
+    pub open_profile_on_double_click: bool,
 }
 
 struct SettingsState {
@@ -62,8 +66,11 @@ struct SettingsState {
     down: HWND,
     record_url_history: HWND,
     escape_hold_duration: HWND,
+    open_profile_on_double_click: HWND,
+    rule_list: HWND,
     record_url_history_enabled: bool,
     escape_hold_duration_tenths: u32,
+    open_profile_on_double_click_enabled: bool,
     selected: Option<usize>,
     action: SettingsAction,
     pending_url: Option<crate::url_input::ValidatedUrl>,
@@ -74,6 +81,7 @@ impl SettingsState {
         mut profiles: Vec<Profile>,
         record_url_history_enabled: bool,
         escape_hold_duration_tenths: u32,
+        open_profile_on_double_click_enabled: bool,
     ) -> Self {
         profiles.sort_by_key(|profile| (profile.sort_order, profile.id));
         let escape_hold_duration_tenths = escape_hold_duration_tenths.clamp(
@@ -96,8 +104,11 @@ impl SettingsState {
             down: null_mut(),
             record_url_history: null_mut(),
             escape_hold_duration: null_mut(),
+            open_profile_on_double_click: null_mut(),
+            rule_list: null_mut(),
             record_url_history_enabled,
             escape_hold_duration_tenths,
+            open_profile_on_double_click_enabled,
             selected: None,
             action: SettingsAction::Cancelled,
             pending_url: None,
@@ -109,6 +120,7 @@ pub fn run_settings(
     profiles: Vec<Profile>,
     record_url_history_enabled: bool,
     escape_hold_duration_tenths: u32,
+    open_profile_on_double_click_enabled: bool,
 ) -> anyhow::Result<SettingsOutcome> {
     let style = WS_OVERLAPPED
         | WS_CAPTION
@@ -124,6 +136,7 @@ pub fn run_settings(
         profiles,
         record_url_history_enabled,
         escape_hold_duration_tenths,
+        open_profile_on_double_click_enabled,
     )));
     let window = unsafe {
         CreateWindowExW(
@@ -198,6 +211,7 @@ pub fn run_settings(
         pending_url: state.pending_url,
         record_url_history: state.record_url_history_enabled,
         escape_hold_duration_tenths: state.escape_hold_duration_tenths,
+        open_profile_on_double_click: state.open_profile_on_double_click_enabled,
     })
 }
 
@@ -318,22 +332,9 @@ unsafe extern "system" fn window_proc(
                 move_selected(state, if id == ID_UP { -1 } else { 1 });
             } else if (id == ID_SAVE || id == ID_RESCAN) && notification == BN_CLICKED as u16 {
                 save_current_editor(state);
-                let Some(escape_hold_duration_tenths) =
-                    parse_escape_hold_duration(&window_text(state.escape_hold_duration))
-                else {
-                    show_error(
-                        "HttpSelector 設定",
-                        "ESC長押し終了時間は0.1秒から10.0秒まで、0.1秒刻みで指定してください。",
-                    );
-                    unsafe {
-                        SetFocus(state.escape_hold_duration);
-                    }
+                if !capture_general_settings(state) {
                     return 0;
-                };
-                state.escape_hold_duration_tenths = escape_hold_duration_tenths;
-                state.record_url_history_enabled =
-                    unsafe { SendMessageW(state.record_url_history, BM_GETCHECK, 0, 0) }
-                        == BST_CHECKED as isize;
+                }
                 normalize_sort_order(&mut state.profiles);
                 state.action = if id == ID_SAVE {
                     SettingsAction::Saved
@@ -342,6 +343,15 @@ unsafe extern "system" fn window_proc(
                 };
                 unsafe {
                     DestroyWindow(window);
+                }
+            } else if id == ID_RULE_LIST && notification == BN_CLICKED as u16 {
+                save_current_editor(state);
+                if capture_general_settings(state) {
+                    normalize_sort_order(&mut state.profiles);
+                    state.action = SettingsAction::RuleList;
+                    unsafe {
+                        DestroyWindow(window);
+                    }
                 }
             } else if id == ID_CANCEL && notification == BN_CLICKED as u16 {
                 state.action = SettingsAction::Cancelled;
@@ -485,6 +495,18 @@ fn create_controls(window: HWND, state: &mut SettingsState) {
         font,
     );
     set_check(state.record_url_history, state.record_url_history_enabled);
+    state.open_profile_on_double_click = common::control(
+        window,
+        "BUTTON",
+        "プロファイルはダブルクリックで開く（OFFでシングルクリック）",
+        ID_OPEN_PROFILE_ON_DOUBLE_CLICK,
+        WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+        font,
+    );
+    set_check(
+        state.open_profile_on_double_click,
+        state.open_profile_on_double_click_enabled,
+    );
     let history_help = common::label(
         window,
         "生のURLは保存しません。末尾・パラメータ値・フラグメントを * に置き換えたパターンを記録します。\r\n例: /folder/*?tenant=*",
@@ -495,6 +517,7 @@ fn create_controls(window: HWND, state: &mut SettingsState) {
         "再検出する場合も、編集中の内容を先に保存します。",
         font,
     );
+    state.rule_list = common::button(window, "既定ルール一覧", ID_RULE_LIST, font);
     let cancel = common::button(window, "キャンセル", ID_CANCEL, font);
     let save = common::button(window, "保存", ID_SAVE, state.theme.bold);
     let rescan = common::button(window, "保存して再スキャン", ID_RESCAN, font);
@@ -519,11 +542,13 @@ fn create_controls(window: HWND, state: &mut SettingsState) {
         state.escape_hold_duration,
         hold_duration_help,
         state.record_url_history,
+        state.open_profile_on_double_click,
         history_help,
         save_help,
         cancel,
         save,
         rescan,
+        state.rule_list,
     ];
     layout_controls(window, state);
     refresh_list(state, Some(0));
@@ -554,6 +579,29 @@ fn save_current_editor(state: &mut SettingsState) {
         profile.enabled =
             unsafe { SendMessageW(state.enabled, BM_GETCHECK, 0, 0) } == BST_CHECKED as isize;
     }
+}
+
+fn capture_general_settings(state: &mut SettingsState) -> bool {
+    let Some(escape_hold_duration_tenths) =
+        parse_escape_hold_duration(&window_text(state.escape_hold_duration))
+    else {
+        show_error(
+            "HttpSelector 設定",
+            "ESC長押し終了時間は0.1秒から10.0秒まで、0.1秒刻みで指定してください。",
+        );
+        unsafe {
+            SetFocus(state.escape_hold_duration);
+        }
+        return false;
+    };
+    state.escape_hold_duration_tenths = escape_hold_duration_tenths;
+    state.record_url_history_enabled =
+        unsafe { SendMessageW(state.record_url_history, BM_GETCHECK, 0, 0) }
+            == BST_CHECKED as isize;
+    state.open_profile_on_double_click_enabled =
+        unsafe { SendMessageW(state.open_profile_on_double_click, BM_GETCHECK, 0, 0) }
+            == BST_CHECKED as isize;
+    true
 }
 
 fn set_check(window: HWND, checked: bool) {

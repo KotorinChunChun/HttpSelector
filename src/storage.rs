@@ -1,4 +1,4 @@
-use crate::model::{BrowserType, DetectedProfile, Profile};
+use crate::model::{BrowserType, DefaultRule, DetectedProfile, Profile};
 use anyhow::Context;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::{Path, PathBuf};
@@ -11,9 +11,11 @@ pub struct Storage {
 const SETTING_INITIAL_SCAN_COMPLETED: &str = "initial_scan_completed";
 const SETTING_RECORD_URL_HISTORY: &str = "record_url_history";
 const SETTING_ESCAPE_HOLD_DURATION_TENTHS: &str = "escape_hold_duration_tenths";
+const SETTING_OPEN_PROFILE_ON_DOUBLE_CLICK: &str = "open_profile_on_double_click";
 pub const DEFAULT_ESCAPE_HOLD_DURATION_TENTHS: u32 = 10;
 pub const MIN_ESCAPE_HOLD_DURATION_TENTHS: u32 = 1;
 pub const MAX_ESCAPE_HOLD_DURATION_TENTHS: u32 = 100;
+pub const DEFAULT_OPEN_PROFILE_ON_DOUBLE_CLICK: bool = true;
 
 impl Storage {
     pub fn new(database_path: impl Into<PathBuf>) -> Self {
@@ -55,9 +57,18 @@ impl Storage {
                  Id INTEGER PRIMARY KEY AUTOINCREMENT,
                  ProfileId INTEGER NOT NULL REFERENCES Profiles(Id) ON DELETE CASCADE,
                  Url TEXT NOT NULL,
-                 OpenedAt INTEGER NOT NULL
-             );
-             PRAGMA user_version=2;",
+                  OpenedAt INTEGER NOT NULL
+              );
+              CREATE TABLE IF NOT EXISTS DefaultRules (
+                  Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ProfileId INTEGER NOT NULL REFERENCES Profiles(Id) ON DELETE CASCADE,
+                  Pattern TEXT NOT NULL,
+                  Enabled INTEGER NOT NULL DEFAULT 1,
+                  SortOrder INTEGER NOT NULL DEFAULT 0,
+                  CreatedAt INTEGER NOT NULL,
+                  UpdatedAt INTEGER NOT NULL
+              );
+             PRAGMA user_version=3;",
         )?;
         Ok(())
     }
@@ -223,6 +234,64 @@ impl Storage {
         self.set_setting(SETTING_ESCAPE_HOLD_DURATION_TENTHS, &tenths.to_string())
     }
 
+    pub fn open_profile_on_double_click(&self) -> anyhow::Result<bool> {
+        Ok(self
+            .get_setting(SETTING_OPEN_PROFILE_ON_DOUBLE_CLICK)?
+            .map(|value| value != "0")
+            .unwrap_or(DEFAULT_OPEN_PROFILE_ON_DOUBLE_CLICK))
+    }
+
+    pub fn set_open_profile_on_double_click(&self, enabled: bool) -> anyhow::Result<()> {
+        self.set_setting(
+            SETTING_OPEN_PROFILE_ON_DOUBLE_CLICK,
+            if enabled { "1" } else { "0" },
+        )
+    }
+
+    pub fn load_default_rules(&self) -> anyhow::Result<Vec<DefaultRule>> {
+        let connection = self.open()?;
+        let mut statement = connection.prepare(
+            "SELECT Id, ProfileId, Pattern, Enabled, SortOrder, CreatedAt, UpdatedAt
+             FROM DefaultRules
+             ORDER BY SortOrder, Id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(DefaultRule {
+                id: row.get(0)?,
+                profile_id: row.get(1)?,
+                pattern: row.get(2)?,
+                enabled: row.get(3)?,
+                sort_order: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .context("既定ルールを読み取れません")
+    }
+
+    pub fn replace_default_rules(&self, rules: &[DefaultRule]) -> anyhow::Result<()> {
+        let mut connection = self.open()?;
+        let transaction = connection.transaction()?;
+        transaction.execute("DELETE FROM DefaultRules", [])?;
+        for (index, rule) in rules.iter().enumerate() {
+            transaction.execute(
+                "INSERT INTO DefaultRules
+                 (ProfileId, Pattern, Enabled, SortOrder, CreatedAt, UpdatedAt)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+                params![
+                    rule.profile_id,
+                    rule.pattern,
+                    rule.enabled,
+                    index as i64,
+                    unix_timestamp(),
+                ],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn record_url_pattern(&self, profile_id: i64, pattern: &str) -> anyhow::Result<()> {
         let connection = self.open()?;
         connection.execute(
@@ -379,5 +448,42 @@ mod tests {
         assert_eq!(storage.escape_hold_duration_tenths().unwrap(), 11);
         assert!(storage.set_escape_hold_duration_tenths(0).is_err());
         assert!(storage.set_escape_hold_duration_tenths(101).is_err());
+    }
+
+    #[test]
+    fn default_rules_and_click_behavior_are_saved() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage::new(temp.path().join("test.db"));
+        storage.initialize().unwrap();
+        assert!(storage.open_profile_on_double_click().unwrap());
+        storage.set_open_profile_on_double_click(false).unwrap();
+        assert!(!storage.open_profile_on_double_click().unwrap());
+        storage
+            .sync_detected(&[DetectedProfile {
+                browser_type: BrowserType::Edge,
+                profile_id: "Default".to_owned(),
+                detected_name: "Default".to_owned(),
+                icon_path: None,
+            }])
+            .unwrap();
+        let profile_id = storage.load_all_profiles().unwrap()[0].id;
+
+        let rule = DefaultRule {
+            id: 0,
+            profile_id,
+            pattern: "https://example.com/*".to_owned(),
+            enabled: true,
+            sort_order: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        storage
+            .replace_default_rules(std::slice::from_ref(&rule))
+            .unwrap();
+        let saved = storage.load_default_rules().unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].profile_id, rule.profile_id);
+        assert_eq!(saved[0].pattern, rule.pattern);
+        assert!(saved[0].enabled);
     }
 }

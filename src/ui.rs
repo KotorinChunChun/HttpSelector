@@ -27,6 +27,7 @@ const ID_SEARCH: i32 = 100;
 const ID_SETTINGS: i32 = 101;
 const ID_CLOSE: i32 = 102;
 const ID_WINDOWS_SETTINGS: i32 = 103;
+const ID_DEFAULT_RULE: i32 = 104;
 const ID_PROFILE_BASE: i32 = 1000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -37,6 +38,10 @@ pub enum SelectorResult {
     },
     Settings {
         url: Option<ValidatedUrl>,
+    },
+    ConfigureDefaultRule {
+        profile_id: i64,
+        url: ValidatedUrl,
     },
     Cancelled,
 }
@@ -66,6 +71,8 @@ struct UiState {
     original_edit: HWND,
     preview_edit: HWND,
     escape_hold_duration_tenths: u32,
+    open_profile_on_double_click: bool,
+    focused_profile: Option<usize>,
     escape_started: Option<Instant>,
     result: SelectorResult,
 }
@@ -75,6 +82,7 @@ impl UiState {
         url: Option<ValidatedUrl>,
         profiles: Vec<Profile>,
         escape_hold_duration_tenths: u32,
+        open_profile_on_double_click: bool,
     ) -> Self {
         let filtered_indices = filtered_slots(&profiles, "");
         Self {
@@ -95,6 +103,8 @@ impl UiState {
             original_edit: null_mut(),
             preview_edit: null_mut(),
             escape_hold_duration_tenths,
+            open_profile_on_double_click,
+            focused_profile: None,
             escape_started: None,
             result: SelectorResult::Cancelled,
         }
@@ -115,8 +125,15 @@ pub fn run_selector(
     url: Option<ValidatedUrl>,
     profiles: Vec<Profile>,
     escape_hold_duration_tenths: u32,
+    open_profile_on_double_click: bool,
 ) -> anyhow::Result<SelectorResult> {
-    run_selector_window(url, profiles, escape_hold_duration_tenths, WS_EX_TOOLWINDOW)
+    run_selector_window(
+        url,
+        profiles,
+        escape_hold_duration_tenths,
+        open_profile_on_double_click,
+        WS_EX_TOOLWINDOW,
+    )
 }
 
 /// 実データを使わないプレビューでは、画面操作ツールから検出できる通常ウィンドウを使う。
@@ -125,14 +142,22 @@ pub fn run_selector_preview(
     url: Option<ValidatedUrl>,
     profiles: Vec<Profile>,
     escape_hold_duration_tenths: u32,
+    open_profile_on_double_click: bool,
 ) -> anyhow::Result<SelectorResult> {
-    run_selector_window(url, profiles, escape_hold_duration_tenths, WS_EX_APPWINDOW)
+    run_selector_window(
+        url,
+        profiles,
+        escape_hold_duration_tenths,
+        open_profile_on_double_click,
+        WS_EX_APPWINDOW,
+    )
 }
 
 fn run_selector_window(
     url: Option<ValidatedUrl>,
     profiles: Vec<Profile>,
     escape_hold_duration_tenths: u32,
+    open_profile_on_double_click: bool,
     window_style: u32,
 ) -> anyhow::Result<SelectorResult> {
     let style = WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_VSCROLL;
@@ -147,6 +172,7 @@ fn run_selector_window(
         url,
         profiles,
         escape_hold_duration_tenths,
+        open_profile_on_double_click,
     )));
     let window = unsafe {
         CreateWindowExW(
@@ -359,22 +385,51 @@ unsafe extern "system" fn window_proc(
                 }
             } else if id == ID_WINDOWS_SETTINGS && notification == BN_CLICKED as u16 {
                 open_windows_default_apps(window);
+            } else if id == ID_DEFAULT_RULE && notification == BN_CLICKED as u16 {
+                let Some(profile_index) = state.focused_profile else {
+                    show_information(
+                        "HttpSelector",
+                        "先にプロファイルをクリックしてフォーカスしてください。",
+                    );
+                    return 0;
+                };
+                let Some(url) = state.url.clone() else {
+                    show_information(
+                        "HttpSelector",
+                        "URLを受け取っているときだけ既定ルールを登録できます。",
+                    );
+                    return 0;
+                };
+                state.result = SelectorResult::ConfigureDefaultRule {
+                    profile_id: state.profiles[profile_index].id,
+                    url,
+                };
+                unsafe {
+                    DestroyWindow(window);
+                }
             } else if id == ID_CLOSE && notification == BN_CLICKED as u16 {
                 state.result = SelectorResult::Cancelled;
                 unsafe {
                     DestroyWindow(window);
                 }
-            } else if notification == BN_CLICKED as u16
+            } else if (notification == BN_CLICKED as u16 || notification == BN_DOUBLECLICKED as u16)
                 && (ID_PROFILE_BASE..ID_PROFILE_BASE + MAX_TILES as i32).contains(&id)
-                && state.url.is_some()
             {
                 if let Some(index) = state.filtered_indices[(id - ID_PROFILE_BASE) as usize] {
-                    state.result = SelectorResult::Profile {
-                        profile_id: state.profiles[index].id,
-                        url: state.url.clone(),
+                    state.focused_profile = Some(index);
+                    let should_open = if state.open_profile_on_double_click {
+                        notification == BN_DOUBLECLICKED as u16
+                    } else {
+                        notification == BN_CLICKED as u16
                     };
-                    unsafe {
-                        DestroyWindow(window);
+                    if should_open && state.url.is_some() {
+                        state.result = SelectorResult::Profile {
+                            profile_id: state.profiles[index].id,
+                            url: state.url.clone(),
+                        };
+                        unsafe {
+                            DestroyWindow(window);
+                        }
                     }
                 }
             }
@@ -483,6 +538,12 @@ fn create_controls(window: HWND, state: &mut UiState) {
     common::cue(state.search, "名前・メモ・ブラウザ名で検索");
     let settings = common::button(window, "設定", ID_SETTINGS, font);
     let windows_settings = common::button(window, "Windows設定", ID_WINDOWS_SETTINGS, font);
+    let default_rule = common::button(
+        window,
+        "このプロファイルを既定に設定",
+        ID_DEFAULT_RULE,
+        font,
+    );
     state.fixed = vec![
         title,
         subtitle,
@@ -496,6 +557,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
         state.search,
         settings,
         windows_settings,
+        default_rule,
     ];
     state.favorites_heading = common::label(window, "", state.theme.bold);
     state.normal_heading = common::label(window, "", state.theme.bold);
@@ -588,8 +650,13 @@ fn layout_controls(window: HWND, state: &mut UiState) {
 
 fn refresh_status(state: &UiState) {
     let hold_seconds = state.escape_hold_duration_tenths as f32 / 10.0;
+    let open_action = if state.open_profile_on_double_click {
+        "ダブルクリック"
+    } else {
+        "クリック"
+    };
     let status = if state.url.is_some() {
-        format!("Enterで開く / ESCは{hold_seconds:.1}秒長押しで終了")
+        format!("{open_action}で開く / Enterでも開く / ESCは{hold_seconds:.1}秒長押しで終了")
     } else {
         "URL未指定：設定でプロファイルを管理".to_owned()
     };
@@ -835,6 +902,7 @@ fn handle_navigation_message(window: HWND, pointer: *mut UiState, message: &MSG)
             unsafe {
                 SetFocus(state.profile_buttons[index]);
             }
+            state.focused_profile = Some(index);
             state
                 .page
                 .reveal(window, state.profile_buttons[index], state.theme.dpi);
@@ -858,12 +926,27 @@ fn handle_navigation_message(window: HWND, pointer: *mut UiState, message: &MSG)
                 unsafe {
                     SetFocus(state.profile_buttons[target]);
                 }
+                state.focused_profile = Some(target);
                 state
                     .page
                     .reveal(window, state.profile_buttons[target], state.theme.dpi);
             }
             return true;
         }
+    }
+    if key == VK_RETURN
+        && let Some(current) = current
+        && let Some(profile_index) = state.filtered_indices.get(current).copied().flatten()
+        && let Some(url) = state.url.clone()
+    {
+        state.result = SelectorResult::Profile {
+            profile_id: state.profiles[profile_index].id,
+            url: Some(url),
+        };
+        unsafe {
+            DestroyWindow(window);
+        }
+        return true;
     }
     if key == VK_RETURN && common::is_button(focus) {
         unsafe {

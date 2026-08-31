@@ -28,7 +28,7 @@ impl SettingsLayout {
         };
         let editor_top = if split { 112 } else { 142 + list_height + 80 };
         let general_top = (editor_top + 380).max(142 + list_height + 44) + 28;
-        let actions_top = general_top + 246;
+        let actions_top = general_top + 282;
         let half = (content - 12) / 2;
         let fixed = vec![
             Bounds::new(24, 18, content, 34),
@@ -56,15 +56,17 @@ impl SettingsLayout {
             Bounds::new(24, general_top + 60, 180, 32),
             Bounds::new(24, general_top + 96, content, 24),
             Bounds::new(24, general_top + 128, content, 28),
-            Bounds::new(24, general_top + 164, content, 68),
+            Bounds::new(24, general_top + 164, content, 28),
+            Bounds::new(24, general_top + 200, content, 68),
             Bounds::new(24, actions_top, content, 32),
             Bounds::new(24, actions_top + 44, half, 36),
             Bounds::new(24 + half + 12, actions_top + 44, half, 36),
             Bounds::new(24, actions_top + 92, content, 36),
+            Bounds::new(24, actions_top + 136, content, 36),
         ];
         Self {
             fixed,
-            height: actions_top + 152,
+            height: actions_top + 196,
         }
     }
 }
@@ -86,7 +88,7 @@ impl SelectorLayout {
         let tile_width = (available - GAP * (columns as i32 - 1)) / columns as i32;
         let favorites = slots[..5].iter().flatten().count();
         let normal = slots[5..].iter().flatten().count();
-        let favorites_heading = Bounds::new(MARGIN, 322, available, 24);
+        let favorites_heading = Bounds::new(MARGIN, 360, available, 24);
         let favorite_top = favorites_heading.bottom() + 12;
         let section_height = |count: usize| {
             if count == 0 {
@@ -130,6 +132,7 @@ impl SelectorLayout {
                 Bounds::new(76, 280, available - 268, 32),
                 Bounds::new(width - 228, 280, 96, 32),
                 Bounds::new(width - 120, 280, 96, 32),
+                Bounds::new(MARGIN, 318, available, 32),
             ],
             favorites_heading,
             normal_heading,
