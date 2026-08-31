@@ -374,7 +374,7 @@ fn create_controls(window: HWND, state: &mut RulesState) {
     let title = common::label(window, "既定ルール一覧", state.theme.title);
     let subtitle = common::label(
         window,
-        "URLに一致したルールのプロファイルを自動選択します。",
+        "一致したルールで自動起動します。保存前に対象範囲を確認してください。",
         font,
     );
     let list_label = common::label(window, "登録済みルール", state.theme.bold);
@@ -415,7 +415,7 @@ fn create_controls(window: HWND, state: &mut RulesState) {
             )
         };
     }
-    let pattern_label = common::label(window, "URLパターン", state.theme.bold);
+    let pattern_label = common::label(window, "URLパターン（保存前に確認）", state.theme.bold);
     state.pattern = common::edit(window, ID_PATTERN, false, false, font);
     let preset_label = common::label(window, "パターン作成（URL指定時のみ）", state.theme.bold);
     let site = common::button(window, "サイト全体", ID_SITE, font);
@@ -492,13 +492,14 @@ fn load_editor(state: &RulesState) {
             0,
         )
     };
+    let initial_pattern = state.source_url.as_ref().map(rules::wildcard_pattern);
     common::set_text(
         state.pattern,
         state
             .selected
             .and_then(|index| state.rules.get(index))
             .map(|rule| rule.pattern.as_str())
-            .or_else(|| state.source_url.as_ref().map(ValidatedUrl::original))
+            .or(initial_pattern.as_deref())
             .unwrap_or_default(),
     );
     unsafe { EnableWindow(state.delete, i32::from(state.selected.is_some())) };
@@ -613,6 +614,79 @@ fn list_text(rule: &DefaultRule, profiles: &[Profile]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn draft_and_preset_save_redacted_values_without_changing_existing_rules() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = crate::storage::Storage::new(temp.path().join("test.db"));
+        storage.initialize().unwrap();
+        storage
+            .sync_detected(&[crate::model::DetectedProfile {
+                browser_type: crate::model::BrowserType::Edge,
+                profile_id: "Default".into(),
+                detected_name: "検証用".into(),
+                icon_path: None,
+            }])
+            .unwrap();
+        let profiles = storage.load_all_profiles().unwrap();
+        let profile_id = profiles[0].id;
+        let legacy_pattern = "https://legacy.example.com/keep?manual=value";
+        let existing = DefaultRule {
+            id: 1,
+            profile_id,
+            pattern: legacy_pattern.into(),
+            enabled: true,
+            sort_order: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        let url = ValidatedUrl::parse("https://test-user-31:test-password-43@example.com/area/private-document-61?token=test-token-57#private-fragment-73").unwrap();
+        let expected = "https://*@example.com/area/*?token=*#*";
+        let mut state = Box::new(RulesState::new(
+            profiles,
+            vec![existing],
+            Some(RuleDraft {
+                profile_id,
+                url: url.clone(),
+            }),
+        ));
+        let window = common::HiddenTestWindow::new(
+            Some(window_proc),
+            (&mut *state as *mut RulesState).cast(),
+        );
+        assert_eq!(window_text(state.pattern), expected);
+        assert_eq!(state.source_url.as_ref(), Some(&url));
+        common::set_text(state.pattern, "手動編集中");
+        unsafe { SendMessageW(window.0, WM_COMMAND, ID_WILDCARD as usize, 0) };
+        assert_eq!(window_text(state.pattern), expected);
+        unsafe { SendMessageW(window.0, WM_COMMAND, ID_SAVE as usize, 0) };
+        assert_eq!(state.rules.len(), 2);
+        assert_eq!(state.rules[0].pattern, legacy_pattern);
+        assert_eq!(state.rules[1].pattern, expected);
+        unsafe {
+            SendMessageW(state.list, LB_SETCURSEL, 0, 0);
+            SendMessageW(
+                window.0,
+                WM_COMMAND,
+                ID_LIST as usize | ((LBN_SELCHANGE as usize) << 16),
+                0,
+            );
+        }
+        assert_eq!(window_text(state.pattern), legacy_pattern);
+        storage.replace_default_rules(&state.rules).unwrap();
+        assert_eq!(storage.load_default_rules().unwrap()[1].pattern, expected);
+        let bytes = std::fs::read(storage.database_path()).unwrap();
+        let contents = String::from_utf8_lossy(&bytes);
+        for secret in [
+            "test-user-31",
+            "test-password-43",
+            "private-document-61",
+            "test-token-57",
+            "private-fragment-73",
+        ] {
+            assert!(!contents.contains(secret));
+        }
+    }
 
     #[test]
     fn a_new_rule_can_select_a_profile_and_save_the_entered_pattern() {
