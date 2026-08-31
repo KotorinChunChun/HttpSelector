@@ -23,7 +23,6 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 const WINDOW_CLASS: &str = "HttpSelector.MainWindow";
 const MAX_TILES: usize = 25;
 const TIMER_HOLD: usize = 1;
-const ID_SEARCH: i32 = 100;
 const ID_SETTINGS: i32 = 101;
 const ID_CLOSE: i32 = 102;
 const ID_WINDOWS_SETTINGS: i32 = 103;
@@ -67,7 +66,6 @@ struct UiState {
     favorite_empty: HWND,
     normal_empty: HWND,
     status: HWND,
-    search: HWND,
     original_edit: HWND,
     preview_edit: HWND,
     escape_hold_duration_tenths: u32,
@@ -84,7 +82,7 @@ impl UiState {
         escape_hold_duration_tenths: u32,
         open_profile_on_double_click: bool,
     ) -> Self {
-        let filtered_indices = filtered_slots(&profiles, "");
+        let filtered_indices = profile_slots(&profiles);
         Self {
             url,
             profiles,
@@ -99,7 +97,6 @@ impl UiState {
             favorite_empty: null_mut(),
             normal_empty: null_mut(),
             status: null_mut(),
-            search: null_mut(),
             original_edit: null_mut(),
             preview_edit: null_mut(),
             escape_hold_duration_tenths,
@@ -274,7 +271,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_SIZE if !pointer.is_null() => {
             let state = unsafe { &mut *pointer };
-            if !state.search.is_null() {
+            if !state.fixed.is_empty() {
                 layout_controls(window, state);
             }
             0
@@ -372,11 +369,7 @@ unsafe extern "system" fn window_proc(
             let state = unsafe { &mut *pointer };
             let id = low_word(wparam) as i32;
             let notification = high_word(wparam);
-            if id == ID_SEARCH && notification == EN_CHANGE as u16 {
-                state.filtered_indices =
-                    filtered_slots(&state.profiles, &common::window_text(state.search));
-                refresh_tiles(window, state);
-            } else if id == ID_SETTINGS && notification == BN_CLICKED as u16 {
+            if id == ID_SETTINGS && notification == BN_CLICKED as u16 {
                 state.result = SelectorResult::Settings {
                     url: state.url.clone(),
                 };
@@ -533,9 +526,6 @@ fn create_controls(window: HWND, state: &mut UiState) {
     state.original_edit = common::edit(window, 0, true, true, font);
     let preview_label = common::label(window, "デコード表示（確認専用）", state.theme.bold);
     state.preview_edit = common::edit(window, 0, true, true, font);
-    let search_label = common::label(window, "検索", state.theme.bold);
-    state.search = common::edit(window, ID_SEARCH, false, false, font);
-    common::cue(state.search, "名前・メモ・ブラウザ名で検索");
     let settings = common::button(window, "設定", ID_SETTINGS, font);
     let windows_settings = common::button(window, "Windows設定", ID_WINDOWS_SETTINGS, font);
     let default_rule = common::button(
@@ -553,8 +543,6 @@ fn create_controls(window: HWND, state: &mut UiState) {
         state.original_edit,
         preview_label,
         state.preview_edit,
-        search_label,
-        state.search,
         settings,
         windows_settings,
         default_rule,
@@ -596,8 +584,16 @@ fn create_controls(window: HWND, state: &mut UiState) {
             });
     }
     refresh_url(window, state);
+    let first_profile = state.filtered_indices.iter().position(Option::is_some);
+    if let Some(index) = first_profile {
+        state.focused_profile = Some(index);
+    }
+    let focus = first_profile
+        .map(|index| state.profile_buttons[index])
+        .or_else(|| state.fixed.get(8).copied())
+        .unwrap_or(window);
     unsafe {
-        SetFocus(state.search);
+        SetFocus(focus);
     }
 }
 
@@ -695,22 +691,13 @@ fn refresh_tiles(window: HWND, state: &mut UiState) {
         state.normal_heading,
         &format!("プロファイル  {normal} / 20"),
     );
-    let searching = !common::window_text(state.search).trim().is_empty();
     common::set_text(
         state.favorite_empty,
-        if searching {
-            "一致するお気に入りはありません。"
-        } else {
-            "設定でお気に入りにすると、ここに表示されます。"
-        },
+        "設定でお気に入りにすると、ここに表示されます。",
     );
     common::set_text(
         state.normal_empty,
-        if searching {
-            "見つかりません。検索条件を変えてください。"
-        } else {
-            "表示するプロファイルはありません。設定から確認できます。"
-        },
+        "表示するプロファイルはありません。設定から確認できます。",
     );
     unsafe {
         ShowWindow(
@@ -896,19 +883,6 @@ fn handle_navigation_message(window: HWND, pointer: *mut UiState, message: &MSG)
         .profile_buttons
         .iter()
         .position(|button| *button == focus);
-    if focus == state.search && (key == VK_DOWN || key == VK_RETURN) && state.url.is_some() {
-        if let Some(index) = state.filtered_indices.iter().position(Option::is_some) {
-            // 検索欄のEnterはまず候補へ移動し、誤起動を防ぐ。
-            unsafe {
-                SetFocus(state.profile_buttons[index]);
-            }
-            state.focused_profile = Some(index);
-            state
-                .page
-                .reveal(window, state.profile_buttons[index], state.theme.dpi);
-        }
-        return true;
-    }
     if let Some(current) = current {
         let direction = match key {
             VK_LEFT => Some((-1, 0)),
@@ -957,12 +931,12 @@ fn handle_navigation_message(window: HWND, pointer: *mut UiState, message: &MSG)
     false
 }
 
-fn filtered_slots(profiles: &[Profile], query: &str) -> Vec<Option<usize>> {
+fn profile_slots(profiles: &[Profile]) -> Vec<Option<usize>> {
     let mut slots = vec![None; MAX_TILES];
     for (slot, (profile_index, _)) in profiles
         .iter()
         .enumerate()
-        .filter(|(_, profile)| profile.favorite && profile.matches(query))
+        .filter(|(_, profile)| profile.favorite)
         .take(5)
         .enumerate()
     {
@@ -971,7 +945,7 @@ fn filtered_slots(profiles: &[Profile], query: &str) -> Vec<Option<usize>> {
     for (offset, (profile_index, _)) in profiles
         .iter()
         .enumerate()
-        .filter(|(_, profile)| !profile.favorite && profile.matches(query))
+        .filter(|(_, profile)| !profile.favorite)
         .take(20)
         .enumerate()
     {
@@ -1085,7 +1059,7 @@ mod tests {
     #[test]
     fn normal_profiles_start_in_normal_area_even_with_few_favorites() {
         let profiles = vec![profile(1, true), profile(2, false), profile(3, false)];
-        let slots = filtered_slots(&profiles, "");
+        let slots = profile_slots(&profiles);
         assert_eq!(slots[0], Some(0));
         assert_eq!(slots[1], None);
         assert_eq!(slots[5], Some(1));

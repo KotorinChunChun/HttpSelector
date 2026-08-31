@@ -82,18 +82,6 @@ impl Profile {
             &self.alias_name
         }
     }
-
-    pub fn matches(&self, query: &str) -> bool {
-        let query = query.trim().to_lowercase();
-        query.is_empty()
-            || self.display_name().to_lowercase().contains(&query)
-            || self.comment.to_lowercase().contains(&query)
-            || self
-                .browser_type
-                .display_name()
-                .to_lowercase()
-                .contains(&query)
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
