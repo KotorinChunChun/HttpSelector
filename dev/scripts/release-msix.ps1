@@ -39,6 +39,10 @@ if ($Mode -eq 'Verify') {
 $makeAppx = Find-WindowsSdkTool 'makeappx.exe'
 $signTool = if ($Channel -eq 'beta') { Find-WindowsSdkTool 'signtool.exe' }
 Get-Command cargo -ErrorAction Stop | Out-Null
+$sourceCommit = (git -C $root rev-parse HEAD) -join ''
+if ($LASTEXITCODE -ne 0) { throw 'ビルド元commitを取得できません。' }
+$sourceDirty = [bool](git -C $root status --porcelain --untracked-files=no)
+if ($LASTEXITCODE -ne 0) { throw '作業ツリーの状態を取得できません。' }
 if (Test-Path -LiteralPath $context.Output) {
     if (-not $AllowRebuild) { throw '同一バージョンの出力先があります。再現確認だけの場合は -AllowRebuild、更新の場合はpackageVersionを増やしてください。' }
 }
@@ -91,8 +95,8 @@ try {
         Invoke-CheckedNative $signTool @('sign','/fd','SHA256','/sha1',$certificate.Thumbprint,'/s','My',$temporaryPackage)
     }
     $report = Test-MsixArtifact -Path $temporaryPackage -Context $context
-    $report | Add-Member -NotePropertyName SourceCommit -NotePropertyValue ((git rev-parse HEAD) -join '')
-    $report | Add-Member -NotePropertyName SourceDirty -NotePropertyValue ([bool](git status --porcelain --untracked-files=no))
+    $report | Add-Member -NotePropertyName SourceCommit -NotePropertyValue $sourceCommit
+    $report | Add-Member -NotePropertyName SourceDirty -NotePropertyValue $sourceDirty
     $report | Add-Member -NotePropertyName CargoLockSHA256 -NotePropertyValue (Get-FileHash -LiteralPath (Join-Path $root 'Cargo.lock')).Hash
     $report | Add-Member -NotePropertyName BuiltAtUtc -NotePropertyValue ([DateTime]::UtcNow.ToString('o'))
     $report | Add-Member -NotePropertyName InstallationTest -NotePropertyValue 'NotPerformed'

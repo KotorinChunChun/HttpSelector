@@ -72,9 +72,10 @@ function Get-DevelopmentCertificate {
             -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -KeyExportPolicy NonExportable `
             -NotAfter (Get-Date).AddMonths(6)
     } else { $certificate = $certificates[0] }
+    $usageOids = @($certificate.Extensions | Where-Object { $_.Oid.Value -eq '2.5.29.37' } | ForEach-Object { $_.EnhancedKeyUsages } | ForEach-Object { $_.Value })
     if ($certificate.Subject -ne $Identity.publisher -or -not $certificate.HasPrivateKey `
         -or $certificate.NotBefore -gt (Get-Date) -or $certificate.NotAfter -le (Get-Date).AddDays(7) `
-        -or '1.3.6.1.5.5.7.3.3' -notin @($certificate.EnhancedKeyUsageList.ObjectId.Value)) {
+        -or '1.3.6.1.5.5.7.3.3' -notin $usageOids) {
         throw '開発用証明書がIdentity・秘密鍵・有効期限・Code Signing要件を満たしません。自動再発行はしません。'
     }
     $certificate
@@ -107,7 +108,7 @@ function Test-MsixArtifact {
     try {
         $payload = @('HttpSelector.exe','Assets/StoreLogo.png','Assets/Square44x44Logo.png','Assets/Square150x150Logo.png','AppxManifest.xml')
         $metadata = @('AppxBlockMap.xml','[Content_Types].xml')
-        if ($Context.Channel -eq 'beta') { $metadata += 'AppxSignature.p7x' }
+        if ($Context.Channel -eq 'beta') { $metadata += @('AppxSignature.p7x','AppxMetadata/CodeIntegrity.cat') }
         $entries = @{}
         foreach ($entry in $zip.Entries) {
             $name = $entry.FullName.Replace('\','/')
@@ -120,9 +121,13 @@ function Test-MsixArtifact {
         $id = $manifest.Package.Identity
         if ($id.Name -cne $Context.Identity.name -or $id.Publisher -cne $Context.Identity.publisher -or $id.Version -ne $Context.Version -or $id.ProcessorArchitecture -ne 'x64') { throw 'MSIX Identityが設定と一致しません。' }
         if ($manifest.Package.Properties.PublisherDisplayName -cne $Context.Identity.publisherDisplayName -or $manifest.Package.Properties.DisplayName -cne $Context.Identity.displayName) { throw 'MSIXの公開表示名が設定と一致しません。' }
+        $os = $manifest.Package.Dependencies.TargetDeviceFamily
+        if ($os.Name -ne 'Windows.Desktop' -or $os.MinVersion -ne $Context.Config.minimumOSVersion -or $os.MaxVersionTested -ne $Context.Config.maximumTestedOSVersion) { throw '対象OSの設定が一致しません。' }
+        if ($manifest.Package.Resources.Resource.Language -ne 'ja-JP') { throw '対応言語の設定が一致しません。' }
         $app = $manifest.Package.Applications.Application
         if ($app.Id -ne 'App' -or $app.Executable -ne 'HttpSelector.exe' -or $app.EntryPoint -ne 'Windows.FullTrustApplication') { throw 'アプリの起動設定が不正です。' }
         $protocols = @($app.Extensions.Extension.Protocol)
+        if (@($app.Extensions.Extension).Count -ne 2 -or @($app.Extensions.Extension | Where-Object Category -NE 'windows.protocol').Count -ne 0) { throw '想定外の拡張登録があります。' }
         if (($protocols.Name | Sort-Object) -join ',' -ne 'http,https') { throw 'HTTP/HTTPSの候補登録が不正です。' }
         foreach ($protocol in $protocols) { if ($protocol.Parameters -cne '"%1"') { throw 'URL起動引数が引用されていません。' } }
         if (@($manifest.Package.Capabilities.ChildNodes).Count -ne 1 -or $manifest.Package.Capabilities.Capability.Name -ne 'runFullTrust') { throw '許可していないCapabilityがあります。' }
@@ -154,6 +159,15 @@ function Test-MsixArtifact {
             $cms.Decode([byte[]]$signatureBytes[4..($signatureBytes.Length-1)])
             $cms.CheckSignature($true)
             if ($cms.SignerInfos.Count -ne 1) { throw '署名者数が不正です。' }
+            # 署名済みダイジェスト中のBlockMap / Content Types / CodeIntegrityを実ファイルと照合する。
+            # この生成手順のSHA-256形式だけを受け入れる。ZIP本体はWindowsの署名検証も行う。
+            $signedContent = [Convert]::ToHexString($cms.ContentInfo.Content)
+            $digest = [regex]::Match($signedContent, '4150505841585043[0-9A-F]{64}41584344[0-9A-F]{64}41584354(?<types>[0-9A-F]{64})4158424D(?<blocks>[0-9A-F]{64})41584349(?<integrity>[0-9A-F]{64})$')
+            if ($cms.ContentInfo.ContentType.Value -ne '1.3.6.1.4.1.311.2.1.4' -or -not $digest.Success) { throw '未対応のMSIX署名ダイジェストです。' }
+            foreach ($pair in @(@('types','[Content_Types].xml'),@('blocks','AppxBlockMap.xml'),@('integrity','AppxMetadata/CodeIntegrity.cat'))) {
+                $actual = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([byte[]]$entries[$pair[1]]))
+                if ($actual -cne $digest.Groups[$pair[0]].Value) { throw "署名済みメタデータが不一致: $($pair[1])" }
+            }
             $signer = $cms.SignerInfos[0].Certificate
             $cerPath = Join-Path ([IO.Path]::GetDirectoryName($Path)) 'HttpSelector.Development.cer'
             $cer = [Security.Cryptography.X509Certificates.X509Certificate2]::new($cerPath)
@@ -166,8 +180,22 @@ function Test-MsixArtifact {
             if ($auth.Status -eq 'Valid') { $trust = 'Trusted' }
             elseif ($auth.Status -in @('UnknownError','NotTrusted')) {
                 # SignToolでも許容するエラーを未信頼ルートの1件だけに限定する。
-                $verifyText = (& (Find-WindowsSdkTool 'signtool.exe') verify /pa /v $Path 2>&1 | Out-String)
-                if ($LASTEXITCODE -ne 1 -or $verifyText -notmatch '(?i)0x800B0109|root certificate which is not trusted|信頼されていないルート証明書' -or $verifyText -notmatch 'Number of errors:\s+1') { throw "Windows署名検証に予期しない失敗があります: $($auth.Status)" }
+                # stdout/stderrの行が交錯すると証明書エラー文を分断するため、別々に取得する。
+                $process = [Diagnostics.Process]::new()
+                try {
+                    $process.StartInfo.FileName = Find-WindowsSdkTool 'signtool.exe'
+                    $process.StartInfo.UseShellExecute = $false
+                    $process.StartInfo.CreateNoWindow = $true
+                    $process.StartInfo.RedirectStandardOutput = $true
+                    $process.StartInfo.RedirectStandardError = $true
+                    foreach ($argument in @('verify','/pa','/v',$Path)) { $process.StartInfo.ArgumentList.Add($argument) }
+                    $process.Start() | Out-Null
+                    $stdout = $process.StandardOutput.ReadToEndAsync()
+                    $stderr = $process.StandardError.ReadToEndAsync()
+                    if (-not $process.WaitForExit(30000)) { $process.Kill(); throw 'SignToolの読取専用検証がタイムアウトしました。' }
+                    $verifyText = $stdout.GetAwaiter().GetResult() + "`n" + $stderr.GetAwaiter().GetResult()
+                    if ($process.ExitCode -ne 1 -or $verifyText -notmatch '(?i)0x800B0109|root\s+certificate which is not trusted|信頼されていないルート証明書' -or $verifyText -notmatch 'Number of errors:\s+1') { throw "Windows署名検証に予期しない失敗があります: $($auth.Status), exit=$($process.ExitCode)`n$verifyText" }
+                } finally { $process.Dispose() }
                 $trust = 'UntrustedDevelopmentCertificate'
             } else { throw "Windows署名検証に失敗しました: $($auth.Status)" }
         }

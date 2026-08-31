@@ -1,5 +1,6 @@
 #Requires -Version 7.4
 # 署名・信頼登録・インストールを行わず、誤配布防止ガードとパッケージ破損検知を検証する。
+param([string]$SignedPackagePath)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'msix-common.ps1')
 . (Join-Path $PSScriptRoot 'msix-assets.ps1')
@@ -67,4 +68,30 @@ Assert-Rejected { Test-MsixArtifact $package $context } 'ハッシュが不一�
 $zip = [IO.Compression.ZipFile]::Open($package, [IO.Compression.ZipArchiveMode]::Update)
 try { $zip.CreateEntry('private.pfx') | Out-Null } finally { $zip.Dispose() }
 Assert-Rejected { Test-MsixArtifact $package $context } '未許可'
+if ($SignedPackagePath) {
+    $signedContext = Get-MsixContext $root beta
+    $signedCopy = Join-Path $fixture 'test-signed.msix'
+    Copy-Item -LiteralPath $SignedPackagePath -Destination $signedCopy
+    Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $SignedPackagePath) 'HttpSelector.Development.cer') -Destination $fixture
+    $signedResult = Test-MsixArtifact $signedCopy $signedContext
+    $existingCertificate = Get-DevelopmentCertificate $signedContext.Identity
+    Assert-True ($existingCertificate.Thumbprint -eq $signedResult.SignerThumbprint) '永続証明書の再利用'
+    $zip = [IO.Compression.ZipFile]::Open($signedCopy, [IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $binary = $zip.GetEntry('HttpSelector.exe')
+        [byte[]]$binaryBytes = Read-ZipEntryBytes $binary
+        $binaryBytes[100] = $binaryBytes[100] -bxor 1
+        $stream = $binary.Open()
+        try { $stream.Write($binaryBytes,0,$binaryBytes.Length) } finally { $stream.Dispose() }
+        $mapEntry = $zip.GetEntry('AppxBlockMap.xml')
+        [xml]$map = [Text.Encoding]::UTF8.GetString((Read-ZipEntryBytes $mapEntry))
+        $binaryMap = $map.BlockMap.File | Where-Object Name -EQ 'HttpSelector.exe'
+        $binaryMap.Block[0].Hash = [Convert]::ToBase64String([Security.Cryptography.SHA256]::HashData([byte[]]$binaryBytes[0..65535]))
+        [byte[]]$mapBytes = [Text.UTF8Encoding]::new($false).GetBytes($map.OuterXml)
+        $stream = $mapEntry.Open()
+        try { $stream.SetLength(0); $stream.Write($mapBytes,0,$mapBytes.Length) } finally { $stream.Dispose() }
+    } finally { $zip.Dispose() }
+    # ペイロードとBlockMapを同時に改変しても署名済みメタデータとの比較で拒否する。
+    Assert-Rejected { Test-MsixArtifact $signedCopy $signedContext } '署名済みメタデータが不一致'
+}
 Write-Output "MSIXスクリプト検証: $script:checks 件成功（証明書・信頼ストア・インストール変更なし）"

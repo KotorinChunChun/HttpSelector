@@ -43,6 +43,8 @@ Buildはfmt、Rustテスト、Clippy、static CRTのreleaseビルド、画像生
 
 Verifyは既存パッケージを読むだけで、生成・修復・インストール・信頼登録をしない。構成の許可リスト、Identity、起動引数、Capability、BlockMapの全ファイルハッシュ、署名者とCERの一致、有効期限、Windowsの署名検証を確認する。信頼未登録の自己署名証明書では `UntrustedDevelopmentCertificate` と明記し、インストール可能な状態と誤認しない。署名の暗号学的検査とWindowsの信頼判定は区別する。
 
+署名時にSignToolが追加する `AppxMetadata/CodeIntegrity.cat` も検証対象とする。署名済みのBlockMap・Content Types・CodeIntegrityのダイジェストを実ファイルと照合し、実行ファイルとBlockMapを同時に改変したケースも拒否する。既存の署名済み成果物を使う追加テストは、`test-msix-scripts.ps1 -SignedPackagePath <MSIXのパス>` で実行できる（対象は変更せず、target内のコピーだけを改変する）。
+
 ## 証明書の扱い
 
 初回のbeta Buildだけ、FriendlyName `HttpSelector Development MSIX` の証明書がなければ作成する。Code Signing用途、RSA 3072 bit、SHA-256、有効期間6か月。秘密鍵はWindows証明書ストアに留め、PFXに書き出さない。以後は同じ証明書を再利用する。複数候補、期限まで7日以下、Publisher不一致、秘密鍵欠落では自動再発行せず停止する。

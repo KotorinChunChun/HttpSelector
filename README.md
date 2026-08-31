@@ -19,7 +19,7 @@ Windowsでリンクを開く前に、Edge・Chrome・Firefoxのブラウザプ�
 
 ## 開発状況
 
-v0.0.1を開発中です。現時点ではソースからのテスト実行が可能です。
+v0.0.1を開発中です。Microsoft Store向けMSIXの準備を進めており、ソースからの実行と開発用自己署名MSIXの生成が可能です。Storeでの公開はまだ行っていません。
 
 ```powershell
 cargo test
@@ -27,6 +27,8 @@ cargo run -- "https://example.com/path?a=b%20c"
 ```
 
 詳細は[利用ガイド](docs/USERS_GUIDE.md)と[開発ガイド](docs/DEVELOPERS_GUIDE.md)を参照してください。
+
+MSIXの生成・検証、開発証明書、Store用Identityの設定は[Microsoft Store公開準備](docs/MICROSOFT_STORE.md)を参照してください。開発用MSIXと正式版は設定データを分離します。
 
 ## プライバシーとセキュリティ
 

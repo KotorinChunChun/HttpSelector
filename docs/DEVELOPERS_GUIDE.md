@@ -4,8 +4,9 @@
 
 - Windows 10 / 11 x64
 - Rust 1.85以降（MSVC toolchain）
-- PowerShell 7
-- Inno Setup 6（インストーラー作成時）
+- PowerShell 7.4以降（MSIXスクリプト）
+- Windows SDK（MSIXのMakeAppx / SignTool）
+- Inno Setup 6（従来のEXEインストーラー作成時のみ）
 
 ## ビルドとテスト
 
@@ -40,6 +41,8 @@ UIの回帰テストでは、100/125/150/200%相当の幅・お気に入り0〜5
 
 ## データ保存先
 
+非MSIX版は以下に保存します。MSIX版は `%LOCALAPPDATA%\Packages\<PackageFamilyName>\LocalState` に同じ構成で保存し、開発版と正式版を分離します。自動移行は行いません。
+
 ```text
 %LOCALAPPDATA%\HttpSelector\
 ├── HttpSelector.db
@@ -59,6 +62,7 @@ UIの回帰テストでは、100/125/150/200%相当の幅・お気に入り0〜5
 - `integrity`: DPAPI鍵、HMAC署名、バックアップ、復旧
 - `browser`: App Pathsレジストリ／既知のパス解決と安全な引数起動
 - `single_instance`: 名前付きMutexとWM_COPYDATAによる後続URL転送
+- `app_identity`: OSのPackage Familyに基づくデータ保存先とIPC名の分離
 - `ui` / `settings_ui`: Win32ネイティブ画面
 
 `Settings.record_url_history` は既定値 `OFF` です。ONの場合だけ `UrlHistory` テーブルへワイルドカード化済みURLパターンを記録します。末尾パス・パラメータ値・フラグメントは `*` へ置換し、生URLは保存しません。通常起動で履歴テーブルを検索する処理はありません。
@@ -66,3 +70,11 @@ UIの回帰テストでは、100/125/150/200%相当の幅・お気に入り0〜5
 ## 関連付け方針
 
 `installer.iss`はRegisteredApplicationsとURLAssociationsへHttpSelectorを候補登録します。Windowsの既定値は変更しません。利用者がWindows設定からhttpとhttpsを選択します。
+
+MSIX版は `packaging/AppxManifest.xml.template` の `uap3:Protocol` 宣言で候補登録します。既定アプリを強制変更するレジストリ操作は行いません。
+
+## Microsoft Store向け配布
+
+[Microsoft Store公開準備](MICROSOFT_STORE.md)に、Plan/Build/Verifyのコマンド、自己署名証明書の再利用、正式Identityへの切り替え、ローカル導入と残課題を記載しています。Storeは更新を管理するため、App Installerや独自更新処理は実装しません。
+
+Store掲載準備には[掲載情報の草案](STORE_LISTING.md)と[プライバシーポリシー案](PRIVACY_POLICY.md)を使用し、未確定の公開情報や未実施の実機検証を確定済みとして扱わないでください。
