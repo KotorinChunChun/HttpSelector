@@ -22,7 +22,7 @@ $measurements = for ($run = 1; $run -le $Runs; $run++) {
     $watch.Stop()
     if ($process.MainWindowHandle -eq 0) {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-        throw "Run $run: 10秒以内に画面が表示されませんでした"
+        throw "Run ${run}: 10秒以内に画面が表示されませんでした"
     }
     $workingSetMb = [math]::Round($process.WorkingSet64 / 1MB, 1)
     Stop-Process -Id $process.Id -Force
@@ -40,4 +40,3 @@ $measurements | Format-Table -AutoSize
     StartupMaxMs = ($measurements.StartupMs | Measure-Object -Maximum).Maximum
     WorkingSetMaxMB = ($measurements.WorkingSetMB | Measure-Object -Maximum).Maximum
 } | Format-List
-

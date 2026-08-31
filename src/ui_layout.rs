@@ -177,7 +177,7 @@ impl SelectorLayout {
         let action_x = MARGIN + ((available - action_width).max(0) / 2);
         let settings_width = 160.min((available - 8).max(1) / 2);
         let windows_width = 180.min((available - settings_width - 8).max(1));
-        let header_actions = available >= settings_width + windows_width + 8 + 132 + 14;
+        let header_actions = available >= settings_width + windows_width + 16 + 132 + 14 + 160;
         let settings_x = if header_actions {
             width - MARGIN - 132 - 8 - windows_width - 8 - settings_width
         } else {
@@ -377,6 +377,10 @@ mod tests {
         let compact = SelectorLayout::new(400, &vec![None; 25]);
         assert_eq!(compact.fixed[8].y, 272);
         assert_eq!(compact.fixed[9].y, 272);
+        for width in [360, 400, 540, 600, 640, 700, 710, 800, 1120] {
+            let layout = SelectorLayout::new(width, &vec![None; 25]);
+            assert!(layout.fixed[0].width >= 160, "幅{width}でタイトルが隠れる");
+        }
     }
 
     #[test]
