@@ -16,6 +16,7 @@ use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetFocus, SetFocus, VK_DOWN, VK_ESCAPE, VK_LEFT, VK_RETURN, VK_RIGHT, VK_UP,
 };
+use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const WINDOW_CLASS: &str = "HttpSelector.MainWindow";
@@ -25,6 +26,7 @@ const TIMER_HOLD: usize = 1;
 const ID_SEARCH: i32 = 100;
 const ID_SETTINGS: i32 = 101;
 const ID_CLOSE: i32 = 102;
+const ID_WINDOWS_SETTINGS: i32 = 103;
 const ID_PROFILE_BASE: i32 = 1000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -338,6 +340,8 @@ unsafe extern "system" fn window_proc(
                 unsafe {
                     DestroyWindow(window);
                 }
+            } else if id == ID_WINDOWS_SETTINGS && notification == BN_CLICKED as u16 {
+                open_windows_default_apps(window);
             } else if id == ID_CLOSE && notification == BN_CLICKED as u16 {
                 state.result = SelectorResult::Cancelled;
                 unsafe {
@@ -456,6 +460,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
     state.search = common::edit(window, ID_SEARCH, false, false, font);
     common::cue(state.search, "名前・メモ・ブラウザ名で検索");
     let settings = common::button(window, "設定", ID_SETTINGS, font);
+    let windows_settings = common::button(window, "Windows設定", ID_WINDOWS_SETTINGS, font);
     state.fixed = vec![
         title,
         subtitle,
@@ -468,6 +473,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
         search_label,
         state.search,
         settings,
+        windows_settings,
     ];
     state.favorites_heading = common::label(window, "", state.theme.bold);
     state.normal_heading = common::label(window, "", state.theme.bold);
@@ -508,6 +514,27 @@ fn create_controls(window: HWND, state: &mut UiState) {
     refresh_url(window, state);
     unsafe {
         SetFocus(state.search);
+    }
+}
+
+fn open_windows_default_apps(window: HWND) {
+    let operation = wide("open");
+    let target = wide("ms-settings:defaultapps");
+    let result = unsafe {
+        ShellExecuteW(
+            window,
+            operation.as_ptr(),
+            target.as_ptr(),
+            null(),
+            null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if result as usize <= 32 {
+        show_error(
+            "HttpSelector",
+            "Windowsの既定アプリ設定を開けませんでした。",
+        );
     }
 }
 
