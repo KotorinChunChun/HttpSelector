@@ -74,6 +74,7 @@ struct UiState {
     normal_empty: HWND,
     favorite_up: HWND,
     favorite_down: HWND,
+    default_rule: HWND,
     status: HWND,
     original_edit: HWND,
     preview_edit: HWND,
@@ -107,6 +108,7 @@ impl UiState {
             normal_empty: null_mut(),
             favorite_up: null_mut(),
             favorite_down: null_mut(),
+            default_rule: null_mut(),
             status: null_mut(),
             original_edit: null_mut(),
             preview_edit: null_mut(),
@@ -567,7 +569,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
     state.preview_edit = common::edit(window, 0, true, true, font);
     let settings = common::button(window, "設定", ID_SETTINGS, font);
     let windows_settings = common::button(window, "Windows設定", ID_WINDOWS_SETTINGS, font);
-    let default_rule = common::button(
+    state.default_rule = common::button(
         window,
         "このプロファイルを既定に設定",
         ID_DEFAULT_RULE,
@@ -584,7 +586,6 @@ fn create_controls(window: HWND, state: &mut UiState) {
         state.preview_edit,
         settings,
         windows_settings,
-        default_rule,
     ];
     state.favorites_heading = common::label(window, "", state.theme.bold);
     state.normal_heading = common::label(window, "", state.theme.bold);
@@ -671,6 +672,7 @@ fn layout_controls(window: HWND, state: &mut UiState) {
         .place(state.favorites_heading, layout.favorites_heading);
     state.page.place(state.favorite_up, layout.favorite_up);
     state.page.place(state.favorite_down, layout.favorite_down);
+    state.page.place(state.default_rule, layout.default_rule);
     state
         .page
         .place(state.normal_heading, layout.normal_heading);

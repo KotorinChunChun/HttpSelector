@@ -76,6 +76,7 @@ pub struct SelectorLayout {
     pub favorites_heading: Bounds,
     pub favorite_up: Bounds,
     pub favorite_down: Bounds,
+    pub default_rule: Bounds,
     pub normal_heading: Bounds,
     pub favorite_empty: Bounds,
     pub normal_empty: Bounds,
@@ -99,9 +100,30 @@ impl SelectorLayout {
                 count.div_ceil(columns) as i32 * (TILE_HEIGHT + GAP) - GAP
             }
         };
-        let favorite_actions_top = favorite_top + section_height(favorites) + 8;
-        let normal_heading = Bounds::new(MARGIN, favorite_actions_top + 40, available, 24);
-        let normal_top = normal_heading.bottom() + 12;
+        let normal_heading_top = favorite_top + section_height(favorites) + 24;
+        let default_width = 220.min((available - 112).max(1));
+        let action_width = default_width + 112;
+        let actions_on_heading = available >= action_width + 160;
+        let normal_heading = if actions_on_heading {
+            Bounds::new(
+                MARGIN,
+                normal_heading_top,
+                (available - action_width - 12).max(1),
+                24,
+            )
+        } else {
+            Bounds::new(MARGIN, normal_heading_top, available, 24)
+        };
+        let actions_top = if actions_on_heading {
+            normal_heading_top - 4
+        } else {
+            normal_heading.bottom() + 8
+        };
+        let normal_top = if actions_on_heading {
+            normal_heading.bottom() + 12
+        } else {
+            actions_top + 32 + 12
+        };
         let mut tiles = vec![None; slots.len()];
         for (start, end, top) in [(0, 5, favorite_top), (5, slots.len(), normal_top)] {
             for (position, slot) in (start..end)
@@ -131,8 +153,14 @@ impl SelectorLayout {
                 Bounds::new(MARGIN, 310, available, 32),
             ],
             favorites_heading,
-            favorite_up: Bounds::new(MARGIN, favorite_actions_top, 48, 32),
-            favorite_down: Bounds::new(MARGIN + 60, favorite_actions_top, 48, 32),
+            favorite_up: Bounds::new(width - MARGIN - 48 - 8 - 48, actions_top, 48, 32),
+            favorite_down: Bounds::new(width - MARGIN - 48, actions_top, 48, 32),
+            default_rule: Bounds::new(
+                width - MARGIN - action_width,
+                actions_top,
+                default_width,
+                32,
+            ),
             normal_heading,
             favorite_empty: Bounds::new(MARGIN, favorite_top, available, 36),
             normal_empty: Bounds::new(MARGIN, normal_top, available, 36),
@@ -191,6 +219,7 @@ mod tests {
                             layout.favorites_heading,
                             layout.favorite_up,
                             layout.favorite_down,
+                            layout.default_rule,
                             layout.normal_heading,
                         ];
                         regions.extend(layout.fixed.iter().copied());
@@ -227,6 +256,28 @@ mod tests {
         assert_eq!(layout.neighbor(7, 0, -1), Some(0));
         assert_eq!(layout.neighbor(5, 0, 1), Some(8));
         assert_eq!(layout.neighbor(7, 1, 0), None);
+    }
+
+    #[test]
+    fn selector_actions_are_aligned_to_normal_heading() {
+        let slots = vec![None; 25];
+        let layout = SelectorLayout::new(1120, &slots);
+        assert_eq!(layout.default_rule.y, layout.normal_heading.y - 4);
+        assert_eq!(
+            layout.default_rule.x,
+            layout.normal_heading.x + layout.normal_heading.width + 12
+        );
+        assert_eq!(
+            layout.favorite_up.x,
+            layout.default_rule.x + layout.default_rule.width + 8
+        );
+        assert_eq!(
+            layout.favorite_down.x,
+            layout.favorite_up.x + layout.favorite_up.width + 8
+        );
+
+        let compact = SelectorLayout::new(400, &slots);
+        assert_eq!(compact.default_rule.y, compact.normal_heading.bottom() + 8);
     }
 
     #[test]
