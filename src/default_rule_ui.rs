@@ -1,6 +1,6 @@
 use crate::model::{DefaultRule, Profile};
 use crate::rules;
-use crate::ui::{show_error, show_information};
+use crate::ui::{show_error_for, show_information_for};
 use crate::ui_support::{self as common, Page, Theme, wide, window_text};
 use crate::url_input::ValidatedUrl;
 use anyhow::ensure;
@@ -117,7 +117,7 @@ pub fn run_rules(
     draft: Option<RuleDraft>,
 ) -> anyhow::Result<RulesOutcome> {
     let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN;
-    let ex_style = WS_EX_TOPMOST | WS_EX_CONTROLPARENT;
+    let ex_style = WS_EX_CONTROLPARENT;
     let bounds = common::initial_bounds(940, 620, style, ex_style);
     register_window_class()?;
     let pointer = Box::into_raw(Box::new(RulesState::new(profiles, rules, draft)));
@@ -343,14 +343,14 @@ unsafe extern "system" fn window_proc(
             } else if [ID_SITE, ID_LEADING_PATH, ID_WILDCARD].contains(&id)
                 && notification == BN_CLICKED as u16
             {
-                apply_pattern_preset(state, id);
+                apply_pattern_preset(window, state, id);
             } else if id == ID_NEW && notification == BN_CLICKED as u16 {
                 state.selected = None;
                 state.selected_profile_id = None;
                 state.source_url = None;
                 load_editor(state);
             } else if id == ID_SAVE && notification == BN_CLICKED as u16 {
-                save_rule(state);
+                save_rule(window, state);
             } else if id == ID_DELETE && notification == BN_CLICKED as u16 {
                 delete_selected_rule(state);
             } else if id == ID_CLOSE && notification == BN_CLICKED as u16 {
@@ -502,9 +502,10 @@ fn load_editor(state: &RulesState) {
     unsafe { EnableWindow(state.delete, i32::from(state.selected.is_some())) };
 }
 
-fn apply_pattern_preset(state: &mut RulesState, id: i32) {
+fn apply_pattern_preset(window: HWND, state: &mut RulesState, id: i32) {
     let Some(url) = state.source_url.as_ref() else {
-        show_information(
+        show_information_for(
+            window,
             "HttpSelector 既定ルール",
             "新規ルール登録時のURLから作成できます。",
         );
@@ -519,9 +520,10 @@ fn apply_pattern_preset(state: &mut RulesState, id: i32) {
     common::set_text(state.pattern, &pattern);
 }
 
-fn save_rule(state: &mut RulesState) {
+fn save_rule(window: HWND, state: &mut RulesState) {
     let Some(profile_id) = state.selected_profile_id else {
-        show_error(
+        show_error_for(
+            window,
             "HttpSelector 既定ルール",
             "対象プロファイルを選択してください。",
         );
@@ -529,7 +531,11 @@ fn save_rule(state: &mut RulesState) {
     };
     let pattern = window_text(state.pattern).trim().to_owned();
     if pattern.is_empty() || pattern.chars().any(char::is_control) {
-        show_error("HttpSelector 既定ルール", "URLパターンを入力してください。");
+        show_error_for(
+            window,
+            "HttpSelector 既定ルール",
+            "URLパターンを入力してください。",
+        );
         unsafe { SetFocus(state.pattern) };
         return;
     }

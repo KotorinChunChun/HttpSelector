@@ -209,6 +209,24 @@ pub fn set_text(window: HWND, value: &str) {
     }
 }
 
+/// 外部アプリや補助画面を表示する前に、対象ウィンドウの最前面属性を解除する。
+pub fn release_topmost(window: HWND) {
+    if window.is_null() {
+        return;
+    }
+    unsafe {
+        SetWindowPos(
+            window,
+            HWND_NOTOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
+}
+
 pub fn window_text(window: HWND) -> String {
     unsafe {
         let length = GetWindowTextLengthW(window);

@@ -1,6 +1,6 @@
 use crate::model::Profile;
 use crate::storage::{MAX_ESCAPE_HOLD_DURATION_TENTHS, MIN_ESCAPE_HOLD_DURATION_TENTHS};
-use crate::ui::show_error;
+use crate::ui::show_error_for;
 use crate::ui_layout::SettingsLayout;
 use crate::ui_support::{self as common, Page, Theme, wide, window_text};
 use anyhow::ensure;
@@ -129,7 +129,7 @@ pub fn run_settings(
         | WS_MAXIMIZEBOX
         | WS_CLIPCHILDREN
         | WS_VSCROLL;
-    let ex_style = WS_EX_TOPMOST | WS_EX_CONTROLPARENT;
+    let ex_style = WS_EX_CONTROLPARENT;
     let bounds = common::initial_bounds(940, 800, style, ex_style);
     register_window_class()?;
     let pointer = Box::into_raw(Box::new(SettingsState::new(
@@ -337,7 +337,7 @@ unsafe extern "system" fn window_proc(
                 move_selected(state, if id == ID_UP { -1 } else { 1 });
             } else if (id == ID_SAVE || id == ID_RESCAN) && notification == BN_CLICKED as u16 {
                 save_current_editor(state);
-                if !capture_general_settings(state) {
+                if !capture_general_settings(window, state) {
                     return 0;
                 }
                 normalize_sort_order(&mut state.profiles);
@@ -351,7 +351,7 @@ unsafe extern "system" fn window_proc(
                 }
             } else if id == ID_RULE_LIST && notification == BN_CLICKED as u16 {
                 save_current_editor(state);
-                if capture_general_settings(state) {
+                if capture_general_settings(window, state) {
                     normalize_sort_order(&mut state.profiles);
                     state.action = SettingsAction::RuleList;
                     unsafe {
@@ -586,11 +586,12 @@ fn save_current_editor(state: &mut SettingsState) {
     }
 }
 
-fn capture_general_settings(state: &mut SettingsState) -> bool {
+fn capture_general_settings(window: HWND, state: &mut SettingsState) -> bool {
     let Some(escape_hold_duration_tenths) =
         parse_escape_hold_duration(&window_text(state.escape_hold_duration))
     else {
-        show_error(
+        show_error_for(
+            window,
             "HttpSelector 設定",
             "ESC長押し終了時間は0.1秒から10.0秒まで、0.1秒刻みで指定してください。",
         );

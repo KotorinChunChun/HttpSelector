@@ -389,6 +389,7 @@ unsafe extern "system" fn window_proc(
             let id = low_word(wparam) as i32;
             let notification = high_word(wparam);
             if id == ID_SETTINGS && notification == BN_CLICKED as u16 {
+                common::release_topmost(window);
                 state.result = SelectorResult::Settings {
                     url: state.url.clone(),
                 };
@@ -399,14 +400,16 @@ unsafe extern "system" fn window_proc(
                 open_windows_default_apps(window);
             } else if id == ID_DEFAULT_RULE && notification == BN_CLICKED as u16 {
                 let Some(profile_index) = state.focused_profile else {
-                    show_information(
+                    show_information_for(
+                        window,
                         "HttpSelector",
                         "先にプロファイルをクリックしてフォーカスしてください。",
                     );
                     return 0;
                 };
                 let Some(url) = state.url.clone() else {
-                    show_information(
+                    show_information_for(
+                        window,
                         "HttpSelector",
                         "URLを受け取っているときだけ既定ルールを登録できます。",
                     );
@@ -416,6 +419,7 @@ unsafe extern "system" fn window_proc(
                     profile_id: state.profiles[profile_index].id,
                     url,
                 };
+                common::release_topmost(window);
                 unsafe {
                     DestroyWindow(window);
                 }
@@ -423,7 +427,8 @@ unsafe extern "system" fn window_proc(
                 && notification == BN_CLICKED as u16
             {
                 let Some(profile_index) = state.focused_profile else {
-                    show_information(
+                    show_information_for(
+                        window,
                         "HttpSelector",
                         "先にプロファイルをクリックしてフォーカスしてください。",
                     );
@@ -461,6 +466,7 @@ unsafe extern "system" fn window_proc(
                             profile_id: state.profiles[index].id,
                             url: state.url.clone(),
                         };
+                        common::release_topmost(window);
                         unsafe {
                             DestroyWindow(window);
                         }
@@ -536,10 +542,6 @@ unsafe extern "system" fn window_proc(
             let state = unsafe { &mut *pointer };
             if low_word(wparam) == WA_INACTIVE as u16 {
                 cancel_escape(window, state);
-            } else {
-                unsafe {
-                    SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-                }
             }
             0
         }
@@ -643,6 +645,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
 }
 
 fn open_windows_default_apps(window: HWND) {
+    common::release_topmost(window);
     let operation = wide("open");
     let target = wide("ms-settings:defaultapps");
     let result = unsafe {
@@ -656,7 +659,8 @@ fn open_windows_default_apps(window: HWND) {
         )
     };
     if result as usize <= 32 {
-        show_error(
+        show_error_for(
+            window,
             "HttpSelector",
             "Windowsの既定アプリ設定を開けませんでした。",
         );
@@ -1046,27 +1050,39 @@ fn profile_slots(profiles: &[Profile]) -> Vec<Option<usize>> {
 }
 
 pub fn show_error(title: &str, message: &str) {
+    show_error_for(null_mut(), title, message);
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub fn show_error_for(owner: HWND, title: &str, message: &str) {
+    common::release_topmost(owner);
     let title = wide(title);
     let message = wide(message);
     unsafe {
         MessageBoxW(
-            null_mut(),
+            owner,
             message.as_ptr(),
             title.as_ptr(),
-            MB_OK | MB_ICONERROR | MB_SETFOREGROUND,
+            MB_OK | MB_APPLMODAL | MB_ICONERROR | MB_SETFOREGROUND,
         );
     }
 }
 
 pub fn show_information(title: &str, message: &str) {
+    show_information_for(null_mut(), title, message);
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub fn show_information_for(owner: HWND, title: &str, message: &str) {
+    common::release_topmost(owner);
     let title = wide(title);
     let message = wide(message);
     unsafe {
         MessageBoxW(
-            null_mut(),
+            owner,
             message.as_ptr(),
             title.as_ptr(),
-            MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND,
+            MB_OK | MB_APPLMODAL | MB_ICONINFORMATION | MB_SETFOREGROUND,
         );
     }
 }
@@ -1082,7 +1098,7 @@ pub fn ask_integrity_recovery(has_valid_backup: bool) -> IntegrityRecoveryAction
                 null_mut(),
                 message.as_ptr(),
                 title.as_ptr(),
-                MB_YESNOCANCEL | MB_ICONWARNING | MB_SETFOREGROUND,
+                MB_YESNOCANCEL | MB_APPLMODAL | MB_ICONWARNING | MB_SETFOREGROUND,
             )
         } {
             IDYES => IntegrityRecoveryAction::Restore,
@@ -1098,7 +1114,7 @@ pub fn ask_integrity_recovery(has_valid_backup: bool) -> IntegrityRecoveryAction
                 null_mut(),
                 message.as_ptr(),
                 title.as_ptr(),
-                MB_OKCANCEL | MB_ICONWARNING | MB_SETFOREGROUND,
+                MB_OKCANCEL | MB_APPLMODAL | MB_ICONWARNING | MB_SETFOREGROUND,
             )
         } {
             IDOK => IntegrityRecoveryAction::Initialize,
