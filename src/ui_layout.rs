@@ -74,6 +74,8 @@ impl SettingsLayout {
 pub struct SelectorLayout {
     pub fixed: Vec<Bounds>,
     pub favorites_heading: Bounds,
+    pub favorite_up: Bounds,
+    pub favorite_down: Bounds,
     pub normal_heading: Bounds,
     pub favorite_empty: Bounds,
     pub normal_empty: Bounds,
@@ -97,12 +99,8 @@ impl SelectorLayout {
                 count.div_ceil(columns) as i32 * (TILE_HEIGHT + GAP) - GAP
             }
         };
-        let normal_heading = Bounds::new(
-            MARGIN,
-            favorite_top + section_height(favorites) + 24,
-            available,
-            24,
-        );
+        let favorite_actions_top = favorite_top + section_height(favorites) + 8;
+        let normal_heading = Bounds::new(MARGIN, favorite_actions_top + 40, available, 24);
         let normal_top = normal_heading.bottom() + 12;
         let mut tiles = vec![None; slots.len()];
         for (start, end, top) in [(0, 5, favorite_top), (5, slots.len(), normal_top)] {
@@ -133,6 +131,8 @@ impl SelectorLayout {
                 Bounds::new(MARGIN, 318, available, 32),
             ],
             favorites_heading,
+            favorite_up: Bounds::new(MARGIN, favorite_actions_top, 48, 32),
+            favorite_down: Bounds::new(MARGIN + 60, favorite_actions_top, 48, 32),
             normal_heading,
             favorite_empty: Bounds::new(MARGIN, favorite_top, available, 36),
             normal_empty: Bounds::new(MARGIN, normal_top, available, 36),
@@ -187,7 +187,12 @@ mod tests {
                         slots[..favorites].fill(Some(0));
                         slots[5..5 + normal].fill(Some(0));
                         let layout = SelectorLayout::new(width, &slots);
-                        let mut regions = vec![layout.favorites_heading, layout.normal_heading];
+                        let mut regions = vec![
+                            layout.favorites_heading,
+                            layout.favorite_up,
+                            layout.favorite_down,
+                            layout.normal_heading,
+                        ];
                         regions.extend(layout.fixed.iter().copied());
                         regions.extend(layout.tiles.iter().flatten().copied());
                         if favorites == 0 {

@@ -140,6 +140,41 @@ fn run() -> anyhow::Result<()> {
                     integrity.sign_current()?;
                 }
             }
+            SelectorResult::FavoriteChanged {
+                profile_id,
+                favorite,
+                url: current_url,
+            } => {
+                let mut profile = storage
+                    .load_all_profiles()?
+                    .into_iter()
+                    .find(|profile| profile.id == profile_id)
+                    .context("お気に入りを変更するプロファイルが見つかりません")?;
+                if favorite && !profile.favorite {
+                    let favorite_count = storage
+                        .load_all_profiles()?
+                        .into_iter()
+                        .filter(|profile| profile.favorite)
+                        .count();
+                    if favorite_count >= 5 {
+                        show_information(
+                            "HttpSelector",
+                            "お気に入りに登録できるプロファイルは5件までです。",
+                        );
+                    } else {
+                        integrity.backup_current()?;
+                        profile.favorite = true;
+                        storage.save_profile(&profile)?;
+                        integrity.sign_current()?;
+                    }
+                } else if !favorite && profile.favorite {
+                    integrity.backup_current()?;
+                    profile.favorite = false;
+                    storage.save_profile(&profile)?;
+                    integrity.sign_current()?;
+                }
+                url = current_url;
+            }
             SelectorResult::Settings { url: current_url } => {
                 url = current_url;
                 let outcome = run_settings(

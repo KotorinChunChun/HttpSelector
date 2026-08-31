@@ -27,6 +27,8 @@ const ID_SETTINGS: i32 = 101;
 const ID_CLOSE: i32 = 102;
 const ID_WINDOWS_SETTINGS: i32 = 103;
 const ID_DEFAULT_RULE: i32 = 104;
+const ID_FAVORITE_UP: i32 = 105;
+const ID_FAVORITE_DOWN: i32 = 106;
 const ID_PROFILE_BASE: i32 = 1000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,6 +43,11 @@ pub enum SelectorResult {
     ConfigureDefaultRule {
         profile_id: i64,
         url: ValidatedUrl,
+    },
+    FavoriteChanged {
+        profile_id: i64,
+        favorite: bool,
+        url: Option<ValidatedUrl>,
     },
     Cancelled,
 }
@@ -65,6 +72,8 @@ struct UiState {
     normal_heading: HWND,
     favorite_empty: HWND,
     normal_empty: HWND,
+    favorite_up: HWND,
+    favorite_down: HWND,
     status: HWND,
     original_edit: HWND,
     preview_edit: HWND,
@@ -96,6 +105,8 @@ impl UiState {
             normal_heading: null_mut(),
             favorite_empty: null_mut(),
             normal_empty: null_mut(),
+            favorite_up: null_mut(),
+            favorite_down: null_mut(),
             status: null_mut(),
             original_edit: null_mut(),
             preview_edit: null_mut(),
@@ -400,6 +411,28 @@ unsafe extern "system" fn window_proc(
                 unsafe {
                     DestroyWindow(window);
                 }
+            } else if (id == ID_FAVORITE_UP || id == ID_FAVORITE_DOWN)
+                && notification == BN_CLICKED as u16
+            {
+                let Some(profile_index) = state.focused_profile else {
+                    show_information(
+                        "HttpSelector",
+                        "先にプロファイルをクリックしてフォーカスしてください。",
+                    );
+                    return 0;
+                };
+                let favorite = id == ID_FAVORITE_UP;
+                if state.profiles[profile_index].favorite == favorite {
+                    return 0;
+                }
+                state.result = SelectorResult::FavoriteChanged {
+                    profile_id: state.profiles[profile_index].id,
+                    favorite,
+                    url: state.url.clone(),
+                };
+                unsafe {
+                    DestroyWindow(window);
+                }
             } else if id == ID_CLOSE && notification == BN_CLICKED as u16 {
                 state.result = SelectorResult::Cancelled;
                 unsafe {
@@ -551,6 +584,8 @@ fn create_controls(window: HWND, state: &mut UiState) {
     state.normal_heading = common::label(window, "", state.theme.bold);
     state.favorite_empty = common::label(window, "", font);
     state.normal_empty = common::label(window, "", font);
+    state.favorite_up = common::button(window, "↑", ID_FAVORITE_UP, font);
+    state.favorite_down = common::button(window, "↓", ID_FAVORITE_DOWN, font);
     for index in 0..MAX_TILES {
         state.profile_buttons.push(common::control(
             window,
@@ -586,7 +621,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
     refresh_url(window, state);
     let first_profile = state.filtered_indices.iter().position(Option::is_some);
     if let Some(index) = first_profile {
-        state.focused_profile = Some(index);
+        state.focused_profile = state.filtered_indices[index];
     }
     let focus = first_profile
         .map(|index| state.profile_buttons[index])
@@ -628,6 +663,8 @@ fn layout_controls(window: HWND, state: &mut UiState) {
     state
         .page
         .place(state.favorites_heading, layout.favorites_heading);
+    state.page.place(state.favorite_up, layout.favorite_up);
+    state.page.place(state.favorite_down, layout.favorite_down);
     state
         .page
         .place(state.normal_heading, layout.normal_heading);
@@ -724,10 +761,28 @@ fn refresh_tiles(window: HWND, state: &mut UiState) {
             );
         }
         unsafe {
-            EnableWindow(*button, i32::from(visible && state.url.is_some()));
+            EnableWindow(*button, i32::from(visible));
             ShowWindow(*button, if visible { SW_SHOW } else { SW_HIDE });
             InvalidateRect(*button, null(), 1);
         }
+    }
+    let focused = state
+        .focused_profile
+        .and_then(|index| state.profiles.get(index));
+    let favorite_count = state
+        .profiles
+        .iter()
+        .filter(|profile| profile.favorite)
+        .count();
+    unsafe {
+        EnableWindow(
+            state.favorite_up,
+            i32::from(focused.is_some_and(|profile| !profile.favorite) && favorite_count < 5),
+        );
+        EnableWindow(
+            state.favorite_down,
+            i32::from(focused.is_some_and(|profile| profile.favorite)),
+        );
     }
     layout_controls(window, state);
 }
@@ -900,7 +955,7 @@ fn handle_navigation_message(window: HWND, pointer: *mut UiState, message: &MSG)
                 unsafe {
                     SetFocus(state.profile_buttons[target]);
                 }
-                state.focused_profile = Some(target);
+                state.focused_profile = state.filtered_indices[target];
                 state
                     .page
                     .reveal(window, state.profile_buttons[target], state.theme.dpi);
