@@ -7,13 +7,13 @@ HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。開発用M
 |項目|beta（ローカル開発用）|stable（Store提出用）|
 |---|---|---|
 |Identity Name|HttpSelector.Development|Partner Centerの値を設定|
-|Publisher|CN=HttpSelector Development|Partner Centerの値を設定|
+|Publisher|CN=KotorinChunChun|Partner Centerの値を設定|
 |署名|開発者PCの永続自己署名証明書|未署名で生成し、Storeが署名|
-|証明書|CurrentUser\My、秘密鍵は非エクスポート可能|開発証明書は使用しない|
+|証明書|CurrentUser\My、PC共通設定の拇印で固定|開発証明書は使用しない|
 |更新|検証用途だけ。同一IdentityでPackage Versionを上げる|Microsoft Store|
 |保存先|自身のPackage FamilyのLocalState|自身のPackage FamilyのLocalState|
 
-betaは公開ベータ配布チャネルではなくローカル検証用の名称。App Installer、Web/FTPへの公開、独自アップデーターは作らない。実名を避けるため、開発用Subjectにはプロジェクト名のみを使う。Storeの公開情報は実際のPartner Center画面で確認する。匿名性を保証するものではない。
+betaは公開ベータ配布チャネルではなくローカル検証用の名称。App Installer、Web/FTPへの公開、独自アップデーターは作らない。開発用SubjectはPC共通の`CN=KotorinChunChun`を使う。Storeの公開情報は実際のPartner Center画面で確認する。匿名性を保証するものではない。
 
 MSIXの版は `packaging/release-config.json` の `packageVersion` で管理する。初期値は **1.0.1.0**。アプリ本体の `Cargo.toml` は **0.0.1** のまま。MSIXは先頭1以上、各部65535以下、4桁目0とし、更新時は前回より増やす。両者のバージョン番号を機械的に同一視しない。
 
@@ -47,8 +47,11 @@ Verifyは既存パッケージを読むだけで、生成・修復・インス�
 
 ## 証明書の扱い
 
-初回のbeta Buildだけ、FriendlyName `HttpSelector Development MSIX` の証明書がなければ作成する。Code Signing用途、RSA 3072 bit、SHA-256、有効期間6か月。秘密鍵はWindows証明書ストアに留め、PFXに書き出さない。以後は同じ証明書を再利用する。複数候補、期限まで7日以下、Publisher不一致、秘密鍵欠落では自動再発行せず停止する。
+2026-08-31の共通化後は、`%LOCALAPPDATA%\KotorinChunChun\MSIX\signing.json`で指定した既存証明書を使う。拇印は`475BABC3C3D1E871D90503D45CC5236216D85EE8`、Subjectは`CN=KotorinChunChun`、有効期限は2031-08-10。Code Signing用途、RSA 3072 bit。設定・証明書・秘密鍵の欠落、期限まで7日以下、Publisher不一致では停止する。自動発行や個別PFXへの切替はしない。
 
+秘密鍵はWindowsに保持し、PFXを出力しない。共通キーの元のエクスポート可能属性は変更しない。新規アプリ用の共通手順は`C:\develop\default\dev\templates\MSIX_SIGNING.md`を参照する。
+
+旧開発版のPublisherは`CN=HttpSelector Development`だった。共通Publisherへの切替でPackage Familyが変わるため、旧版への上書き更新・LocalStateの自動共有はできない。旧1.0.1.0の成果物と証明書は保存し、次回はpackageVersionを上げて新規インストールと設定移行を別環境で確認する。現在の設定を使ったVerifyは旧成果物のIdentity不一致を正しく検出する。今回、インストール済みアプリや設定は変更しない。
 約2か月後に署名方針が決まっても、この開発用Publisherを正式Identityへ流用しない。Store経由なら開発者による有料コード署名証明書は不要。Store外での正式配布を追加する場合は別途、証明書Subject、Identity、既存インストールからの移行を設計する。
 
 開発証明書にはタイムスタンプを付けない。期限後は再インストール等ができなくなる可能性があるため、長期配布には使わない。証明書を紛失したPCへの再作成や鍵の変更は、既存インストールとの更新互換性を確認してから行う。

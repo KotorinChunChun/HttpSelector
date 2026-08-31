@@ -7,10 +7,10 @@
   "maximumTestedOSVersion": "10.0.22631.0",
   "beta": {
     "name": "HttpSelector.Development",
-    "publisher": "CN=HttpSelector Development",
-    "publisherDisplayName": "HttpSelector Development",
+    "publisher": "CN=KotorinChunChun",
+    "publisherDisplayName": "KotorinChunChun",
     "displayName": "HttpSelector (開発用)",
-    "certificateFriendlyName": "HttpSelector Development MSIX"
+    "certificateFriendlyName": "PC共通証明書（signing.jsonの拇印で固定）"
   },
   "stable": {
     "identityFile": "packaging/store-identity.local.json"

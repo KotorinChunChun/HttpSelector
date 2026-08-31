@@ -1,5 +1,6 @@
 #Requires -Version 7.4
 Set-StrictMode -Version Latest
+Import-Module (Join-Path $PSScriptRoot 'MsixSigning.psm1') -Force
 
 function Invoke-CheckedNative {
     param([string]$File, [string[]]$Arguments)
@@ -62,25 +63,10 @@ function Write-MsixManifest {
 }
 
 function Get-DevelopmentCertificate {
-    param($Identity, [switch]$CreateIfMissing)
-    $certificates = @(Get-ChildItem Cert:/CurrentUser/My | Where-Object { $_.FriendlyName -eq $Identity.certificateFriendlyName })
-    if ($certificates.Count -gt 1) { throw '開発用証明書が複数あります。証明書の移行方針を確認してください。' }
-    if ($certificates.Count -eq 0) {
-        if (-not $CreateIfMissing) { return $null }
-        $certificate = New-SelfSignedCertificate -Type CodeSigningCert -Subject $Identity.publisher `
-            -FriendlyName $Identity.certificateFriendlyName -CertStoreLocation Cert:/CurrentUser/My `
-            -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -KeyExportPolicy NonExportable `
-            -NotAfter (Get-Date).AddMonths(6)
-    } else { $certificate = $certificates[0] }
-    $usageOids = @($certificate.Extensions | Where-Object { $_.Oid.Value -eq '2.5.29.37' } | ForEach-Object { $_.EnhancedKeyUsages } | ForEach-Object { $_.Value })
-    if ($certificate.Subject -ne $Identity.publisher -or -not $certificate.HasPrivateKey `
-        -or $certificate.NotBefore -gt (Get-Date) -or $certificate.NotAfter -le (Get-Date).AddDays(7) `
-        -or '1.3.6.1.5.5.7.3.3' -notin $usageOids) {
-        throw '開発用証明書がIdentity・秘密鍵・有効期限・Code Signing要件を満たしません。自動再発行はしません。'
-    }
-    $certificate
+    param($Identity)
+    # 共通設定の拇印に固定し、個別証明書の作成・自動選択を行わない。
+    Get-MsixSigningCertificate -Publisher $Identity.publisher
 }
-
 function Read-ZipEntryBytes {
     param($Entry)
     $stream = $Entry.Open(); $memory = [IO.MemoryStream]::new()

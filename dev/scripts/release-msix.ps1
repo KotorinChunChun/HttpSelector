@@ -15,7 +15,7 @@ if ($Mode -ne 'Plan' -and -not $Channel) { throw '変更または検証するCha
 if ($Mode -eq 'Build' -and -not $ReleaseIntentConfirmed) { throw '生成には明示的な -ReleaseIntentConfirmed が必要です。' }
 if ($Mode -ne 'Build' -and $AllowRebuild) { throw '-AllowRebuildはBuild専用です。' }
 if ($Mode -eq 'Plan' -and -not $Channel) {
-    Write-Output 'beta: 開発用Identity / 6か月有効の永続自己署名証明書 / ローカル検証用'
+    Write-Output 'beta: 開発用Identity / PC共通の永続自己署名証明書 / ローカル検証用'
     Write-Output 'stable: Partner Centerの正式Identity / 未署名MSIX / Store提出用'
     Write-Output 'Planはビルド・証明書作成・信頼登録・インストール・公開を行いません。'
     return
@@ -26,7 +26,7 @@ if ($Mode -eq 'Plan') {
     [pscustomobject]@{
         Channel=$Channel; Version=$context.Version; Name=$context.Identity.name
         Publisher=$context.Identity.publisher; DisplayName=$context.Identity.displayName
-        File=$context.FileName; Signing=$(if ($Channel -eq 'beta') {'DevelopmentSelfSigned'} else {'MicrosoftStore'})
+        File=$context.FileName; Signing=$(if ($Channel -eq 'beta') {'PC共通証明書（signing.json）'} else {'MicrosoftStore'})
         Installation='実行しない'; Publication='実行しない'; UpdateProvider='Microsoft Store（正式版）'
     }
     return
@@ -53,7 +53,7 @@ if (Test-Path -LiteralPath $channelRoot) {
         if ([version]::TryParse($directory.Name, [ref]$priorVersion) -and $priorVersion -gt [version]$context.Version) { throw '既存成果物より低いバージョンは生成しません。' }
     }
 }
-if ($Channel -eq 'beta') { Get-DevelopmentCertificate -Identity $context.Identity | Out-Null }
+if ($Channel -eq 'beta') { $preflightCertificate = Get-DevelopmentCertificate -Identity $context.Identity; $preflightCertificate.Dispose() }
 $work = Join-Path $root ('target/msix-work/' + [guid]::NewGuid().ToString('N'))
 $payload = Join-Path $work 'payload'
 [IO.Directory]::CreateDirectory($payload) | Out-Null
@@ -89,10 +89,12 @@ try {
     $temporaryPackage = Join-Path $work $context.FileName
     Invoke-CheckedNative $makeAppx @('pack','/d',$payload,'/p',$temporaryPackage,'/h','SHA256')
     if ($Channel -eq 'beta') {
-        $certificate = Get-DevelopmentCertificate -Identity $context.Identity -CreateIfMissing
-        # 秘密鍵は非エクスポート可能なCurrentUser\Myに置き、公開CERだけを出力する。
-        Export-Certificate -Cert $certificate -FilePath (Join-Path $work 'HttpSelector.Development.cer') -Type CERT | Out-Null
-        Invoke-CheckedNative $signTool @('sign','/fd','SHA256','/sha1',$certificate.Thumbprint,'/s','My',$temporaryPackage)
+        $certificate = Get-DevelopmentCertificate -Identity $context.Identity
+        try {
+            # 共通秘密鍵はCurrentUser\Myに保持し、公開CERだけを出力する。
+            Export-Certificate -Cert $certificate -FilePath (Join-Path $work 'HttpSelector.Development.cer') -Type CERT | Out-Null
+            Invoke-CheckedNative $signTool @('sign','/fd','SHA256','/sha1',$certificate.Thumbprint,'/s','My',$temporaryPackage)
+        } finally { $certificate.Dispose() }
     }
     $report = Test-MsixArtifact -Path $temporaryPackage -Context $context
     $report | Add-Member -NotePropertyName SourceCommit -NotePropertyValue $sourceCommit
