@@ -15,7 +15,7 @@ HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。開発用M
 
 betaは公開ベータ配布チャネルではなくローカル検証用の名称。App Installer、Web/FTPへの公開、独自アップデーターは作らない。開発用SubjectはPC共通の`CN=KotorinChunChun`を使う。Storeの公開情報は実際のPartner Center画面で確認する。匿名性を保証するものではない。
 
-MSIXの版は `packaging/release-config.json` の `packageVersion` で管理する。共通証明書へ移行した現在の版は **1.0.2.0**。旧開発証明書の **1.0.1.0** は保存している。アプリ本体の `Cargo.toml` は **0.0.1** のまま。MSIXは先頭1以上、各部65535以下、4桁目0とし、更新時は前回より増やす。両者のバージョン番号を機械的に同一視しない。
+MSIXの版は `packaging/release-config.json` の `packageVersion` で管理する。現在の更新版は **1.0.3.0**。共通証明書へ移行した **1.0.2.0** と同じIdentity・証明書を維持し、旧パッケージも変更していない。アプリ本体の `Cargo.toml` は **0.0.1** のまま。MSIXは先頭1以上、各部65535以下、4桁目0とし、更新時は前回より増やす。両者のバージョン番号を機械的に同一視しない。
 
 ## 前提
 
@@ -37,7 +37,7 @@ pwsh -NoProfile -File dev/scripts/release-msix.ps1 -Mode Verify -Channel beta
 
 Buildはfmt、Rustテスト、Clippy、static CRTのreleaseビルド、画像生成、MakeAppxのManifest検証、署名、内容検証を順に行う。途中の外部コマンドが失敗したら停止し、前回のrelease成果物は検証成功まで変更しない。ビルド元commit、作業ツリーの変更有無、Cargo.lockと成果物のSHA-256を検証JSONへ記録する。
 
-出力は `release/msix/beta/1.0.2.0/`。MSIX、公開CER、SHA256SUMS.txt、verification.jsonを出力する。MSIXの中身は実行ファイル、3枚の画像、ManifestとMSIXメタデータだけ。ソース、PDB、PFX、証明書の秘密鍵、開発用文書は含めない。コンパイル時にローカルパスを置換し、配布物内の代表的な個人パスも検出する。
+出力は `release/msix/beta/1.0.3.0/`。MSIX、公開CER、SHA256SUMS.txt、verification.jsonを出力する。MSIXの中身は実行ファイル、3枚の画像、ManifestとMSIXメタデータだけ。ソース、PDB、PFX、証明書の秘密鍵、開発用文書は含めない。コンパイル時にローカルパスを置換し、配布物内の代表的な個人パスも検出する。
 
 同じ版の出力先が存在する場合は停止する。再現確認で作り直す場合だけBuildへ `-AllowRebuild` を追加する。同じ版を新しい更新として配布してはいけない。日時・証明書・ツールチェーン等によりMSIXのバイト列が毎回一致する保証はない。
 
@@ -45,11 +45,19 @@ Verifyは既存パッケージを読むだけで、生成・修復・インス�
 
 署名時にSignToolが追加する `AppxMetadata/CodeIntegrity.cat` も検証対象とする。署名済みのBlockMap・Content Types・CodeIntegrityのダイジェストを実ファイルと照合し、実行ファイルとBlockMapを同時に改変したケースも拒否する。既存の署名済み成果物を使う追加テストは、`test-msix-scripts.ps1 -SignedPackagePath <MSIXのパス>` で実行できる（対象は変更せず、target内のコピーだけを改変する）。
 
+### 更新版1.0.3.0の検証結果（2026-09-01）
+
+- 最近の総合点検の修正と、承認済みの既定ルール初期値の伏せ字化を含む。URLの引継ぎ・照合、設定保存、プロファイル操作、画面配置、IPCを修正した。
+- Rustテスト46件、fmt、Clippy、static CRTのreleaseビルド、署名方針13件、MSIX検証・改変検知22件が成功した。詳細は [実装報告](../dev/v0.0.1-imp.md) を参照。
+- MSIX: `HttpSelector_1.0.3.0_x64_dev.msix`。SHA-256: `E03E07130DEB0D0145D922489F286EB3D8EC9283DF2244EFE89FCB8DEC4FD076`。生成元は `c9cdca523bb38013ec19af59c8997d2e90d78cc8`。
+- 1.0.2.0と実ManifestのIdentity Name・Publisher・Architecture、公開CERの拇印が一致し、版番号が増えていることを確認した。更新用パッケージは用意できているが、実際の上書きインストールと設定引継ぎは未検証。利用時は下記のインストール検証手順に従う。
+- インストール、信頼登録、実ユーザーデータ変更、外部公開は今回実施していない。
+
 ## 証明書の扱い
 
 2026-08-31の共通化後は、`%LOCALAPPDATA%\KotorinChunChun\MSIX\signing.json`で指定した既存証明書を使う。拇印は`475BABC3C3D1E871D90503D45CC5236216D85EE8`、Subjectは`CN=KotorinChunChun`、有効期限は2031-08-10。Code Signing用途、RSA 3072 bit。設定・証明書・秘密鍵の欠落、期限まで7日以下、Publisher不一致では停止する。自動発行や個別PFXへの切替はしない。
 
-共通証明書の1.0.2.0は、生成PCでAuthenticode `Valid`、SignTool成功、検証JSON `Trusted` を確認済み。このPCの既存の信頼登録による結果であり、未登録の別PCでも自動的に信頼されるという意味ではない。再生成時に信頼登録やインストールは行っていない。
+共通証明書の1.0.2.0と更新版1.0.3.0は、生成PCでAuthenticode `Valid`、SignTool成功、検証JSON `Trusted` を確認済み。このPCの既存の信頼登録による結果であり、未登録の別PCでも自動的に信頼されるという意味ではない。生成時に信頼登録やインストールは行っていない。
 
 秘密鍵はWindowsに保持し、PFXを出力しない。共通キーの元のエクスポート可能属性は変更しない。新規アプリ用の共通手順は`C:\develop\default\dev\templates\MSIX_SIGNING.md`を参照する。
 
