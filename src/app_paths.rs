@@ -17,7 +17,9 @@ impl AppPaths {
         let local_app_data = std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
             .context("LOCALAPPDATAが取得できません")?;
-        Ok(Self::from_data_dir(local_app_data.join("HttpSelector")))
+        Ok(Self::from_data_dir(
+            crate::app_identity::AppIdentity::current()?.data_dir(&local_app_data),
+        ))
     }
 
     pub fn from_data_dir(data_dir: impl Into<PathBuf>) -> Self {

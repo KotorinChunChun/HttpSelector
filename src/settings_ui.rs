@@ -110,7 +110,7 @@ pub fn run_settings(
     let window = unsafe {
         CreateWindowExW(
             ex_style,
-            wide(WINDOW_CLASS).as_ptr(),
+            wide(&crate::app_identity::AppIdentity::current()?.window_class(WINDOW_CLASS)).as_ptr(),
             wide("HttpSelector 設定").as_ptr(),
             style,
             bounds.x,
@@ -183,7 +183,7 @@ pub fn run_settings(
 }
 
 fn register_window_class() -> anyhow::Result<()> {
-    let class = wide(WINDOW_CLASS);
+    let class = wide(&crate::app_identity::AppIdentity::current()?.window_class(WINDOW_CLASS));
     let mut window_class: WNDCLASSEXW = unsafe { std::mem::zeroed() };
     window_class.cbSize = size_of::<WNDCLASSEXW>() as u32;
     window_class.style = CS_HREDRAW | CS_VREDRAW;

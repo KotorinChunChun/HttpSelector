@@ -1,3 +1,4 @@
+pub mod app_identity;
 pub mod app_paths;
 pub mod browser;
 pub mod integrity;

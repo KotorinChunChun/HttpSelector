@@ -11,7 +11,6 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     ShowWindow, WM_COPYDATA,
 };
 
-const MUTEX_NAME: &str = "Local\\HttpSelector.SingleInstance.v0.0.1";
 const WINDOW_CLASSES: [&str; 2] = ["HttpSelector.MainWindow", "HttpSelector.SettingsWindow"];
 
 pub enum InstanceStatus {
@@ -30,7 +29,7 @@ impl Drop for SingleInstanceGuard {
 }
 
 pub fn acquire(url: Option<&ValidatedUrl>) -> anyhow::Result<InstanceStatus> {
-    let name = wide(MUTEX_NAME);
+    let name = wide(&crate::app_identity::AppIdentity::current()?.mutex_name());
     let handle = unsafe { CreateMutexW(null(), 0, name.as_ptr()) };
     if handle.is_null() {
         anyhow::bail!(
@@ -48,12 +47,13 @@ pub fn acquire(url: Option<&ValidatedUrl>) -> anyhow::Result<InstanceStatus> {
 }
 
 fn forward_to_existing(url: Option<&ValidatedUrl>) -> anyhow::Result<()> {
+    let identity = crate::app_identity::AppIdentity::current()?;
     let mut existing = null_mut();
     for _ in 0..40 {
         existing = WINDOW_CLASSES
             .iter()
             .find_map(|class_name| {
-                let class_name = wide(class_name);
+                let class_name = wide(&identity.window_class(class_name));
                 let window = unsafe { FindWindowW(class_name.as_ptr(), null()) };
                 (!window.is_null()).then_some(window)
             })
