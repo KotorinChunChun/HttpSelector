@@ -12,6 +12,12 @@ foreach ($source in Get-ChildItem -LiteralPath $context.SiteSourceDirectory -Fil
     $relative = [IO.Path]::GetRelativePath($context.SiteSourceDirectory, $source.FullName)
     $destination = [IO.Path]::GetFullPath((Join-Path $context.SiteRoot $relative))
     if (-not $destination.StartsWith($context.SiteRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'サイト出力先の外へコピーしようとしました。' }
+    if ($relative -eq '.htaccess' -and (Test-Path -LiteralPath $destination -PathType Leaf)) {
+        $sourceText = (Get-Content -LiteralPath $source.FullName -Raw).Replace("`r`n","`n")
+        $destinationText = (Get-Content -LiteralPath $destination -Raw).Replace("`r`n","`n")
+        if ($sourceText -ne $destinationText) { throw '既存.htaccessのMIME・キャッシュ設定が公開設定と一致しません。' }
+        continue
+    }
     [IO.Directory]::CreateDirectory((Split-Path -Parent $destination)) | Out-Null
     Copy-Item -LiteralPath $source.FullName -Destination $destination -Force
 }

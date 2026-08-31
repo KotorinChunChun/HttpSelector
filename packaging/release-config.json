@@ -26,7 +26,6 @@
     "publicDownloadPage": "https://excel-chunchun.sakura.ne.jp/download/",
     "productPage": "https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html",
     "publishRelativePaths": [
-      ".htaccess",
       "index.html",
       "HttpSelector.html",
       "httpselector-certificate",
