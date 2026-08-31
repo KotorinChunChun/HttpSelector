@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="HttpSelectorのベータ版で使用する自己署名証明書をWindowsへ導入する手順です。">
+    <meta name="theme-color" content="#101820">
+    <title>ベータ版証明書の導入手順 · HttpSelector</title>
+    <link rel="stylesheet" href="../assets/styles.css">
+  </head>
+  <body>
+    <header class="site-header"><a class="brand" href="../HttpSelector.html" aria-label="HttpSelector ダウンロードページへ戻る"><img src="../assets/httpselector-icon.png" width="44" height="44" alt=""><span>HttpSelector</span></a><span class="channel-badge">CERTIFICATE GUIDE</span></header>
+    <main class="guide-main">
+      <nav class="breadcrumb" aria-label="パンくずリスト"><a href="../index.html">ダウンロードメニュー</a><span>/</span><a href="../HttpSelector.html">HttpSelector</a><span>/</span>証明書の導入手順</nav>
+      <section class="guide-hero" aria-labelledby="guide-title"><p class="eyebrow">ONE-TIME SETUP</p><h1 id="guide-title">ベータ版証明書の導入手順</h1><p class="lead">HttpSelectorのベータ版は自己署名証明書で署名されています。初回インストール前に、公開証明書をローカル コンピューターの「信頼されたユーザー」へ登録してください。</p><a class="button primary" href="../beta/HttpSelector.Development.cer" download>証明書をダウンロード</a></section>
+      <section class="notice warning" aria-labelledby="admin-title"><div class="notice-icon" aria-hidden="true">!</div><div><h2 id="admin-title">管理者権限が必要です</h2><p>App Installerは現在のユーザー用の証明書ストアを参照しません。ローカル コンピューターへ登録するため、管理者の承認が必要です。</p></div></section>
+      <section class="fingerprint" aria-labelledby="fingerprint-title"><div><p class="eyebrow">VERIFY BEFORE TRUSTING</p><h2 id="fingerprint-title">証明書の確認情報</h2></div><dl><div><dt>発行先／発行者</dt><dd><code>CN=KotorinChunChun</code></dd></div><div><dt>用途</dt><dd>コード署名</dd></div><div><dt>拇印（Thumbprint）</dt><dd><code class="hash">475B ABC3 C3D1 E871 D905 03D4 5CC5 2362 16D8 5EE8</code></dd></div></dl></section>
+      <section class="guide-steps" aria-labelledby="gui-title"><div class="section-heading"><p class="eyebrow">WINDOWS GUI</p><h2 id="gui-title">画面から登録する</h2></div><ol>
+        <li><span>1</span><div><h3>証明書を開いて確認する</h3><p><code>HttpSelector.Development.cer</code> を開き、「詳細」タブで上記の拇印と一致することを確認します。</p></div></li>
+        <li><span>2</span><div><h3>ローカル コンピューターを選ぶ</h3><p>「証明書のインストール」を選び、保存場所を<strong>ローカル コンピューター</strong>にします。</p></div></li>
+        <li><span>3</span><div><h3>信頼されたユーザーを選ぶ</h3><p>「証明書をすべて次のストアに配置する」から<strong>信頼されたユーザー</strong>（Trusted People）を選択します。</p></div></li>
+        <li><span>4</span><div><h3>登録を完了する</h3><p>発行先が <code>CN=KotorinChunChun</code> であることを再確認して完了します。</p></div></li>
+        <li><span>5</span><div><h3>App Installerを開く</h3><p><a href="../beta/HttpSelector.appinstaller" download>HttpSelector.appinstaller</a> を開き、発行元が信頼済みであることを確認してインストールします。</p></div></li>
+      </ol></section>
+      <section class="command-card" aria-labelledby="command-title"><div><p class="eyebrow">POWERSHELL</p><h2 id="command-title">コマンドで登録する場合</h2><p>PowerShellを管理者として開き、CERを保存したフォルダで実行します。</p></div><pre><code>Import-Certificate `
+  -FilePath .\HttpSelector.Development.cer `
+  -CertStoreLocation Cert:\LocalMachine\TrustedPeople</code></pre></section>
+      <section class="notice warning" aria-labelledby="security-title"><div class="notice-icon" aria-hidden="true">!</div><div><h2 id="security-title">証明書を信頼する意味</h2><p>この操作により、このコンピューターは同じ証明書で署名されたアプリを信頼します。配布元と拇印を確認できないファイルは登録しないでください。秘密鍵は配布物に含まれていません。</p></div></section>
+      <div class="guide-actions"><a class="button primary" href="../beta/HttpSelector.appinstaller" download>App Installerをダウンロード</a><a class="button secondary" href="../HttpSelector.html">HttpSelectorページへ戻る</a></div>
+    </main>
+    <footer><p>HttpSelector beta distribution · Publisher: KotorinChunChun</p></footer>
+  </body>
+</html>

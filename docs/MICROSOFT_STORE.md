@@ -1,6 +1,6 @@
 # Microsoft Store公開準備
 
-HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。開発用MSIXとStore提出用MSIXを分離し、Storeの更新機構を利用する。既存のInno Setupは従来方式として残しているが、Store提出には使わない。
+HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。正式版とは別に、excel-chunchunから自己署名MSIXをApp Installerで配布するbetaチャネルを用意する。開発用MSIXとStore提出用MSIXを分離し、既存のInno Setupは従来方式として残す。
 
 ## 現在の構成
 
@@ -10,10 +10,10 @@ HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。開発用M
 |Publisher|CN=KotorinChunChun|Partner Centerの値を設定|
 |署名|開発者PCの永続自己署名証明書|未署名で生成し、Storeが署名|
 |証明書|CurrentUser\My、PC共通設定の拇印で固定|開発証明書は使用しない|
-|更新|検証用途だけ。同一IdentityでPackage Versionを上げる|Microsoft Store|
+|更新|excel-chunchunのApp Installer。同一IdentityでPackage Versionを上げる|Microsoft Store|
 |保存先|自身のPackage FamilyのLocalState|自身のPackage FamilyのLocalState|
 
-betaは公開ベータ配布チャネルではなくローカル検証用の名称。App Installer、Web/FTPへの公開、独自アップデーターは作らない。開発用SubjectはPC共通の`CN=KotorinChunChun`を使う。Storeの公開情報は実際のPartner Center画面で確認する。匿名性を保証するものではない。
+betaは自己署名証明書を利用者が明示的に信頼して導入する公開ベータ配布チャネル。`https://excel-chunchun.sakura.ne.jp/download/` からApp Installer・MSIX・公開CERを配布する。独自アップデーターは作らず、App Installerの標準更新機構を使用する。開発用SubjectはPC共通の`CN=KotorinChunChun`を使う。Storeの公開情報は実際のPartner Center画面で確認する。匿名性を保証するものではない。
 
 MSIXの版は `packaging/release-config.json` の `packageVersion` で管理する。現在の更新版は **1.0.3.0**。共通証明書へ移行した **1.0.2.0** と同じIdentity・証明書を維持し、旧パッケージも変更していない。アプリ本体の `Cargo.toml` は **0.0.1** のまま。MSIXは先頭1以上、各部65535以下、4桁目0とし、更新時は前回より増やす。両者のバージョン番号を機械的に同一視しない。
 
@@ -39,6 +39,16 @@ Buildはfmt、Rustテスト、Clippy、static CRTのreleaseビルド、画像生
 
 出力は `release/msix/beta/1.0.3.0/`。MSIX、公開CER、SHA256SUMS.txt、verification.jsonを出力する。MSIXの中身は実行ファイル、3枚の画像、ManifestとMSIXメタデータだけ。ソース、PDB、PFX、証明書の秘密鍵、開発用文書は含めない。コンパイル時にローカルパスを置換し、配布物内の代表的な個人パスも検出する。
 
+Web公開ではガード付きエントリポイント `dev/scripts/publish-msix-release.ps1` を使う。Buildは既存MSIXを再検証してApp Installerを生成でき、Stageは検証済み成果物とHttpSelector用ページだけを `C:\develop\excel-chunchun\www\download` へ配置する。Publishは `-ReleaseIntentConfirmed -PublishConfirmed` が揃った場合だけFTPのdry-run、対象限定アップロード、公開HTTPS検証を行う。
+
+```powershell
+pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Plan -Channel beta
+pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Full -Channel beta -ReleaseIntentConfirmed -PublishConfirmed
+pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Verify -Channel beta
+```
+
+公開先は `HttpSelector.html`、`httpselector-certificate/`、`beta/HttpSelector.appinstaller`、版付きMSIX、公開CER。App Installerは起動時に毎回更新を確認し、現在の起動をブロックせず、取得した更新を次回起動時に適用する。stableはこのFTP経路に載せずMicrosoft Storeを使用する。
+
 同じ版の出力先が存在する場合は停止する。再現確認で作り直す場合だけBuildへ `-AllowRebuild` を追加する。同じ版を新しい更新として配布してはいけない。日時・証明書・ツールチェーン等によりMSIXのバイト列が毎回一致する保証はない。
 
 Verifyは既存パッケージを読むだけで、生成・修復・インストール・信頼登録をしない。構成の許可リスト、Identity、起動引数、Capability、BlockMapの全ファイルハッシュ、署名者とCERの一致、有効期限、Windowsの署名検証を確認する。信頼未登録の自己署名証明書では `UntrustedDevelopmentCertificate` と明記し、インストール可能な状態と誤認しない。署名の暗号学的検査とWindowsの信頼判定は区別する。
@@ -51,7 +61,7 @@ Verifyは既存パッケージを読むだけで、生成・修復・インス�
 - Rustテスト46件、fmt、Clippy、static CRTのreleaseビルド、署名方針13件、MSIX検証・改変検知22件が成功した。詳細は [実装報告](../dev/v0.0.1-imp.md) を参照。
 - MSIX: `HttpSelector_1.0.3.0_x64_dev.msix`。SHA-256: `E03E07130DEB0D0145D922489F286EB3D8EC9283DF2244EFE89FCB8DEC4FD076`。生成元は `c9cdca523bb38013ec19af59c8997d2e90d78cc8`。
 - 1.0.2.0と実ManifestのIdentity Name・Publisher・Architecture、公開CERの拇印が一致し、版番号が増えていることを確認した。更新用パッケージは用意できているが、実際の上書きインストールと設定引継ぎは未検証。利用時は下記のインストール検証手順に従う。
-- インストール、信頼登録、実ユーザーデータ変更、外部公開は今回実施していない。
+- この生成時点ではインストール、信頼登録、実ユーザーデータ変更、外部公開を実施していない。その後のWeb公開結果は実装報告の「excel-chunchunへのbeta公開」を参照する。
 
 ## 証明書の扱い
 

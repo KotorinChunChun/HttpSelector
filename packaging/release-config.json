@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "entryScript": "dev/scripts/release-msix.ps1",
+  "entryScript": "dev/scripts/publish-msix-release.ps1",
   "packageVersion": "1.0.3.0",
   "architecture": "x64",
   "minimumOSVersion": "10.0.17763.0",
@@ -10,9 +10,30 @@
     "publisher": "CN=KotorinChunChun",
     "publisherDisplayName": "KotorinChunChun",
     "displayName": "HttpSelector (開発用)",
-    "certificateFriendlyName": "PC共通証明書（signing.jsonの拇印で固定）"
+    "certificateFriendlyName": "PC共通証明書（signing.jsonの拇印で固定）",
+    "relativeDirectory": "beta",
+    "baseUri": "https://excel-chunchun.sakura.ne.jp/download/beta/",
+    "appInstallerFileName": "HttpSelector.appinstaller"
   },
   "stable": {
     "identityFile": "packaging/store-identity.local.json"
+  },
+  "distribution": {
+    "siteSourceDirectory": "packaging/site",
+    "websiteProjectDirectory": "C:\\develop\\excel-chunchun",
+    "siteRelativeDirectory": "www\\download",
+    "ftpUploadScript": "scripts\\upload_ftp.py",
+    "publicDownloadPage": "https://excel-chunchun.sakura.ne.jp/download/",
+    "productPage": "https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html",
+    "publishRelativePaths": [
+      ".htaccess",
+      "index.html",
+      "HttpSelector.html",
+      "httpselector-certificate",
+      "assets/httpselector-icon.png",
+      "beta/HttpSelector.appinstaller",
+      "beta/HttpSelector_1.0.3.0_x64_dev.msix",
+      "beta/HttpSelector.Development.cer"
+    ]
   }
 }
