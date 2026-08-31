@@ -464,6 +464,8 @@ unsafe extern "system" fn window_proc(
                         unsafe {
                             DestroyWindow(window);
                         }
+                    } else {
+                        refresh_selection_visuals(state);
                     }
                 }
             }
@@ -629,6 +631,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
     let first_profile = state.filtered_indices.iter().position(Option::is_some);
     if let Some(index) = first_profile {
         state.focused_profile = state.filtered_indices[index];
+        refresh_selection_visuals(state);
     }
     let focus = first_profile
         .map(|index| state.profile_buttons[index])
@@ -773,6 +776,11 @@ fn refresh_tiles(window: HWND, state: &mut UiState) {
             InvalidateRect(*button, null(), 1);
         }
     }
+    refresh_selection_visuals(state);
+    layout_controls(window, state);
+}
+
+fn refresh_selection_visuals(state: &UiState) {
     let focused = state
         .focused_profile
         .and_then(|index| state.profiles.get(index));
@@ -790,8 +798,10 @@ fn refresh_tiles(window: HWND, state: &mut UiState) {
             state.favorite_down,
             i32::from(focused.is_some_and(|profile| profile.favorite)),
         );
+        for button in &state.profile_buttons {
+            InvalidateRect(*button, null(), 1);
+        }
     }
-    layout_controls(window, state);
 }
 
 fn draw_tile(state: &UiState, item: &DRAWITEMSTRUCT) {
@@ -811,19 +821,37 @@ fn draw_tile(state: &UiState, item: &DRAWITEMSTRUCT) {
     let disabled = item.itemState & ODS_DISABLED != 0;
     let focused = item.itemState & ODS_FOCUS != 0;
     let pressed = item.itemState & ODS_SELECTED != 0;
+    let selected = state.focused_profile == Some(index);
     let dc = item.hDC;
     let rect = item.rcItem;
     unsafe {
-        let surface = CreateSolidBrush(if pressed { 0x00F5E8D8 } else { 0x00FFFFFF });
+        let surface = CreateSolidBrush(if selected {
+            0x00F3DFC3
+        } else if pressed {
+            0x00F5E8D8
+        } else {
+            0x00FFFFFF
+        });
         FillRect(dc, &rect, surface);
         DeleteObject(surface);
-        let border = CreateSolidBrush(if focused {
+        let border = CreateSolidBrush(if focused || selected {
             common::ACCENT
         } else {
             common::BORDER
         });
         FrameRect(dc, &rect, border);
         DeleteObject(border);
+        if selected {
+            let marker = CreateSolidBrush(common::ACCENT);
+            let marker_rect = RECT {
+                left: rect.left,
+                top: rect.top,
+                right: rect.left + px(4),
+                bottom: rect.bottom,
+            };
+            FillRect(dc, &marker_rect, marker);
+            DeleteObject(marker);
+        }
         let text_left = rect.left + px(56);
         let text_right = rect.right - px(12);
         let text_rect = |y, height| RECT {
@@ -963,6 +991,7 @@ fn handle_navigation_message(window: HWND, pointer: *mut UiState, message: &MSG)
                     SetFocus(state.profile_buttons[target]);
                 }
                 state.focused_profile = state.filtered_indices[target];
+                refresh_selection_visuals(state);
                 state
                     .page
                     .reveal(window, state.profile_buttons[target], state.theme.dpi);

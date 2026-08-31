@@ -103,12 +103,12 @@ impl SelectorLayout {
         let normal_heading_top = favorite_top + section_height(favorites) + 24;
         let default_width = 220.min((available - 112).max(1));
         let action_width = default_width + 112;
-        let actions_on_heading = available >= action_width + 160;
+        let actions_on_heading = available >= action_width + 340;
         let normal_heading = if actions_on_heading {
             Bounds::new(
                 MARGIN,
                 normal_heading_top,
-                (available - action_width - 12).max(1),
+                ((available - action_width) / 2 - 12).max(1),
                 24,
             )
         } else {
@@ -124,6 +124,7 @@ impl SelectorLayout {
         } else {
             actions_top + 32 + 12
         };
+        let action_x = MARGIN + ((available - action_width).max(0) / 2);
         let settings_width = 160.min((available - 8).max(1) / 2);
         let windows_width = 180.min((available - settings_width - 8).max(1));
         let header_actions = available >= settings_width + windows_width + 8 + 132 + 14;
@@ -172,14 +173,9 @@ impl SelectorLayout {
                 Bounds::new(MARGIN, 310, available, 32),
             ],
             favorites_heading,
-            favorite_up: Bounds::new(width - MARGIN - 48 - 8 - 48, actions_top, 48, 32),
-            favorite_down: Bounds::new(width - MARGIN - 48, actions_top, 48, 32),
-            default_rule: Bounds::new(
-                width - MARGIN - action_width,
-                actions_top,
-                default_width,
-                32,
-            ),
+            favorite_up: Bounds::new(action_x + default_width + 8, actions_top, 48, 32),
+            favorite_down: Bounds::new(action_x + default_width + 8 + 48 + 8, actions_top, 48, 32),
+            default_rule: Bounds::new(action_x, actions_top, default_width, 32),
             normal_heading,
             favorite_empty: Bounds::new(MARGIN, favorite_top, available, 36),
             normal_empty: Bounds::new(MARGIN, normal_top, available, 36),
@@ -282,9 +278,10 @@ mod tests {
         let slots = vec![None; 25];
         let layout = SelectorLayout::new(1120, &slots);
         assert_eq!(layout.default_rule.y, layout.normal_heading.y - 4);
+        assert!(layout.default_rule.x > layout.normal_heading.x);
         assert_eq!(
-            layout.default_rule.x,
-            layout.normal_heading.x + layout.normal_heading.width + 12
+            layout.default_rule.x + layout.default_rule.width + 8,
+            layout.favorite_up.x
         );
         assert_eq!(
             layout.favorite_up.x,
