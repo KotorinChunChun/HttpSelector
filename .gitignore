@@ -9,3 +9,7 @@
 .idea/
 .vscode/
 Thumbs.db
+*.pfx
+*.p12
+*.pem
+/packaging/store-identity.local.json
