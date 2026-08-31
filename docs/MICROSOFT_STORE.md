@@ -43,11 +43,13 @@ Web公開ではガード付きエントリポイント `dev/scripts/publish-msix
 
 ```powershell
 pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Plan -Channel beta
-pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Full -Channel beta -ReleaseIntentConfirmed -PublishConfirmed
+pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Full -Channel beta -ReleaseIntentConfirmed -PublishConfirmed -PythonPath <Python実行ファイル>
 pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Verify -Channel beta
 ```
 
 公開先は `HttpSelector.html`、`httpselector-certificate/`、`beta/HttpSelector.appinstaller`、版付きMSIX、公開CER。App Installerは起動時に毎回更新を確認し、現在の起動をブロックせず、取得した更新を次回起動時に適用する。stableはこのFTP経路に載せずMicrosoft Storeを使用する。
+
+2026-09-01に1.0.3.0を公開し、ダウンロードメニュー・製品ページ・証明書案内・アイコン・App Installer・MSIX・CERのHTTPS応答を確認した。MSIXとCERの公開ハッシュはステージ済み成果物と一致した。公開ページは `https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html`。
 
 同じ版の出力先が存在する場合は停止する。再現確認で作り直す場合だけBuildへ `-AllowRebuild` を追加する。同じ版を新しい更新として配布してはいけない。日時・証明書・ツールチェーン等によりMSIXのバイト列が毎回一致する保証はない。
 

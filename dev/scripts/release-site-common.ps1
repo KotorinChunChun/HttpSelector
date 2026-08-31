@@ -21,6 +21,7 @@ function Get-DistributionContext {
     $baseUri = [uri]$config.beta.baseUri
     if (-not $baseUri.IsAbsoluteUri -or $baseUri.Scheme -ne 'https') { throw 'beta.baseUriは絶対HTTPS URLにしてください。' }
     $normalizedBaseUri = $baseUri.AbsoluteUri.TrimEnd('/') + '/'
+    $publicDownloadBaseUri = ([uri]$distribution.publicDownloadPage).AbsoluteUri.TrimEnd('/') + '/'
     $websiteRoot = [IO.Path]::GetFullPath($distribution.websiteProjectDirectory).TrimEnd('\','/')
     $siteRoot = [IO.Path]::GetFullPath((Join-Path $websiteRoot $distribution.siteRelativeDirectory))
     if (-not $siteRoot.StartsWith($websiteRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'サイト出力先がWebsiteプロジェクト外です。' }
@@ -44,6 +45,8 @@ function Get-DistributionContext {
         AppInstallerUri = $normalizedBaseUri + $config.beta.appInstallerFileName
         ProductPageUri = [uri]$distribution.productPage
         PublicDownloadPageUri = [uri]$distribution.publicDownloadPage
+        CertificateGuideUri = [uri]($publicDownloadBaseUri + 'httpselector-certificate/')
+        IconUri = [uri]($publicDownloadBaseUri + 'assets/httpselector-icon.png')
     }
 }
 

@@ -9,7 +9,7 @@ $local = Assert-DistributionArtifacts -Context $context -Staged
 $client = [Net.Http.HttpClient]::new()
 try {
     foreach ($check in @(
-        @($context.PublicDownloadPageUri,'text/html'), @($context.ProductPageUri,'text/html'),
+        @($context.PublicDownloadPageUri,'text/html'), @($context.ProductPageUri,'text/html'), @($context.CertificateGuideUri,'text/html'), @($context.IconUri,'image/png'),
         @([uri]$context.AppInstallerUri,'application/appinstaller'), @([uri]$context.PackageUri,'application/msix'), @([uri]$context.CertificateUri,'application/pkix-cert')
     )) {
         $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Head,[uri]$check[0])
@@ -27,5 +27,9 @@ try {
     if (-not $rootNode -or -not $main -or $rootNode.GetAttribute('Uri') -ne $context.AppInstallerUri -or $main.GetAttribute('Uri') -ne $context.PackageUri -or $main.GetAttribute('Version') -ne $context.Msix.Version) { throw '公開App Installerの参照情報が不正です。' }
     $page = $client.GetStringAsync($context.ProductPageUri).GetAwaiter().GetResult()
     if (-not $page.Contains($context.Msix.Version) -or -not $page.Contains($context.Msix.FileName) -or -not $page.Contains($context.Config.beta.appInstallerFileName)) { throw '公開製品ページに現行版へのリンクがありません。' }
+    $menu = $client.GetStringAsync($context.PublicDownloadPageUri).GetAwaiter().GetResult()
+    if (-not $menu.Contains('HttpSelector.html') -or -not $menu.Contains('httpselector-icon.png')) { throw '公開ダウンロードメニューにHttpSelectorがありません。' }
+    $guide = $client.GetStringAsync($context.CertificateGuideUri).GetAwaiter().GetResult()
+    if (-not $guide.Contains('475B ABC3 C3D1 E871 D905 03D4 5CC5 2362 16D8 5EE8') -or -not $guide.Contains('HttpSelector.Development.cer') -or -not $guide.Contains('HttpSelector.appinstaller')) { throw '公開証明書ページの確認情報またはリンクが不正です。' }
     Write-Output "公開後検証に成功しました。MSIX SHA-256: $packageHash"
 } finally { $client.Dispose() }

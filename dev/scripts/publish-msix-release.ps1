@@ -30,10 +30,12 @@ function Invoke-Stage([string]$SelectedChannel) {
     & (Join-Path $PSScriptRoot 'verify-staged-msix-release.ps1') -Channel $SelectedChannel
 }
 function Resolve-Python {
-    if ($PythonPath) { $resolved = [IO.Path]::GetFullPath($PythonPath); if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) { throw "Pythonがありません: $resolved" }; return $resolved }
     $command = Get-Command python -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $command) { throw 'FTP公開に使用するPythonが見つかりません。' }
-    $command.Source
+    $candidate = if ($PythonPath) { [IO.Path]::GetFullPath($PythonPath) } elseif ($command) { $command.Source } else { $null }
+    if (-not $candidate -or -not (Test-Path -LiteralPath $candidate -PathType Leaf)) { throw 'FTP公開に使用するPythonの実体が見つかりません。-PythonPathで実行ファイルを指定してください。' }
+    & $candidate --version 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'PATH上のpythonは実行できません。-PythonPathで実体のあるPythonを指定してください。' }
+    $candidate
 }
 function Invoke-Publish([string]$SelectedChannel) {
     $context = Get-DistributionContext -Root $root -Channel $SelectedChannel
