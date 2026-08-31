@@ -43,6 +43,7 @@ pub enum RulesAction {
 pub struct RulesOutcome {
     pub action: RulesAction,
     pub rules: Vec<DefaultRule>,
+    pub pending_url: Option<ValidatedUrl>,
 }
 
 struct RulesState {
@@ -51,6 +52,7 @@ struct RulesState {
     selected: Option<usize>,
     selected_profile_id: Option<i64>,
     source_url: Option<ValidatedUrl>,
+    pending_url: Option<ValidatedUrl>,
     dirty: bool,
     theme: Theme,
     page: Page,
@@ -63,6 +65,18 @@ struct RulesState {
 }
 
 impl RulesState {
+    fn receive_url(&mut self, url: ValidatedUrl) {
+        self.pending_url = Some(url);
+    }
+
+    fn into_outcome(self) -> RulesOutcome {
+        RulesOutcome {
+            action: self.action,
+            rules: self.rules,
+            pending_url: self.pending_url,
+        }
+    }
+
     fn new(
         mut profiles: Vec<Profile>,
         mut rules: Vec<DefaultRule>,
@@ -83,6 +97,7 @@ impl RulesState {
             selected,
             selected_profile_id,
             source_url,
+            pending_url: None,
             dirty: false,
             theme: Theme::new(96),
             page: Page::default(),
@@ -170,10 +185,7 @@ pub fn run_rules(
         }
     }
     let state = unsafe { Box::from_raw(pointer) };
-    Ok(RulesOutcome {
-        action: state.action,
-        rules: state.rules,
-    })
+    Ok(state.into_outcome())
 }
 
 fn register_window_class() -> anyhow::Result<()> {
@@ -308,10 +320,8 @@ unsafe extern "system" fn window_proc(
                 return 0;
             };
             let state = unsafe { &mut *pointer };
-            state.source_url = Some(url.clone());
-            if state.selected_profile_id.is_some() {
-                common::set_text(state.pattern, url.original());
-            }
+            // 外部から来たURLは編集内容と分離し、画面を閉じた後に選択処理へ戻す。
+            state.receive_url(url);
             unsafe {
                 ShowWindow(window, SW_RESTORE);
                 SetForegroundWindow(window);
@@ -590,4 +600,32 @@ fn list_text(rule: &DefaultRule, profiles: &[Profile]) -> String {
         .map(Profile::display_name)
         .unwrap_or("（削除されたプロファイル）");
     format!("{} → {}", profile, rule.pattern)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn incoming_url_survives_close_without_replacing_the_rule_draft() {
+        let original = ValidatedUrl::parse("https://example.com/original").unwrap();
+        let incoming = ValidatedUrl::parse("https://example.net/incoming").unwrap();
+        for action in [RulesAction::Saved, RulesAction::Cancelled] {
+            let mut state = RulesState::new(
+                vec![],
+                vec![],
+                Some(RuleDraft {
+                    profile_id: 7,
+                    url: original.clone(),
+                }),
+            );
+            state.action = action;
+            state.receive_url(incoming.clone());
+            assert_eq!(state.source_url.as_ref(), Some(&original));
+            assert_eq!(state.selected_profile_id, Some(7));
+            let outcome = state.into_outcome();
+            assert_eq!(outcome.pending_url, Some(incoming.clone()));
+            assert_eq!(outcome.action, action);
+        }
+    }
 }

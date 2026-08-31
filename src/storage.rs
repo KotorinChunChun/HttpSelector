@@ -29,11 +29,13 @@ impl Storage {
     }
 
     pub fn initialize(&self) -> anyhow::Result<()> {
-        let connection = self.open()?;
-        connection.execute_batch(
-            "PRAGMA journal_mode=DELETE;
-             PRAGMA foreign_keys=ON;
-             CREATE TABLE IF NOT EXISTS Profiles (
+        let mut connection = self.open()?;
+        let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        anyhow::ensure!(version <= 3, "新しい版の設定DBはこの版では開けません");
+        connection.pragma_update(None, "journal_mode", "DELETE")?;
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE IF NOT EXISTS Profiles (
                  Id INTEGER PRIMARY KEY AUTOINCREMENT,
                  BrowserType INTEGER NOT NULL,
                  ProfileId TEXT NOT NULL,
@@ -70,7 +72,14 @@ impl Storage {
               );
              PRAGMA user_version=3;",
         )?;
+        transaction.commit()?;
         Ok(())
+    }
+
+    pub fn schema_needs_migration(&self) -> anyhow::Result<bool> {
+        let connection = self.open()?;
+        let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        Ok(version < 3)
     }
 
     pub fn profile_count(&self) -> anyhow::Result<i64> {
@@ -321,8 +330,11 @@ impl Storage {
         if let Some(parent) = self.database_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        Connection::open(&self.database_path)
-            .with_context(|| format!("DBを開けません: {}", self.database_path.display()))
+        let connection = Connection::open(&self.database_path)
+            .with_context(|| format!("DBを開けません: {}", self.database_path.display()))?;
+        // foreign_keys はDBファイルではなく接続ごとの設定。
+        connection.pragma_update(None, "foreign_keys", true)?;
+        Ok(connection)
     }
 }
 
@@ -485,5 +497,46 @@ mod tests {
         assert_eq!(saved[0].profile_id, rule.profile_id);
         assert_eq!(saved[0].pattern, rule.pattern);
         assert!(saved[0].enabled);
+
+        let mut invalid = rule.clone();
+        invalid.profile_id = profile_id + 1000;
+        assert!(storage.replace_default_rules(&[rule, invalid]).is_err());
+        assert_eq!(storage.load_default_rules().unwrap(), saved);
+    }
+
+    #[test]
+    fn migration_preserves_profiles_preferences_and_is_idempotent() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage::new(temp.path().join("test.db"));
+        storage.initialize().unwrap();
+        storage.set_escape_hold_duration_tenths(27).unwrap();
+        storage.set_open_profile_on_double_click(false).unwrap();
+        let connection = storage.open().unwrap();
+        connection
+            .execute_batch("DROP TABLE DefaultRules; PRAGMA user_version=2;")
+            .unwrap();
+        drop(connection);
+        assert!(storage.schema_needs_migration().unwrap());
+        storage.initialize().unwrap();
+        storage.initialize().unwrap();
+        assert!(!storage.schema_needs_migration().unwrap());
+        assert_eq!(storage.escape_hold_duration_tenths().unwrap(), 27);
+        assert!(!storage.open_profile_on_double_click().unwrap());
+        assert!(storage.load_default_rules().unwrap().is_empty());
+    }
+
+    #[test]
+    fn newer_schema_is_rejected_without_modifying_the_database() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage::new(temp.path().join("test.db"));
+        storage.initialize().unwrap();
+        storage
+            .open()
+            .unwrap()
+            .pragma_update(None, "user_version", 4)
+            .unwrap();
+        let before = std::fs::read(storage.database_path()).unwrap();
+        assert!(storage.initialize().is_err());
+        assert_eq!(std::fs::read(storage.database_path()).unwrap(), before);
     }
 }

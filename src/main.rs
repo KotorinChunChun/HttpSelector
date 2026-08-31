@@ -49,6 +49,9 @@ fn run() -> anyhow::Result<()> {
         }
     }
     let storage = Storage::new(&paths.database);
+    if integrity.verify_current()? == IntegrityStatus::Valid && storage.schema_needs_migration()? {
+        integrity.backup_current()?;
+    }
     storage.initialize()?;
     // 既存DBへのテーブル追加を含め、スキーマ確定後の内容を署名する。
     integrity.sign_current()?;
@@ -86,15 +89,24 @@ fn run() -> anyhow::Result<()> {
                             .cloned()
                     });
                 if let Some(profile) = matching_profile {
-                    http_selector::browser::ensure_profile_is_launchable(&profile)?;
-                    http_selector::browser::launch(&profile, url)?;
-                    if storage.record_url_history_enabled()? {
-                        integrity.backup_current()?;
-                        let pattern = http_selector::url_pattern::from_url(url);
-                        storage.record_url_pattern(profile.id, &pattern)?;
-                        integrity.sign_current()?;
+                    let launched = http_selector::browser::ensure_profile_is_launchable(&profile)
+                        .and_then(|()| http_selector::browser::launch(&profile, url));
+                    if let Err(error) = launched {
+                        show_error(
+                            "HttpSelector",
+                            &format!(
+                                "既定ルールのプロファイルを起動できませんでした。別のプロファイルを選択できます。\n{error:#}"
+                            ),
+                        );
+                    } else {
+                        if storage.record_url_history_enabled()? {
+                            integrity.backup_current()?;
+                            let pattern = http_selector::url_pattern::from_url(url);
+                            storage.record_url_pattern(profile.id, &pattern)?;
+                            integrity.sign_current()?;
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
@@ -128,16 +140,27 @@ fn run() -> anyhow::Result<()> {
                 }
                 break;
             }
-            SelectorResult::ConfigureDefaultRule { profile_id, url } => {
+            SelectorResult::ConfigureDefaultRule {
+                profile_id,
+                url: current_url,
+            } => {
+                url = Some(current_url.clone());
                 let outcome = run_rules(
                     storage.load_all_profiles()?,
                     storage.load_default_rules()?,
-                    Some(RuleDraft { profile_id, url }),
+                    Some(RuleDraft {
+                        profile_id,
+                        url: current_url,
+                    }),
                 )?;
                 if outcome.action == RulesAction::Saved {
                     integrity.backup_current()?;
                     storage.replace_default_rules(&outcome.rules)?;
                     integrity.sign_current()?;
+                }
+                if let Some(pending_url) = outcome.pending_url {
+                    url = Some(pending_url);
+                    apply_default_rules = true;
                 }
             }
             SelectorResult::FavoriteChanged {
@@ -185,6 +208,7 @@ fn run() -> anyhow::Result<()> {
                 )?;
                 if outcome.pending_url.is_some() {
                     url = outcome.pending_url;
+                    apply_default_rules = true;
                 }
                 // 再スキャンでも編集中の表示名・メモ・並び順を先に保存する。
                 if matches!(
@@ -227,6 +251,10 @@ fn run() -> anyhow::Result<()> {
                             integrity.backup_current()?;
                             storage.replace_default_rules(&rules_outcome.rules)?;
                             integrity.sign_current()?;
+                        }
+                        if let Some(pending_url) = rules_outcome.pending_url {
+                            url = Some(pending_url);
+                            apply_default_rules = true;
                         }
                     }
                     SettingsAction::Saved | SettingsAction::Cancelled => {}
