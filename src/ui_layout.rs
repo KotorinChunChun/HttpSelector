@@ -90,7 +90,7 @@ impl SelectorLayout {
         let tile_width = (available - GAP * (columns as i32 - 1)) / columns as i32;
         let favorites = slots[..5].iter().flatten().count();
         let normal = slots[5..].iter().flatten().count();
-        let favorites_heading = Bounds::new(MARGIN, 360, available, 24);
+        let favorites_heading = Bounds::new(MARGIN, 352, available, 24);
         let favorite_top = favorites_heading.bottom() + 12;
         let section_height = |count: usize| {
             if count == 0 {
@@ -118,17 +118,17 @@ impl SelectorLayout {
         }
         Self {
             fixed: vec![
-                Bounds::new(24, 16, available - 110, 32),
+                Bounds::new(24, 16, available - 146, 32),
                 Bounds::new(24, 54, available, 22),
-                Bounds::new(width - 120, 18, 96, 32),
-                Bounds::new(24, 82, available, 32),
-                Bounds::new(24, 118, available, 22),
-                Bounds::new(24, 144, available, 42),
-                Bounds::new(24, 198, available, 22),
-                Bounds::new(24, 224, available, 42),
-                Bounds::new(24, 280, 96, 32),
-                Bounds::new(132, 280, 96, 32),
-                Bounds::new(MARGIN, 318, available, 32),
+                Bounds::new(width - 156, 18, 132, 32),
+                Bounds::new(24, 82, available, 24),
+                Bounds::new(24, 110, available, 22),
+                Bounds::new(24, 136, available, 42),
+                Bounds::new(24, 190, available, 22),
+                Bounds::new(24, 216, available, 42),
+                Bounds::new(24, 272, 96, 32),
+                Bounds::new(132, 272, 96, 32),
+                Bounds::new(MARGIN, 310, available, 32),
             ],
             favorites_heading,
             favorite_up: Bounds::new(MARGIN, favorite_actions_top, 48, 32),

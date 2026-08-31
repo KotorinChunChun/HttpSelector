@@ -553,7 +553,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
     let font = state.theme.font;
     let title = common::label(window, "HttpSelector", state.theme.title);
     let subtitle = common::label(window, "リンクを開くプロファイルを選択", font);
-    let close = common::button(window, "閉じる", ID_CLOSE, font);
+    let close = common::button(window, "閉じる(ESC長押)", ID_CLOSE, font);
     state.status = common::label(window, "", font);
     let original_label = common::label(window, "受信したURL", state.theme.bold);
     state.original_edit = common::edit(window, 0, true, true, font);
@@ -682,14 +682,13 @@ fn layout_controls(window: HWND, state: &mut UiState) {
 }
 
 fn refresh_status(state: &UiState) {
-    let hold_seconds = state.escape_hold_duration_tenths as f32 / 10.0;
     let open_action = if state.open_profile_on_double_click {
         "ダブルクリック"
     } else {
         "クリック"
     };
     let status = if state.url.is_some() {
-        format!("{open_action}で開く / Enterでも開く / ESCは{hold_seconds:.1}秒長押しで終了")
+        format!("{open_action}で開く")
     } else {
         "URL未指定：設定でプロファイルを管理".to_owned()
     };
