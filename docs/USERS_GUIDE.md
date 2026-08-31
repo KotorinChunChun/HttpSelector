@@ -57,7 +57,7 @@ URLを受け取った状態でプロファイルにフォーカスし、「こ�
 
 ## Windowsの既定アプリ設定
 
-HttpSelectorのインストール後も、既定のブラウザは自動変更されません。MSIXまたは従来のインストーラーはHTTP/HTTPSの候補を登録するだけです。選択画面の「Windows設定」ボタン、またはWindowsの「設定」から既定のアプリを開き、HTTPとHTTPSにHttpSelectorを選択してください。
+HttpSelectorのインストール後も、既定のブラウザは自動変更されません。MSIXまたは従来のインストーラーはHTTP/HTTPSの候補を登録するだけです。選択画面の「Windowsの設定を開く」ボタン、またはWindowsの「設定」から既定のアプリを開き、HTTPとHTTPSにHttpSelectorを選択してください。アプリ内の設定は「アプリの設定を開く」から開きます。
 
 Store版は公開準備中です。開発用自己署名MSIXの生成・導入については[Microsoft Store公開準備](MICROSOFT_STORE.md)を参照してください。開発版、正式MSIX版、非MSIX版では設定データを共有せず、自動移行もしません。
 

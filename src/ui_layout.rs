@@ -124,6 +124,16 @@ impl SelectorLayout {
         } else {
             actions_top + 32 + 12
         };
+        let settings_width = 160.min((available - 8).max(1) / 2);
+        let windows_width = 180.min((available - settings_width - 8).max(1));
+        let header_actions = available >= settings_width + windows_width + 8 + 132 + 14;
+        let settings_x = if header_actions {
+            width - MARGIN - 132 - 8 - windows_width - 8 - settings_width
+        } else {
+            MARGIN
+        };
+        let windows_x = settings_x + settings_width + 8;
+        let action_y = if header_actions { 18 } else { 272 };
         let mut tiles = vec![None; slots.len()];
         for (start, end, top) in [(0, 5, favorite_top), (5, slots.len(), normal_top)] {
             for (position, slot) in (start..end)
@@ -140,7 +150,16 @@ impl SelectorLayout {
         }
         Self {
             fixed: vec![
-                Bounds::new(24, 16, available - 146, 32),
+                Bounds::new(
+                    24,
+                    16,
+                    if header_actions {
+                        (settings_x - MARGIN - 14).max(1)
+                    } else {
+                        available - 146
+                    },
+                    32,
+                ),
                 Bounds::new(24, 54, available, 22),
                 Bounds::new(width - 156, 18, 132, 32),
                 Bounds::new(24, 82, available, 24),
@@ -148,8 +167,8 @@ impl SelectorLayout {
                 Bounds::new(24, 136, available, 42),
                 Bounds::new(24, 190, available, 22),
                 Bounds::new(24, 216, available, 42),
-                Bounds::new(24, 272, 96, 32),
-                Bounds::new(132, 272, 96, 32),
+                Bounds::new(settings_x, action_y, settings_width, 32),
+                Bounds::new(windows_x, action_y, windows_width, 32),
                 Bounds::new(MARGIN, 310, available, 32),
             ],
             favorites_heading,
@@ -278,6 +297,22 @@ mod tests {
 
         let compact = SelectorLayout::new(400, &slots);
         assert_eq!(compact.default_rule.y, compact.normal_heading.bottom() + 8);
+    }
+
+    #[test]
+    fn selector_settings_actions_are_left_of_close_button() {
+        let layout = SelectorLayout::new(1120, &vec![None; 25]);
+        let close = layout.fixed[2];
+        let settings = layout.fixed[8];
+        let windows = layout.fixed[9];
+        assert_eq!(settings.y, close.y);
+        assert_eq!(windows.y, close.y);
+        assert!(settings.x + settings.width <= windows.x);
+        assert!(windows.x + windows.width <= close.x);
+
+        let compact = SelectorLayout::new(400, &vec![None; 25]);
+        assert_eq!(compact.fixed[8].y, 272);
+        assert_eq!(compact.fixed[9].y, 272);
     }
 
     #[test]

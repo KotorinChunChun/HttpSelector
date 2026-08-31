@@ -567,8 +567,8 @@ fn create_controls(window: HWND, state: &mut UiState) {
     state.original_edit = common::edit(window, 0, true, true, font);
     let preview_label = common::label(window, "デコード表示（確認専用）", state.theme.bold);
     state.preview_edit = common::edit(window, 0, true, true, font);
-    let settings = common::button(window, "設定", ID_SETTINGS, font);
-    let windows_settings = common::button(window, "Windows設定", ID_WINDOWS_SETTINGS, font);
+    let settings = common::button(window, "アプリの設定を開く", ID_SETTINGS, font);
+    let windows_settings = common::button(window, "Windowsの設定を開く", ID_WINDOWS_SETTINGS, font);
     state.default_rule = common::button(
         window,
         "このプロファイルを既定に設定",
