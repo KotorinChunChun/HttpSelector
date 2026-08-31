@@ -61,10 +61,11 @@ fn run() -> anyhow::Result<()> {
         storage.mark_initial_scan_completed()?;
         integrity.sign_current()?;
     }
+    let mut escape_hold_duration_tenths = storage.escape_hold_duration_tenths()?;
 
     loop {
         let profiles = storage.load_selection_profiles()?;
-        match run_selector(url.clone(), profiles)? {
+        match run_selector(url.clone(), profiles, escape_hold_duration_tenths)? {
             SelectorResult::Profile {
                 profile_id,
                 url: selected_url,
@@ -92,6 +93,7 @@ fn run() -> anyhow::Result<()> {
                 let outcome = run_settings(
                     storage.load_all_profiles()?,
                     storage.record_url_history_enabled()?,
+                    escape_hold_duration_tenths,
                 )?;
                 if outcome.pending_url.is_some() {
                     url = outcome.pending_url;
@@ -106,6 +108,8 @@ fn run() -> anyhow::Result<()> {
                         storage.save_profile(profile)?;
                     }
                     storage.set_record_url_history_enabled(outcome.record_url_history)?;
+                    storage.set_escape_hold_duration_tenths(outcome.escape_hold_duration_tenths)?;
+                    escape_hold_duration_tenths = outcome.escape_hold_duration_tenths;
                     integrity.sign_current()?;
                 }
                 match outcome.action {

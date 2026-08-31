@@ -10,6 +10,10 @@ pub struct Storage {
 
 const SETTING_INITIAL_SCAN_COMPLETED: &str = "initial_scan_completed";
 const SETTING_RECORD_URL_HISTORY: &str = "record_url_history";
+const SETTING_ESCAPE_HOLD_DURATION_TENTHS: &str = "escape_hold_duration_tenths";
+pub const DEFAULT_ESCAPE_HOLD_DURATION_TENTHS: u32 = 10;
+pub const MIN_ESCAPE_HOLD_DURATION_TENTHS: u32 = 1;
+pub const MAX_ESCAPE_HOLD_DURATION_TENTHS: u32 = 100;
 
 impl Storage {
     pub fn new(database_path: impl Into<PathBuf>) -> Self {
@@ -197,6 +201,28 @@ impl Storage {
         self.set_setting(SETTING_RECORD_URL_HISTORY, if enabled { "1" } else { "0" })
     }
 
+    pub fn escape_hold_duration_tenths(&self) -> anyhow::Result<u32> {
+        let Some(value) = self.get_setting(SETTING_ESCAPE_HOLD_DURATION_TENTHS)? else {
+            return Ok(DEFAULT_ESCAPE_HOLD_DURATION_TENTHS);
+        };
+        let Ok(value) = value.parse::<u32>() else {
+            return Ok(DEFAULT_ESCAPE_HOLD_DURATION_TENTHS);
+        };
+        if (MIN_ESCAPE_HOLD_DURATION_TENTHS..=MAX_ESCAPE_HOLD_DURATION_TENTHS).contains(&value) {
+            Ok(value)
+        } else {
+            Ok(DEFAULT_ESCAPE_HOLD_DURATION_TENTHS)
+        }
+    }
+
+    pub fn set_escape_hold_duration_tenths(&self, tenths: u32) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            (MIN_ESCAPE_HOLD_DURATION_TENTHS..=MAX_ESCAPE_HOLD_DURATION_TENTHS).contains(&tenths),
+            "ESC長押し時間は0.1秒から10.0秒の範囲で指定してください"
+        );
+        self.set_setting(SETTING_ESCAPE_HOLD_DURATION_TENTHS, &tenths.to_string())
+    }
+
     pub fn record_url_pattern(&self, profile_id: i64, pattern: &str) -> anyhow::Result<()> {
         let connection = self.open()?;
         connection.execute(
@@ -338,5 +364,20 @@ mod tests {
             storage.latest_url_pattern().unwrap(),
             "https://example.com/*"
         );
+    }
+
+    #[test]
+    fn escape_hold_duration_defaults_to_one_second_and_uses_tenths() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage::new(temp.path().join("test.db"));
+        storage.initialize().unwrap();
+        assert_eq!(
+            storage.escape_hold_duration_tenths().unwrap(),
+            DEFAULT_ESCAPE_HOLD_DURATION_TENTHS
+        );
+        storage.set_escape_hold_duration_tenths(11).unwrap();
+        assert_eq!(storage.escape_hold_duration_tenths().unwrap(), 11);
+        assert!(storage.set_escape_hold_duration_tenths(0).is_err());
+        assert!(storage.set_escape_hold_duration_tenths(101).is_err());
     }
 }

@@ -1,4 +1,5 @@
 use crate::model::Profile;
+use crate::storage::{MAX_ESCAPE_HOLD_DURATION_TENTHS, MIN_ESCAPE_HOLD_DURATION_TENTHS};
 use crate::ui_layout::SelectorLayout;
 use crate::ui_support::{self as common, Page, Theme};
 use crate::url_input::ValidatedUrl;
@@ -21,7 +22,6 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const WINDOW_CLASS: &str = "HttpSelector.MainWindow";
 const MAX_TILES: usize = 25;
-const HOLD_DURATION: Duration = Duration::from_secs(3);
 const TIMER_HOLD: usize = 1;
 const ID_SEARCH: i32 = 100;
 const ID_SETTINGS: i32 = 101;
@@ -65,12 +65,17 @@ struct UiState {
     search: HWND,
     original_edit: HWND,
     preview_edit: HWND,
+    escape_hold_duration_tenths: u32,
     escape_started: Option<Instant>,
     result: SelectorResult,
 }
 
 impl UiState {
-    fn new(url: Option<ValidatedUrl>, profiles: Vec<Profile>) -> Self {
+    fn new(
+        url: Option<ValidatedUrl>,
+        profiles: Vec<Profile>,
+        escape_hold_duration_tenths: u32,
+    ) -> Self {
         let filtered_indices = filtered_slots(&profiles, "");
         Self {
             url,
@@ -89,6 +94,7 @@ impl UiState {
             search: null_mut(),
             original_edit: null_mut(),
             preview_edit: null_mut(),
+            escape_hold_duration_tenths,
             escape_started: None,
             result: SelectorResult::Cancelled,
         }
@@ -108,8 +114,9 @@ impl Drop for UiState {
 pub fn run_selector(
     url: Option<ValidatedUrl>,
     profiles: Vec<Profile>,
+    escape_hold_duration_tenths: u32,
 ) -> anyhow::Result<SelectorResult> {
-    run_selector_window(url, profiles, WS_EX_TOOLWINDOW)
+    run_selector_window(url, profiles, escape_hold_duration_tenths, WS_EX_TOOLWINDOW)
 }
 
 /// 実データを使わないプレビューでは、画面操作ツールから検出できる通常ウィンドウを使う。
@@ -117,20 +124,30 @@ pub fn run_selector(
 pub fn run_selector_preview(
     url: Option<ValidatedUrl>,
     profiles: Vec<Profile>,
+    escape_hold_duration_tenths: u32,
 ) -> anyhow::Result<SelectorResult> {
-    run_selector_window(url, profiles, WS_EX_APPWINDOW)
+    run_selector_window(url, profiles, escape_hold_duration_tenths, WS_EX_APPWINDOW)
 }
 
 fn run_selector_window(
     url: Option<ValidatedUrl>,
     profiles: Vec<Profile>,
+    escape_hold_duration_tenths: u32,
     window_style: u32,
 ) -> anyhow::Result<SelectorResult> {
     let style = WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_VSCROLL;
     let ex_style = WS_EX_TOPMOST | window_style | WS_EX_CONTROLPARENT;
     let bounds = common::initial_bounds(1120, 900, style, ex_style);
     register_window_class()?;
-    let state_pointer = Box::into_raw(Box::new(UiState::new(url, profiles)));
+    let escape_hold_duration_tenths = escape_hold_duration_tenths.clamp(
+        MIN_ESCAPE_HOLD_DURATION_TENTHS,
+        MAX_ESCAPE_HOLD_DURATION_TENTHS,
+    );
+    let state_pointer = Box::into_raw(Box::new(UiState::new(
+        url,
+        profiles,
+        escape_hold_duration_tenths,
+    )));
     let window = unsafe {
         CreateWindowExW(
             ex_style,
@@ -367,7 +384,9 @@ unsafe extern "system" fn window_proc(
             let state = unsafe { &mut *pointer };
             if let Some(started) = state.escape_started {
                 let elapsed = started.elapsed();
-                if elapsed >= HOLD_DURATION {
+                let hold_duration =
+                    Duration::from_millis(state.escape_hold_duration_tenths as u64 * 100);
+                if elapsed >= hold_duration {
                     state.result = SelectorResult::Cancelled;
                     unsafe {
                         DestroyWindow(window);
@@ -377,7 +396,10 @@ unsafe extern "system" fn window_proc(
                         state.status,
                         &format!(
                             "終了まで {:.1} 秒（離すと取り消し）",
-                            (HOLD_DURATION - elapsed).as_secs_f32()
+                            hold_duration
+                                .checked_sub(elapsed)
+                                .unwrap_or_default()
+                                .as_secs_f32()
                         ),
                     );
                 }
@@ -565,14 +587,13 @@ fn layout_controls(window: HWND, state: &mut UiState) {
 }
 
 fn refresh_status(state: &UiState) {
-    common::set_text(
-        state.status,
-        if state.url.is_some() {
-            "Enterで開く / ESCは3秒長押しで終了"
-        } else {
-            "URL未指定：設定でプロファイルを管理"
-        },
-    );
+    let hold_seconds = state.escape_hold_duration_tenths as f32 / 10.0;
+    let status = if state.url.is_some() {
+        format!("Enterで開く / ESCは{hold_seconds:.1}秒長押しで終了")
+    } else {
+        "URL未指定：設定でプロファイルを管理".to_owned()
+    };
+    common::set_text(state.status, &status);
 }
 
 fn refresh_url(window: HWND, state: &mut UiState) {

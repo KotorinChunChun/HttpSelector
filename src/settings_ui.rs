@@ -1,4 +1,6 @@
 use crate::model::Profile;
+use crate::storage::{MAX_ESCAPE_HOLD_DURATION_TENTHS, MIN_ESCAPE_HOLD_DURATION_TENTHS};
+use crate::ui::show_error;
 use crate::ui_layout::SettingsLayout;
 use crate::ui_support::{self as common, Page, Theme, wide, window_text};
 use anyhow::ensure;
@@ -27,6 +29,7 @@ const ID_SAVE: i32 = 107;
 const ID_RESCAN: i32 = 108;
 const ID_CANCEL: i32 = 109;
 const ID_RECORD_URL_HISTORY: i32 = 110;
+const ID_ESCAPE_HOLD_DURATION: i32 = 111;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SettingsAction {
@@ -40,6 +43,7 @@ pub struct SettingsOutcome {
     pub profiles: Vec<Profile>,
     pub pending_url: Option<crate::url_input::ValidatedUrl>,
     pub record_url_history: bool,
+    pub escape_hold_duration_tenths: u32,
 }
 
 struct SettingsState {
@@ -57,15 +61,25 @@ struct SettingsState {
     up: HWND,
     down: HWND,
     record_url_history: HWND,
+    escape_hold_duration: HWND,
     record_url_history_enabled: bool,
+    escape_hold_duration_tenths: u32,
     selected: Option<usize>,
     action: SettingsAction,
     pending_url: Option<crate::url_input::ValidatedUrl>,
 }
 
 impl SettingsState {
-    fn new(mut profiles: Vec<Profile>, record_url_history_enabled: bool) -> Self {
+    fn new(
+        mut profiles: Vec<Profile>,
+        record_url_history_enabled: bool,
+        escape_hold_duration_tenths: u32,
+    ) -> Self {
         profiles.sort_by_key(|profile| (profile.sort_order, profile.id));
+        let escape_hold_duration_tenths = escape_hold_duration_tenths.clamp(
+            MIN_ESCAPE_HOLD_DURATION_TENTHS,
+            MAX_ESCAPE_HOLD_DURATION_TENTHS,
+        );
         Self {
             profiles,
             theme: Theme::new(96),
@@ -81,7 +95,9 @@ impl SettingsState {
             up: null_mut(),
             down: null_mut(),
             record_url_history: null_mut(),
+            escape_hold_duration: null_mut(),
             record_url_history_enabled,
+            escape_hold_duration_tenths,
             selected: None,
             action: SettingsAction::Cancelled,
             pending_url: None,
@@ -92,6 +108,7 @@ impl SettingsState {
 pub fn run_settings(
     profiles: Vec<Profile>,
     record_url_history_enabled: bool,
+    escape_hold_duration_tenths: u32,
 ) -> anyhow::Result<SettingsOutcome> {
     let style = WS_OVERLAPPED
         | WS_CAPTION
@@ -106,6 +123,7 @@ pub fn run_settings(
     let pointer = Box::into_raw(Box::new(SettingsState::new(
         profiles,
         record_url_history_enabled,
+        escape_hold_duration_tenths,
     )));
     let window = unsafe {
         CreateWindowExW(
@@ -179,6 +197,7 @@ pub fn run_settings(
         profiles: state.profiles,
         pending_url: state.pending_url,
         record_url_history: state.record_url_history_enabled,
+        escape_hold_duration_tenths: state.escape_hold_duration_tenths,
     })
 }
 
@@ -299,6 +318,19 @@ unsafe extern "system" fn window_proc(
                 move_selected(state, if id == ID_UP { -1 } else { 1 });
             } else if (id == ID_SAVE || id == ID_RESCAN) && notification == BN_CLICKED as u16 {
                 save_current_editor(state);
+                let Some(escape_hold_duration_tenths) =
+                    parse_escape_hold_duration(&window_text(state.escape_hold_duration))
+                else {
+                    show_error(
+                        "HttpSelector 設定",
+                        "ESC長押し終了時間は0.1秒から10.0秒まで、0.1秒刻みで指定してください。",
+                    );
+                    unsafe {
+                        SetFocus(state.escape_hold_duration);
+                    }
+                    return 0;
+                };
+                state.escape_hold_duration_tenths = escape_hold_duration_tenths;
                 state.record_url_history_enabled =
                     unsafe { SendMessageW(state.record_url_history, BM_GETCHECK, 0, 0) }
                         == BST_CHECKED as isize;
@@ -436,6 +468,14 @@ fn create_controls(window: HWND, state: &mut SettingsState) {
         font,
     );
     let general = common::label(window, "全体設定", state.theme.bold);
+    let hold_duration_label = common::label(window, "ESC長押し終了時間（秒）", state.theme.bold);
+    state.escape_hold_duration = common::edit(window, ID_ESCAPE_HOLD_DURATION, false, false, font);
+    common::cue(state.escape_hold_duration, "例: 1.0");
+    common::set_text(
+        state.escape_hold_duration,
+        &format_escape_hold_duration(state.escape_hold_duration_tenths),
+    );
+    let hold_duration_help = common::label(window, "0.1～10.0秒を0.1秒刻みで指定します。", font);
     state.record_url_history = common::control(
         window,
         "BUTTON",
@@ -475,6 +515,9 @@ fn create_controls(window: HWND, state: &mut SettingsState) {
         state.favorite,
         state.enabled,
         general,
+        hold_duration_label,
+        state.escape_hold_duration,
+        hold_duration_help,
         state.record_url_history,
         history_help,
         save_help,
@@ -657,5 +700,39 @@ fn update_list_extent(state: &SettingsState) {
 fn normalize_sort_order(profiles: &mut [Profile]) {
     for (index, profile) in profiles.iter_mut().enumerate() {
         profile.sort_order = index as i64;
+    }
+}
+
+fn format_escape_hold_duration(tenths: u32) -> String {
+    format!("{}.{:01}", tenths / 10, tenths % 10)
+}
+
+fn parse_escape_hold_duration(value: &str) -> Option<u32> {
+    let value = value.trim();
+    let (seconds, fraction) = value.split_once('.').unwrap_or((value, "0"));
+    if seconds.is_empty() || fraction.len() != 1 {
+        return None;
+    }
+    let seconds = seconds.parse::<u32>().ok()?;
+    let fraction = fraction.parse::<u32>().ok()?;
+    let tenths = seconds.checked_mul(10)?.checked_add(fraction)?;
+    (MIN_ESCAPE_HOLD_DURATION_TENTHS..=MAX_ESCAPE_HOLD_DURATION_TENTHS)
+        .contains(&tenths)
+        .then_some(tenths)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_hold_duration_uses_one_decimal_place() {
+        assert_eq!(parse_escape_hold_duration("1.0"), Some(10));
+        assert_eq!(parse_escape_hold_duration("0.1"), Some(1));
+        assert_eq!(parse_escape_hold_duration("10"), Some(100));
+        assert_eq!(parse_escape_hold_duration("1.05"), None);
+        assert_eq!(parse_escape_hold_duration("0.0"), None);
+        assert_eq!(parse_escape_hold_duration("10.1"), None);
+        assert_eq!(format_escape_hold_duration(10), "1.0");
     }
 }
