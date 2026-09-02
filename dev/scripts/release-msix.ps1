@@ -114,4 +114,5 @@ try {
     $env:CARGO_PROFILE_RELEASE_DEBUG = $savedDebug
     $env:CARGO_PROFILE_RELEASE_STRIP = $savedStrip
     Pop-Location
+    if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
 }

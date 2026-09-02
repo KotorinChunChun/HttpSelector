@@ -5,8 +5,14 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'msix-common.ps1')
 . (Join-Path $PSScriptRoot 'msix-assets.ps1')
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..')).TrimEnd('\','/')
-$fixture = Join-Path $root ('target/msix-script-tests/' + [guid]::NewGuid().ToString('N'))
+$fixtureParent = Join-Path $root 'target/msix-script-tests'
+$fixture = Join-Path $fixtureParent ([guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory((Join-Path $fixture 'packaging')) | Out-Null
+trap {
+    if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $fixtureParent) { Remove-Item -LiteralPath $fixtureParent -Force -ErrorAction SilentlyContinue }
+    throw
+}
 Copy-Item -LiteralPath (Join-Path $root 'packaging/release-config.json') -Destination (Join-Path $fixture 'packaging')
 Copy-Item -LiteralPath (Join-Path $root 'packaging/AppxManifest.xml.template') -Destination (Join-Path $fixture 'packaging')
 $script:checks = 0
@@ -95,3 +101,5 @@ if ($SignedPackagePath) {
     Assert-Rejected { Test-MsixArtifact $signedCopy $signedContext } '署名済みメタデータが不一致'
 }
 Write-Output "MSIXスクリプト検証: $script:checks 件成功（証明書・信頼ストア・インストール変更なし）"
+Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue
+if (Test-Path -LiteralPath $fixtureParent) { Remove-Item -LiteralPath $fixtureParent -Force -ErrorAction SilentlyContinue }
