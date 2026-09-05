@@ -54,7 +54,8 @@ if (Test-Path -LiteralPath $channelRoot) {
     }
 }
 if ($Channel -eq 'beta') { $preflightCertificate = Get-DevelopmentCertificate -Identity $context.Identity; $preflightCertificate.Dispose() }
-$work = Join-Path $root ('target/msix-work/' + [guid]::NewGuid().ToString('N'))
+$workRoot = Join-Path $root 'target/msix-work'
+$work = Join-Path $workRoot ([guid]::NewGuid().ToString('N'))
 $payload = Join-Path $work 'payload'
 [IO.Directory]::CreateDirectory($payload) | Out-Null
 
@@ -115,4 +116,5 @@ try {
     $env:CARGO_PROFILE_RELEASE_STRIP = $savedStrip
     Pop-Location
     if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
+    if ((Test-Path -LiteralPath $workRoot) -and -not (Get-ChildItem -LiteralPath $workRoot -Force -ErrorAction SilentlyContinue)) { Remove-Item -LiteralPath $workRoot -Force -ErrorAction SilentlyContinue }
 }
