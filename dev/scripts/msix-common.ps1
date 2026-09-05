@@ -12,13 +12,25 @@ function Get-MsixContext {
     param([string]$Root, [ValidateSet('beta','stable')][string]$Channel)
     $config = Get-Content -LiteralPath (Join-Path $Root 'packaging/release-config.json') -Raw | ConvertFrom-Json
     if ($config.schemaVersion -ne 1 -or $config.architecture -ne 'x64') { throw '未対応のリリース構成です。' }
-    if ($config.packageVersion -notmatch '^[1-9][0-9]*\.[0-9]+\.[0-9]+\.0$') { throw 'MSIXバージョンは先頭1以上・4桁目0の4部形式にしてください。' }
+    if ($config.packageVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+\.0$') { throw 'MSIXバージョンは4桁目0の4部形式にしてください。' }
     $version = [version]$config.packageVersion
     foreach ($part in @($version.Major,$version.Minor,$version.Build,$version.Revision)) {
         if ($part -gt 65535) { throw 'MSIXバージョンの各部は65535以下にしてください。' }
     }
+    if ($Channel -eq 'beta' -and $version.Major -lt 1) {
+        if (-not $config.beta.PSObject.Properties['versionReset']) { throw 'Betaの番号リセット設定がありません。' }
+        $reset = $config.beta.versionReset
+        $from = $null
+        $minimum = $null
+        $validReset = $reset.requiresUninstall -eq $true `
+            -and [version]::TryParse([string]$reset.fromVersion, [ref]$from) `
+            -and [version]::TryParse([string]$reset.newLineMinimumVersion, [ref]$minimum) `
+            -and $version -ge $minimum -and $version -lt $from
+        if (-not $validReset) { throw 'Betaの番号リセット設定が不正です。再インストール必須の移行範囲を指定してください。' }
+    }
     $identity = $config.beta
     if ($Channel -eq 'stable') {
+        if ($version.Major -lt 1) { throw 'Store用MSIXバージョンは先頭1以上にしてください。' }
         $identityPath = [IO.Path]::GetFullPath((Join-Path $Root $config.stable.identityFile))
         if (-not $identityPath.StartsWith($Root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Identity設定はプロジェクト内に配置してください。' }
         if (-not (Test-Path -LiteralPath $identityPath)) { throw 'Partner Centerの正式Identityが未設定です。store-identity.example.jsonをstore-identity.local.jsonへコピーして設定してください。' }
@@ -35,6 +47,18 @@ function Get-MsixContext {
         FileName = "HttpSelector_$($version)_x64_$suffix.msix"
         Output = Join-Path $Root "release/msix/$Channel/$version"
     }
+}
+
+function Test-BetaVersionResetAllowed {
+    param($Context, [version]$PriorVersion)
+    if ($Context.Channel -ne 'beta' -or -not $Context.Config.beta.PSObject.Properties['versionReset']) { return $false }
+    $reset = $Context.Config.beta.versionReset
+    if ($reset.requiresUninstall -ne $true) { return $false }
+    $from = $null
+    $minimum = $null
+    if (-not [version]::TryParse([string]$reset.fromVersion, [ref]$from) -or -not [version]::TryParse([string]$reset.newLineMinimumVersion, [ref]$minimum)) { return $false }
+    $current = [version]$Context.Version
+    $PriorVersion -le $from -and $PriorVersion -gt $current -and $current -ge $minimum -and $current -lt $from
 }
 
 function Find-WindowsSdkTool {

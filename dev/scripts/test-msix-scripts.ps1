@@ -33,16 +33,25 @@ foreach ($script in Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*msix*.ps1
 }
 Assert-Rejected { & (Join-Path $PSScriptRoot 'release-msix.ps1') -Mode Build -Channel beta } 'ReleaseIntentConfirmed'
 Assert-Rejected { & (Join-Path $PSScriptRoot 'release-msix.ps1') -Mode Build -ReleaseIntentConfirmed } 'Channel'
-Assert-Rejected { Get-MsixContext $fixture stable } '正式Identityが未設定'
 $configPath = Join-Path $fixture 'packaging/release-config.json'
 $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-foreach ($invalid in @('0.0.1.0','1.0.1.1','1.65536.1.0','1.0.1')) {
+$betaContext = Get-MsixContext $fixture beta
+Assert-True ($betaContext.Version -eq '0.0.2.0') 'Betaの0始まり版'
+Assert-True (Test-BetaVersionResetAllowed -Context $betaContext -PriorVersion ([version]'1.0.3.0')) '承認済み番号リセット'
+Assert-True (-not (Test-BetaVersionResetAllowed -Context $betaContext -PriorVersion ([version]'2.0.0.0'))) '番号リセット上限'
+Assert-Rejected { Get-MsixContext $fixture stable } 'Store用MSIXバージョンは先頭1以上'
+$config.beta.versionReset.requiresUninstall = $false
+$config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath
+Assert-Rejected { Get-MsixContext $fixture beta } '番号リセット設定が不正'
+$config.beta.versionReset.requiresUninstall = $true
+foreach ($invalid in @('-1.0.0.0','1.0.1.1','1.65536.1.0','1.0.1')) {
     $config.packageVersion = $invalid
     $config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath
     Assert-Rejected { Get-MsixContext $fixture beta } 'バージョン'
 }
-$config.packageVersion = '1.0.1.0'
+$config.packageVersion = '1.0.4.0'
 $config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath
+Assert-Rejected { Get-MsixContext $fixture stable } '正式Identityが未設定'
 $identityPath = Join-Path $fixture 'packaging/store-identity.local.json'
 $config.beta | ConvertTo-Json | Set-Content -LiteralPath $identityPath
 Assert-Rejected { Get-MsixContext $fixture stable } '開発用Identity'

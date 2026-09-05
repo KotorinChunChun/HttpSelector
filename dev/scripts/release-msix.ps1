@@ -50,7 +50,7 @@ $channelRoot = Split-Path -Parent $context.Output
 if (Test-Path -LiteralPath $channelRoot) {
     foreach ($directory in Get-ChildItem -LiteralPath $channelRoot -Directory) {
         $priorVersion = $null
-        if ([version]::TryParse($directory.Name, [ref]$priorVersion) -and $priorVersion -gt [version]$context.Version) { throw '既存成果物より低いバージョンは生成しません。' }
+        if ([version]::TryParse($directory.Name, [ref]$priorVersion) -and $priorVersion -gt [version]$context.Version -and -not (Test-BetaVersionResetAllowed -Context $context -PriorVersion $priorVersion)) { throw '既存成果物より低いバージョンは生成しません。Betaの番号リセットには再インストール必須の限定設定が必要です。' }
     }
 }
 if ($Channel -eq 'beta') { $preflightCertificate = Get-DevelopmentCertificate -Identity $context.Identity; $preflightCertificate.Dispose() }

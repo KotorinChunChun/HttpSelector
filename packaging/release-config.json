@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "entryScript": "dev/scripts/publish-msix-release.ps1",
-  "packageVersion": "1.0.3.0",
+  "packageVersion": "0.0.2.0",
   "architecture": "x64",
   "minimumOSVersion": "10.0.17763.0",
   "maximumTestedOSVersion": "10.0.22631.0",
@@ -11,6 +11,11 @@
     "publisherDisplayName": "KotorinChunChun",
     "displayName": "HttpSelector (開発用)",
     "certificateFriendlyName": "PC共通証明書（signing.jsonの拇印で固定）",
+    "versionReset": {
+      "fromVersion": "1.0.3.0",
+      "newLineMinimumVersion": "0.0.2.0",
+      "requiresUninstall": true
+    },
     "relativeDirectory": "beta",
     "baseUri": "https://excel-chunchun.sakura.ne.jp/download/beta/",
     "appInstallerFileName": "HttpSelector.appinstaller"
@@ -31,7 +36,7 @@
       "httpselector-certificate",
       "assets/httpselector-icon.png",
       "beta/HttpSelector.appinstaller",
-      "beta/HttpSelector_1.0.3.0_x64_dev.msix",
+      "beta/HttpSelector_0.0.2.0_x64_dev.msix",
       "beta/HttpSelector.Development.cer"
     ]
   }

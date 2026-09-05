@@ -19,7 +19,7 @@ Windowsでリンクを開く前に、Edge・Chrome・Firefoxのブラウザプ�
 
 ## 開発状況
 
-v0.0.1を開発中です。Microsoft Store向けMSIXの準備を進めており、ソースからの実行と開発用自己署名MSIXの生成が可能です。Storeでの公開はまだ行っていません。
+v0.0.2-betaを公開しています。Microsoft Store向けMSIXの準備も進めていますが、Storeでの公開はまだ行っていません。
 
 ```powershell
 cargo test

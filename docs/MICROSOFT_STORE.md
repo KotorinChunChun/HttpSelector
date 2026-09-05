@@ -15,7 +15,7 @@ HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。正式版�
 
 betaは自己署名証明書を利用者が明示的に信頼して導入する公開ベータ配布チャネル。`https://excel-chunchun.sakura.ne.jp/download/` からApp Installer・MSIX・公開CERを配布する。独自アップデーターは作らず、App Installerの標準更新機構を使用する。開発用SubjectはPC共通の`CN=KotorinChunChun`を使う。Storeの公開情報は実際のPartner Center画面で確認する。匿名性を保証するものではない。
 
-MSIXの版は `packaging/release-config.json` の `packageVersion` で管理する。現在の更新版は **1.0.3.0**。共通証明書へ移行した **1.0.2.0** と同じIdentity・証明書を維持し、旧パッケージも変更していない。アプリ本体の `Cargo.toml` は **0.0.1** のまま。MSIXは先頭1以上、各部65535以下、4桁目0とし、更新時は前回より増やす。両者のバージョン番号を機械的に同一視しない。
+MSIXの版は `packaging/release-config.json` の `packageVersion` で管理する。現在のBeta版は **0.0.2.0**、アプリ本体の `Cargo.toml` は **0.0.2**。ユーザー指定により公開済み1.0.3.0から番号をリセットしたため、既存Betaは自動更新できず、アンインストール後の新規導入が必要になる。旧パッケージは変更・削除しない。Betaの0始まりは、この移行範囲と再インストール必須を設定した場合だけ許可する。Store版は先頭1以上、全チャネルで各部65535以下・4桁目0を維持する。
 
 ## 前提
 
@@ -37,7 +37,7 @@ pwsh -NoProfile -File dev/scripts/release-msix.ps1 -Mode Verify -Channel beta
 
 Buildはfmt、Rustテスト、Clippy、static CRTのreleaseビルド、画像生成、MakeAppxのManifest検証、署名、内容検証を順に行う。途中の外部コマンドが失敗したら停止し、前回のrelease成果物は検証成功まで変更しない。ビルド元commit、作業ツリーの変更有無、Cargo.lockと成果物のSHA-256を検証JSONへ記録する。
 
-出力は `release/msix/beta/1.0.3.0/`。MSIX、公開CER、SHA256SUMS.txt、verification.jsonを出力する。MSIXの中身は実行ファイル、3枚の画像、ManifestとMSIXメタデータだけ。ソース、PDB、PFX、証明書の秘密鍵、開発用文書は含めない。コンパイル時にローカルパスを置換し、配布物内の代表的な個人パスも検出する。
+出力は `release/msix/beta/0.0.2.0/`。MSIX、公開CER、SHA256SUMS.txt、verification.jsonを出力する。MSIXの中身は実行ファイル、3枚の画像、ManifestとMSIXメタデータだけ。ソース、PDB、PFX、証明書の秘密鍵、開発用文書は含めない。コンパイル時にローカルパスを置換し、配布物内の代表的な個人パスも検出する。
 
 Web公開ではガード付きエントリポイント `dev/scripts/publish-msix-release.ps1` を使う。Buildは既存MSIXを再検証してApp Installerを生成でき、Stageは検証済み成果物とHttpSelector用ページだけを `C:\develop\excel-chunchun\www\download` へ配置する。Publishは `-ReleaseIntentConfirmed -PublishConfirmed` が揃った場合だけFTPのdry-run、対象限定アップロード、公開HTTPS検証を行う。
 
@@ -47,7 +47,7 @@ pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Full -Channel b
 pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Verify -Channel beta
 ```
 
-公開先は `HttpSelector.html`、`httpselector-certificate/`、`beta/HttpSelector.appinstaller`、版付きMSIX、公開CER。App Installerは起動時に毎回更新を確認し、現在の起動をブロックせず、取得した更新を次回起動時に適用する。stableはこのFTP経路に載せずMicrosoft Storeを使用する。
+公開先は `HttpSelector.html`、`httpselector-certificate/`、`beta/HttpSelector.appinstaller`、版付きMSIX、公開CER。App Installerは起動時に毎回更新を確認し、現在の起動をブロックせず、取得した更新を次回起動時に適用する。1.0.3.0以前から0.0.2.0への更新には使えないため、旧BetaをアンインストールしてからApp Installerで新規導入する。stableはこのFTP経路に載せずMicrosoft Storeを使用する。
 
 2026-09-01に1.0.3.0を公開し、ダウンロードメニュー・製品ページ・証明書案内・アイコン・App Installer・MSIX・CERのHTTPS応答を確認した。MSIXとCERの公開ハッシュはステージ済み成果物と一致した。公開ページは `https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html`。
 
@@ -60,7 +60,7 @@ Verifyは既存パッケージを読むだけで、生成・修復・インス�
 ### 更新版1.0.3.0の検証結果（2026-09-01）
 
 - 最近の総合点検の修正と、承認済みの既定ルール初期値の伏せ字化を含む。URLの引継ぎ・照合、設定保存、プロファイル操作、画面配置、IPCを修正した。
-- Rustテスト46件、fmt、Clippy、static CRTのreleaseビルド、署名方針13件、MSIX検証・改変検知22件が成功した。詳細は [実装報告](../dev/v0.0.1-imp.md) を参照。
+- Rustテスト46件、fmt、Clippy、static CRTのreleaseビルド、署名方針13件、MSIX検証・改変検知22件が成功した。詳細は [v0.0.1実装報告](../dev/history/v0.0.1-imp.md) を参照。
 - MSIX: `HttpSelector_1.0.3.0_x64_dev.msix`。SHA-256: `E03E07130DEB0D0145D922489F286EB3D8EC9283DF2244EFE89FCB8DEC4FD076`。生成元は `c9cdca523bb38013ec19af59c8997d2e90d78cc8`。
 - 1.0.2.0と実ManifestのIdentity Name・Publisher・Architecture、公開CERの拇印が一致し、版番号が増えていることを確認した。更新用パッケージは用意できているが、実際の上書きインストールと設定引継ぎは未検証。利用時は下記のインストール検証手順に従う。
 - この生成時点ではインストール、信頼登録、実ユーザーデータ変更、外部公開を実施していない。その後のWeb公開結果は実装報告の「excel-chunchunへのbeta公開」を参照する。
