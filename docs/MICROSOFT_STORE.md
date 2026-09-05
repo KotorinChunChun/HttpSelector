@@ -51,6 +51,8 @@ pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Verify -Channel
 
 2026-09-01に1.0.3.0を公開し、ダウンロードメニュー・製品ページ・証明書案内・アイコン・App Installer・MSIX・CERのHTTPS応答を確認した。MSIXとCERの公開ハッシュはステージ済み成果物と一致した。公開ページは `https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html`。
 
+2026-09-06にBeta 0.0.2.0を同じ公開ページへ公開した。MSIXは`application/msix`・1,414,172バイト、App Installerは`application/appinstaller`・626バイト、CERは`application/pkix-cert`・1,032バイトで応答し、公開MSIX・CERのSHA-256がステージ元と一致した。App Installerと製品ページも0.0.2.0を参照する。旧Betaからの自動更新は行わず、アンインストール後の新規導入を案内している。
+
 同じ版の出力先が存在する場合は停止する。再現確認で作り直す場合だけBuildへ `-AllowRebuild` を追加する。同じ版を新しい更新として配布してはいけない。日時・証明書・ツールチェーン等によりMSIXのバイト列が毎回一致する保証はない。
 
 Verifyは既存パッケージを読むだけで、生成・修復・インストール・信頼登録をしない。構成の許可リスト、Identity、起動引数、Capability、BlockMapの全ファイルハッシュ、署名者とCERの一致、有効期限、Windowsの署名検証を確認する。信頼未登録の自己署名証明書では `UntrustedDevelopmentCertificate` と明記し、インストール可能な状態と誤認しない。署名の暗号学的検査とWindowsの信頼判定は区別する。
@@ -63,6 +65,7 @@ Verifyは既存パッケージを読むだけで、生成・修復・インス�
 - Rustテスト50件、fmt、Clippy、static CRTのreleaseビルド、共通署名方針13件、番号リセットを含むMSIX検証31件が成功した。詳細は [v0.0.2実装報告](../dev/v0.0.2-imp.md) を参照。
 - MSIX: `HttpSelector_0.0.2.0_x64_dev.msix`、1,414,172バイト。SHA-256: `5027133A2B179C662F1ED422E5E26C227B8661EAE7278F657E8B8A739936562A`。生成元は `31caa0cffb23e099db29e617eb0e70f6c90529c0`。
 - Identity、Publisher、x64、署名者、公開CERは1.0.3.0と同じ。番号が低いため上書き更新はできず、旧Betaのアンインストール後に新規導入する。インストールと設定移行は実施していない。
+- excel-chunchunへの公開と公開後Verifyが成功した。製品ページは `https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html`、App Installerは `https://excel-chunchun.sakura.ne.jp/download/beta/HttpSelector.appinstaller`。
 
 ### 更新版1.0.3.0の検証結果（2026-09-01）
 
