@@ -4,13 +4,14 @@ use anyhow::Context;
 use http_selector::app_paths::AppPaths;
 use http_selector::default_rule_ui::{RuleDraft, RulesAction, run_rules};
 use http_selector::integrity::{IntegrityManager, IntegrityStatus};
+use http_selector::model::DetectedProfile;
 use http_selector::profile_scan;
 use http_selector::settings_ui::{SettingsAction, run_settings};
 use http_selector::single_instance::{InstanceStatus, acquire};
 use http_selector::storage::Storage;
 use http_selector::ui::{
     IntegrityRecoveryAction, SelectorResult, ask_integrity_recovery,
-    run_selector_with_selection as run_selector, show_error, show_information,
+    run_selector_with_selection_and_scan as run_selector, show_error, show_information,
 };
 use http_selector::url_input::ValidatedUrl;
 
@@ -55,7 +56,8 @@ fn run() -> anyhow::Result<()> {
     storage.initialize()?;
     // 既存DBへのテーブル追加を含め、スキーマ確定後の内容を署名する。
     integrity.sign_current()?;
-    if !storage.initial_scan_completed()? {
+    let initial_scan_required = !storage.initial_scan_completed()?;
+    if initial_scan_required {
         let mut detected =
             profile_scan::scan_all().context("初回プロファイル検出に失敗しました")?;
         http_selector::browser::cache_detected_icons(&paths, &mut detected)?;
@@ -64,12 +66,20 @@ fn run() -> anyhow::Result<()> {
         storage.mark_initial_scan_completed()?;
         integrity.sign_current()?;
     }
+    let mut background_scan =
+        (!initial_scan_required).then(|| profile_scan::start_background(paths.clone()));
     let mut escape_hold_duration_tenths = storage.escape_hold_duration_tenths()?;
     let mut open_profile_on_double_click = storage.open_profile_on_double_click()?;
     let mut apply_default_rules = url.is_some();
     let mut selected_profile_id = None;
 
     loop {
+        if background_scan
+            .as_ref()
+            .is_some_and(profile_scan::BackgroundProfileScan::is_consumed)
+        {
+            background_scan = None;
+        }
         if apply_default_rules {
             if let Some(url) = url.as_ref() {
                 let all_profiles = storage.load_all_profiles()?;
@@ -119,6 +129,7 @@ fn run() -> anyhow::Result<()> {
             escape_hold_duration_tenths,
             open_profile_on_double_click,
             selected_profile_id,
+            background_scan.clone(),
         )? {
             SelectorResult::UrlReceived(incoming) => {
                 url = Some(incoming);
@@ -205,6 +216,33 @@ fn run() -> anyhow::Result<()> {
                 url = current_url;
                 selected_profile_id = Some(profile_id);
             }
+            SelectorResult::RefreshRequested {
+                url: current_url,
+                selected_profile_id: current_selected_profile_id,
+            } => {
+                url = current_url;
+                selected_profile_id = current_selected_profile_id;
+                match scan_profiles(&paths) {
+                    Ok(detected) => {
+                        let changes = apply_detected_profiles(&storage, &integrity, &detected)?;
+                        show_information("HttpSelector", &changes.message());
+                    }
+                    Err(error) => show_error(
+                        "HttpSelector",
+                        &format!("プロファイルの更新に失敗しました。\n{error:#}"),
+                    ),
+                }
+            }
+            SelectorResult::ProfilesDetected {
+                detected,
+                url: current_url,
+                selected_profile_id: current_selected_profile_id,
+            } => {
+                background_scan = None;
+                url = current_url;
+                selected_profile_id = current_selected_profile_id;
+                apply_detected_profiles(&storage, &integrity, &detected)?;
+            }
             SelectorResult::Settings { url: current_url } => {
                 url = current_url;
                 let outcome = run_settings(
@@ -234,19 +272,16 @@ fn run() -> anyhow::Result<()> {
                     integrity.sign_current()?;
                 }
                 match outcome.action {
-                    SettingsAction::Rescan => {
-                        let mut detected = profile_scan::scan_all()
-                            .context("プロファイル再スキャンに失敗しました")?;
-                        http_selector::browser::cache_detected_icons(&paths, &mut detected)?;
-                        integrity.backup_current()?;
-                        storage.sync_detected(&detected)?;
-                        storage.mark_initial_scan_completed()?;
-                        integrity.sign_current()?;
-                        show_information(
+                    SettingsAction::Rescan => match scan_profiles(&paths) {
+                        Ok(detected) => {
+                            let changes = apply_detected_profiles(&storage, &integrity, &detected)?;
+                            show_information("HttpSelector", &changes.message());
+                        }
+                        Err(error) => show_error(
                             "HttpSelector",
-                            &format!("{}件のプロファイルを検出しました。", detected.len()),
-                        );
-                    }
+                            &format!("プロファイル再スキャンに失敗しました。\n{error:#}"),
+                        ),
+                    },
                     SettingsAction::RuleList => {
                         let rules_outcome = run_rules(
                             storage.load_all_profiles()?,
@@ -270,4 +305,25 @@ fn run() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+fn scan_profiles(paths: &AppPaths) -> anyhow::Result<Vec<DetectedProfile>> {
+    let mut detected = profile_scan::scan_all().context("プロファイル検出に失敗しました")?;
+    http_selector::browser::cache_detected_icons(paths, &mut detected)?;
+    Ok(detected)
+}
+
+fn apply_detected_profiles(
+    storage: &Storage,
+    integrity: &IntegrityManager,
+    detected: &[DetectedProfile],
+) -> anyhow::Result<profile_scan::ProfileChanges> {
+    let changes = profile_scan::changes(&storage.load_all_profiles()?, detected);
+    if changes.changed() {
+        integrity.backup_current()?;
+        storage.sync_detected(detected)?;
+        storage.mark_initial_scan_completed()?;
+        integrity.sign_current()?;
+    }
+    Ok(changes)
 }

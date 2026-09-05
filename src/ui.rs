@@ -1,4 +1,5 @@
-use crate::model::Profile;
+use crate::model::{DetectedProfile, Profile};
+use crate::profile_scan::BackgroundProfileScan;
 use crate::storage::{MAX_ESCAPE_HOLD_DURATION_TENTHS, MIN_ESCAPE_HOLD_DURATION_TENTHS};
 use crate::ui_layout::SelectorLayout;
 use crate::ui_support::{self as common, Page, Theme};
@@ -22,6 +23,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 const WINDOW_CLASS: &str = "HttpSelector.MainWindow";
 const MAX_TILES: usize = 25;
 const TIMER_HOLD: usize = 1;
+const TIMER_PROFILE_SCAN: usize = 2;
 const WM_URL_RECEIVED: u32 = WM_APP + 1;
 const ID_SETTINGS: i32 = 101;
 const ID_CLOSE: i32 = 102;
@@ -29,6 +31,7 @@ const ID_WINDOWS_SETTINGS: i32 = 103;
 const ID_DEFAULT_RULE: i32 = 104;
 const ID_FAVORITE_UP: i32 = 105;
 const ID_FAVORITE_DOWN: i32 = 106;
+const ID_REFRESH: i32 = 107;
 const ID_PROFILE_BASE: i32 = 1000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -49,6 +52,15 @@ pub enum SelectorResult {
         profile_id: i64,
         favorite: bool,
         url: Option<ValidatedUrl>,
+    },
+    RefreshRequested {
+        url: Option<ValidatedUrl>,
+        selected_profile_id: Option<i64>,
+    },
+    ProfilesDetected {
+        detected: Vec<DetectedProfile>,
+        url: Option<ValidatedUrl>,
+        selected_profile_id: Option<i64>,
     },
     Cancelled,
 }
@@ -75,6 +87,7 @@ struct UiState {
     normal_empty: HWND,
     favorite_up: HWND,
     favorite_down: HWND,
+    refresh: HWND,
     default_rule: HWND,
     status: HWND,
     original_edit: HWND,
@@ -83,6 +96,7 @@ struct UiState {
     open_profile_on_double_click: bool,
     focused_profile: Option<usize>,
     escape_started: Option<Instant>,
+    background_scan: Option<BackgroundProfileScan>,
     result: SelectorResult,
 }
 
@@ -116,6 +130,7 @@ impl UiState {
             normal_empty: null_mut(),
             favorite_up: null_mut(),
             favorite_down: null_mut(),
+            refresh: null_mut(),
             default_rule: null_mut(),
             status: null_mut(),
             original_edit: null_mut(),
@@ -124,6 +139,7 @@ impl UiState {
             open_profile_on_double_click,
             focused_profile,
             escape_started: None,
+            background_scan: None,
             result: SelectorResult::Cancelled,
         }
     }
@@ -161,6 +177,24 @@ pub fn run_selector_with_selection(
     open_profile_on_double_click: bool,
     selected_profile_id: Option<i64>,
 ) -> anyhow::Result<SelectorResult> {
+    run_selector_with_selection_and_scan(
+        url,
+        profiles,
+        escape_hold_duration_tenths,
+        open_profile_on_double_click,
+        selected_profile_id,
+        None,
+    )
+}
+
+pub fn run_selector_with_selection_and_scan(
+    url: Option<ValidatedUrl>,
+    profiles: Vec<Profile>,
+    escape_hold_duration_tenths: u32,
+    open_profile_on_double_click: bool,
+    selected_profile_id: Option<i64>,
+    background_scan: Option<BackgroundProfileScan>,
+) -> anyhow::Result<SelectorResult> {
     run_selector_window(
         url,
         profiles,
@@ -168,6 +202,7 @@ pub fn run_selector_with_selection(
         open_profile_on_double_click,
         WS_EX_TOOLWINDOW,
         selected_profile_id,
+        background_scan,
     )
 }
 
@@ -186,6 +221,7 @@ pub fn run_selector_preview(
         open_profile_on_double_click,
         WS_EX_APPWINDOW,
         None,
+        None,
     )
 }
 
@@ -196,6 +232,7 @@ fn run_selector_window(
     open_profile_on_double_click: bool,
     window_style: u32,
     selected_profile_id: Option<i64>,
+    background_scan: Option<BackgroundProfileScan>,
 ) -> anyhow::Result<SelectorResult> {
     let style = WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_VSCROLL;
     let ex_style = WS_EX_TOPMOST | window_style | WS_EX_CONTROLPARENT;
@@ -205,13 +242,15 @@ fn run_selector_window(
         MIN_ESCAPE_HOLD_DURATION_TENTHS,
         MAX_ESCAPE_HOLD_DURATION_TENTHS,
     );
-    let state_pointer = Box::into_raw(Box::new(UiState::new(
+    let mut state = UiState::new(
         url,
         profiles,
         escape_hold_duration_tenths,
         open_profile_on_double_click,
         selected_profile_id,
-    )));
+    );
+    state.background_scan = background_scan;
+    let state_pointer = Box::into_raw(Box::new(state));
     let window = unsafe {
         CreateWindowExW(
             ex_style,
@@ -308,6 +347,11 @@ unsafe extern "system" fn window_proc(
             let state = unsafe { &mut *pointer };
             state.theme = Theme::new(unsafe { GetDpiForWindow(window) }.max(96));
             create_controls(window, state);
+            if state.background_scan.is_some() {
+                unsafe {
+                    SetTimer(window, TIMER_PROFILE_SCAN, 100, None);
+                }
+            }
             0
         }
         WM_SIZE if !pointer.is_null() => {
@@ -426,6 +470,14 @@ unsafe extern "system" fn window_proc(
                 }
             } else if id == ID_WINDOWS_SETTINGS && notification == BN_CLICKED as u16 {
                 open_windows_default_apps(window);
+            } else if id == ID_REFRESH && notification == BN_CLICKED as u16 {
+                state.result = SelectorResult::RefreshRequested {
+                    url: state.url.clone(),
+                    selected_profile_id: focused_profile_id(state),
+                };
+                unsafe {
+                    DestroyWindow(window);
+                }
             } else if id == ID_DEFAULT_RULE && notification == BN_CLICKED as u16 {
                 let Some(profile_index) = state.focused_profile else {
                     show_information_for(
@@ -510,6 +562,44 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
+        WM_TIMER if wparam == TIMER_PROFILE_SCAN && !pointer.is_null() => {
+            let state = unsafe { &mut *pointer };
+            let Some(scan) = state.background_scan.as_ref() else {
+                unsafe {
+                    KillTimer(window, TIMER_PROFILE_SCAN);
+                }
+                return 0;
+            };
+            let completed = scan.try_take();
+            if completed.is_none() && !scan.is_finished() {
+                return 0;
+            }
+            unsafe {
+                KillTimer(window, TIMER_PROFILE_SCAN);
+            }
+            state.background_scan = None;
+            match completed {
+                Some(Ok(detected)) => {
+                    if crate::profile_scan::changes(&state.profiles, &detected).changed() {
+                        state.result = SelectorResult::ProfilesDetected {
+                            detected,
+                            url: state.url.clone(),
+                            selected_profile_id: focused_profile_id(state),
+                        };
+                        unsafe {
+                            DestroyWindow(window);
+                        }
+                    }
+                }
+                Some(Err(_)) | None => {
+                    common::set_text(
+                        state.status,
+                        "プロファイルの自動更新に失敗しました。更新ボタンから再試行できます。",
+                    );
+                }
+            }
+            0
+        }
         WM_TIMER if wparam == TIMER_HOLD && !pointer.is_null() => {
             let state = unsafe { &mut *pointer };
             if let Some(started) = state.escape_started {
@@ -570,6 +660,7 @@ unsafe extern "system" fn window_proc(
         WM_DESTROY => {
             unsafe {
                 KillTimer(window, TIMER_HOLD);
+                KillTimer(window, TIMER_PROFILE_SCAN);
                 PostQuitMessage(0);
             }
             0
@@ -580,6 +671,10 @@ unsafe extern "system" fn window_proc(
         },
         _ => unsafe { DefWindowProcW(window, message, wparam, lparam) },
     }
+}
+
+fn focused_profile_id(state: &UiState) -> Option<i64> {
+    state.focused_profile.map(|index| state.profiles[index].id)
 }
 
 fn create_controls(window: HWND, state: &mut UiState) {
@@ -594,6 +689,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
     state.preview_edit = common::edit(window, 0, true, true, font);
     let settings = common::button(window, "アプリの設定を開く", ID_SETTINGS, font);
     let windows_settings = common::button(window, "Windowsの設定を開く", ID_WINDOWS_SETTINGS, font);
+    state.refresh = common::button(window, "更新", ID_REFRESH, font);
     state.default_rule = common::button(
         window,
         "このプロファイルを既定に設定",
@@ -700,6 +796,7 @@ fn layout_controls(window: HWND, state: &mut UiState) {
         .place(state.favorites_heading, layout.favorites_heading);
     state.page.place(state.favorite_up, layout.favorite_up);
     state.page.place(state.favorite_down, layout.favorite_down);
+    state.page.place(state.refresh, layout.refresh);
     state.page.place(state.default_rule, layout.default_rule);
     state
         .page
@@ -1251,6 +1348,65 @@ mod tests {
         assert_eq!(state.focused_profile, Some(2));
         assert_eq!(state.filtered_indices[0], Some(1));
         assert_eq!(state.filtered_indices[5], Some(2));
+    }
+
+    #[test]
+    fn refresh_button_preserves_url_and_selected_profile() {
+        let url = ValidatedUrl::parse("https://example.com/keep?value=1").unwrap();
+        let mut state = Box::new(UiState::new(
+            Some(url.clone()),
+            vec![profile(7, false)],
+            10,
+            true,
+            Some(7),
+        ));
+        let window =
+            common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
+        unsafe {
+            SendMessageW(
+                window.0,
+                WM_COMMAND,
+                ID_REFRESH as usize,
+                state.refresh as isize,
+            )
+        };
+        assert_eq!(
+            state.result,
+            SelectorResult::RefreshRequested {
+                url: Some(url),
+                selected_profile_id: Some(7),
+            }
+        );
+    }
+
+    #[test]
+    fn completed_background_scan_returns_changes_without_losing_selection() {
+        let url = ValidatedUrl::parse("https://example.com/background").unwrap();
+        let detected = DetectedProfile {
+            browser_type: BrowserType::Edge,
+            profile_id: "Profile 7".into(),
+            detected_name: "変更後".into(),
+            icon_path: None,
+        };
+        let mut state = Box::new(UiState::new(
+            Some(url.clone()),
+            vec![profile(7, false)],
+            10,
+            true,
+            Some(7),
+        ));
+        state.background_scan = Some(BackgroundProfileScan::completed(vec![detected.clone()]));
+        let window =
+            common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
+        unsafe { SendMessageW(window.0, WM_TIMER, TIMER_PROFILE_SCAN, 0) };
+        assert_eq!(
+            state.result,
+            SelectorResult::ProfilesDetected {
+                detected: vec![detected],
+                url: Some(url),
+                selected_profile_id: Some(7),
+            }
+        );
     }
 
     #[test]

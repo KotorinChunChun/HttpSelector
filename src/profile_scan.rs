@@ -1,8 +1,124 @@
-use crate::model::{BrowserType, DetectedProfile};
+use crate::app_paths::AppPaths;
+use crate::model::{BrowserType, DetectedProfile, Profile};
 use anyhow::Context;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ProfileChanges {
+    pub added: usize,
+    pub updated: usize,
+    pub unavailable: usize,
+}
+
+impl ProfileChanges {
+    pub const fn changed(self) -> bool {
+        self.added != 0 || self.updated != 0 || self.unavailable != 0
+    }
+
+    pub fn message(self) -> String {
+        if self.changed() {
+            format!(
+                "プロファイルを更新しました（追加 {}件、変更・再検出 {}件、未検出 {}件）。",
+                self.added, self.updated, self.unavailable
+            )
+        } else {
+            "プロファイルに変更はありません。".to_owned()
+        }
+    }
+}
+
+type BackgroundResult = Result<Vec<DetectedProfile>, String>;
+
+#[derive(Clone)]
+pub struct BackgroundProfileScan {
+    result: Arc<Mutex<Option<BackgroundResult>>>,
+    finished: Arc<AtomicBool>,
+}
+
+impl BackgroundProfileScan {
+    pub fn try_take(&self) -> Option<BackgroundResult> {
+        self.result.lock().ok()?.take()
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.finished.load(Ordering::Acquire)
+    }
+
+    pub fn is_consumed(&self) -> bool {
+        self.is_finished() && self.result.lock().is_ok_and(|result| result.is_none())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn completed(detected: Vec<DetectedProfile>) -> Self {
+        Self {
+            result: Arc::new(Mutex::new(Some(Ok(detected)))),
+            finished: Arc::new(AtomicBool::new(true)),
+        }
+    }
+}
+
+pub fn start_background(paths: AppPaths) -> BackgroundProfileScan {
+    let result = Arc::new(Mutex::new(None));
+    let finished = Arc::new(AtomicBool::new(false));
+    let worker_result = Arc::clone(&result);
+    let worker_finished = Arc::clone(&finished);
+    std::thread::spawn(move || {
+        let scan_result = scan_all()
+            .and_then(|mut detected| {
+                crate::browser::cache_detected_icons(&paths, &mut detected)?;
+                Ok(detected)
+            })
+            .map_err(|error| format!("{error:#}"));
+        if let Ok(mut slot) = worker_result.lock() {
+            *slot = Some(scan_result);
+        }
+        worker_finished.store(true, Ordering::Release);
+    });
+    BackgroundProfileScan { result, finished }
+}
+
+pub fn changes(current: &[Profile], detected: &[DetectedProfile]) -> ProfileChanges {
+    let detected_keys: HashSet<_> = detected
+        .iter()
+        .map(|profile| (profile.browser_type, profile.profile_id.as_str()))
+        .collect();
+    let mut result = ProfileChanges::default();
+    let mut compared_keys = HashSet::new();
+    for profile in detected {
+        if !compared_keys.insert((profile.browser_type, profile.profile_id.as_str())) {
+            continue;
+        }
+        match current.iter().find(|existing| {
+            existing.browser_type == profile.browser_type
+                && existing.profile_id == profile.profile_id
+        }) {
+            None => result.added += 1,
+            Some(existing)
+                if !existing.available
+                    || existing.detected_name != profile.detected_name
+                    || profile
+                        .icon_path
+                        .as_ref()
+                        .is_some_and(|icon| existing.icon_path.as_ref() != Some(icon)) =>
+            {
+                result.updated += 1;
+            }
+            Some(_) => {}
+        }
+    }
+    result.unavailable = current
+        .iter()
+        .filter(|profile| {
+            profile.available
+                && !detected_keys.contains(&(profile.browser_type, profile.profile_id.as_str()))
+        })
+        .count();
+    result
+}
 
 pub fn scan_all() -> anyhow::Result<Vec<DetectedProfile>> {
     let mut profiles = Vec::new();
@@ -140,6 +256,79 @@ pub fn scan_firefox(firefox_root: &Path, output: &mut Vec<DetectedProfile>) -> a
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn stored(browser_type: BrowserType, id: &str, name: &str, available: bool) -> Profile {
+        Profile {
+            id: 1,
+            browser_type,
+            profile_id: id.to_owned(),
+            detected_name: name.to_owned(),
+            alias_name: "利用者設定".to_owned(),
+            comment: String::new(),
+            sort_order: 0,
+            favorite: true,
+            enabled: true,
+            available,
+            icon_path: None,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    #[test]
+    fn detects_added_updated_restored_and_missing_profiles() {
+        let current = vec![
+            stored(BrowserType::Edge, "Default", "個人", true),
+            stored(BrowserType::Chrome, "Profile 1", "会社", true),
+            stored(BrowserType::Firefox, "old", "旧", false),
+        ];
+        let detected = vec![
+            DetectedProfile {
+                browser_type: BrowserType::Edge,
+                profile_id: "Default".into(),
+                detected_name: "名称変更".into(),
+                icon_path: None,
+            },
+            DetectedProfile {
+                browser_type: BrowserType::Firefox,
+                profile_id: "old".into(),
+                detected_name: "旧".into(),
+                icon_path: None,
+            },
+            DetectedProfile {
+                browser_type: BrowserType::Chrome,
+                profile_id: "Profile 2".into(),
+                detected_name: "追加".into(),
+                icon_path: None,
+            },
+        ];
+        assert_eq!(
+            changes(&current, &detected),
+            ProfileChanges {
+                added: 1,
+                updated: 2,
+                unavailable: 1,
+            }
+        );
+        assert!(changes(&current, &detected).changed());
+    }
+
+    #[test]
+    fn ignores_identical_profiles_and_already_missing_entries() {
+        let current = vec![
+            stored(BrowserType::Edge, "Default", "個人", true),
+            stored(BrowserType::Firefox, "old", "旧", false),
+        ];
+        let detected_profile = DetectedProfile {
+            browser_type: BrowserType::Edge,
+            profile_id: "Default".into(),
+            detected_name: "個人".into(),
+            icon_path: None,
+        };
+        let detected = vec![detected_profile.clone(), detected_profile];
+        assert_eq!(changes(&current, &detected), ProfileChanges::default());
+        assert!(!changes(&current, &detected).changed());
+    }
 
     #[test]
     fn reads_chromium_profile_cache() {
