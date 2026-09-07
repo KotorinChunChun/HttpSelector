@@ -4,6 +4,9 @@ use crate::url_input::ValidatedUrl;
 use anyhow::{Context, bail};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
+use windows_sys::Win32::Foundation::{CloseHandle, HWND, LPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection, DIB_RGB_COLORS,
     DeleteDC, DeleteObject, SelectObject,
@@ -11,9 +14,26 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW,
 };
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DI_NORMAL, DestroyIcon, DrawIconEx, HICON, PrivateExtractIconsW,
+use windows_sys::Win32::System::Threading::{
+    OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
 };
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    AllowSetForegroundWindow, DI_NORMAL, DestroyIcon, DrawIconEx, EnumWindows, GW_OWNER,
+    GetForegroundWindow, GetWindow, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    HICON, IsIconic, IsWindowVisible, PrivateExtractIconsW, SW_RESTORE, SetForegroundWindow,
+    ShowWindowAsync,
+};
+
+const ACTIVATION_GRACE: Duration = Duration::from_millis(500);
+const ACTIVATION_TIMEOUT: Duration = Duration::from_millis(2_500);
+const ACTIVATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BrowserWindow {
+    handle: usize,
+    process_id: u32,
+    title: String,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BrowserCommand {
@@ -38,7 +58,9 @@ pub fn build_command(executable: PathBuf, profile: &Profile, url: &ValidatedUrl)
 pub fn launch(profile: &Profile, url: &ValidatedUrl) -> anyhow::Result<()> {
     let executable = resolve_executable(profile.browser_type)?;
     let command = build_command(executable, profile, url);
-    Command::new(&command.executable)
+    let before = browser_windows(&command.executable);
+    grant_foreground_permission(&before);
+    let child = Command::new(&command.executable)
         .args(&command.arguments)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -51,7 +73,162 @@ pub fn launch(profile: &Profile, url: &ValidatedUrl) -> anyhow::Result<()> {
                 command.executable.display()
             )
         })?;
+    unsafe {
+        AllowSetForegroundWindow(child.id());
+    }
+    activate_browser_window(&command.executable, &before);
     Ok(())
+}
+
+fn activate_browser_window(executable: &Path, before: &[BrowserWindow]) {
+    let started = Instant::now();
+    loop {
+        let current = browser_windows(executable);
+        grant_foreground_permission(&current);
+        if foreground_is_in(&current) {
+            return;
+        }
+        let changed_window = changed_browser_window(before, &current);
+        if (changed_window.is_some() || started.elapsed() >= ACTIVATION_GRACE)
+            && let Some(handle) = choose_browser_window(before, &current)
+        {
+            let window = handle as HWND;
+            unsafe {
+                if IsIconic(window) != 0 {
+                    ShowWindowAsync(window, SW_RESTORE);
+                }
+                SetForegroundWindow(window);
+            }
+            if foreground_is_in(&current) {
+                return;
+            }
+        }
+        if started.elapsed() >= ACTIVATION_TIMEOUT {
+            return;
+        }
+        thread::sleep(ACTIVATION_POLL_INTERVAL);
+    }
+}
+
+fn choose_browser_window(before: &[BrowserWindow], current: &[BrowserWindow]) -> Option<usize> {
+    changed_browser_window(before, current).or_else(|| current.first().map(|window| window.handle))
+}
+
+fn changed_browser_window(before: &[BrowserWindow], current: &[BrowserWindow]) -> Option<usize> {
+    current
+        .iter()
+        .find(|window| !before.iter().any(|old| old.handle == window.handle))
+        .or_else(|| {
+            current.iter().find(|window| {
+                before
+                    .iter()
+                    .find(|old| old.handle == window.handle)
+                    .is_some_and(|old| old.title != window.title)
+            })
+        })
+        .or_else(|| {
+            current
+                .iter()
+                .enumerate()
+                .find(|(current_index, window)| {
+                    before
+                        .iter()
+                        .position(|old| old.handle == window.handle)
+                        .is_some_and(|before_index| *current_index < before_index)
+                })
+                .map(|(_, window)| window)
+        })
+        .map(|window| window.handle)
+}
+
+fn foreground_is_in(windows: &[BrowserWindow]) -> bool {
+    let foreground = unsafe { GetForegroundWindow() } as usize;
+    foreground != 0 && windows.iter().any(|window| window.handle == foreground)
+}
+
+fn grant_foreground_permission(windows: &[BrowserWindow]) {
+    for (index, window) in windows.iter().enumerate() {
+        if windows[..index]
+            .iter()
+            .any(|other| other.process_id == window.process_id)
+        {
+            continue;
+        }
+        unsafe {
+            AllowSetForegroundWindow(window.process_id);
+        }
+    }
+}
+
+fn browser_windows(executable: &Path) -> Vec<BrowserWindow> {
+    let expected = normalized_executable(executable);
+    visible_root_windows()
+        .into_iter()
+        .filter_map(|window| {
+            let mut process_id = 0;
+            unsafe {
+                GetWindowThreadProcessId(window, &mut process_id);
+            }
+            let process_executable = process_executable(process_id)?;
+            (normalized_executable(&process_executable) == expected).then(|| BrowserWindow {
+                handle: window as usize,
+                process_id,
+                title: window_title(window),
+            })
+        })
+        .collect()
+}
+
+fn normalized_executable(path: &Path) -> String {
+    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    path.to_string_lossy()
+        .trim_start_matches(r"\\?\")
+        .replace('/', "\\")
+        .to_lowercase()
+}
+
+fn process_executable(process_id: u32) -> Option<PathBuf> {
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
+    if process.is_null() {
+        return None;
+    }
+    let mut buffer = vec![0_u16; 32_768];
+    let mut length = buffer.len() as u32;
+    let result =
+        unsafe { QueryFullProcessImageNameW(process, 0, buffer.as_mut_ptr(), &mut length) };
+    unsafe {
+        CloseHandle(process);
+    }
+    (result != 0 && length > 0)
+        .then(|| PathBuf::from(String::from_utf16_lossy(&buffer[..length as usize])))
+}
+
+fn window_title(window: HWND) -> String {
+    let length = unsafe { GetWindowTextLengthW(window) };
+    if length <= 0 {
+        return String::new();
+    }
+    let mut buffer = vec![0_u16; length as usize + 1];
+    let copied = unsafe { GetWindowTextW(window, buffer.as_mut_ptr(), buffer.len() as i32) };
+    String::from_utf16_lossy(&buffer[..copied.max(0) as usize])
+}
+
+fn visible_root_windows() -> Vec<HWND> {
+    unsafe extern "system" fn collect(window: HWND, parameter: LPARAM) -> i32 {
+        if unsafe { IsWindowVisible(window) } != 0
+            && unsafe { GetWindow(window, GW_OWNER) }.is_null()
+        {
+            let windows = unsafe { &mut *(parameter as *mut Vec<HWND>) };
+            windows.push(window);
+        }
+        1
+    }
+
+    let mut windows = Vec::new();
+    unsafe {
+        EnumWindows(Some(collect), (&mut windows as *mut Vec<HWND>) as LPARAM);
+    }
+    windows
 }
 
 pub fn cache_detected_icons(
@@ -354,6 +531,82 @@ mod tests {
         let url = ValidatedUrl::parse("https://example.com").unwrap();
         let command = build_command(PathBuf::from("firefox.exe"), &profile, &url);
         assert_eq!(command.arguments, ["-P", "work", "https://example.com"]);
+    }
+
+    #[test]
+    fn a_new_browser_window_is_preferred() {
+        let before = vec![BrowserWindow {
+            handle: 10,
+            process_id: 1,
+            title: "以前のページ".into(),
+        }];
+        let current = vec![
+            BrowserWindow {
+                handle: 20,
+                process_id: 2,
+                title: "新しいページ".into(),
+            },
+            before[0].clone(),
+        ];
+        assert_eq!(choose_browser_window(&before, &current), Some(20));
+    }
+
+    #[test]
+    fn a_window_with_a_changed_title_is_preferred_for_an_existing_browser() {
+        let before = vec![
+            BrowserWindow {
+                handle: 10,
+                process_id: 1,
+                title: "個人用".into(),
+            },
+            BrowserWindow {
+                handle: 20,
+                process_id: 1,
+                title: "作業用".into(),
+            },
+        ];
+        let current = vec![
+            BrowserWindow {
+                handle: 10,
+                process_id: 1,
+                title: "個人用".into(),
+            },
+            BrowserWindow {
+                handle: 20,
+                process_id: 1,
+                title: "開いたページ".into(),
+            },
+        ];
+        assert_eq!(choose_browser_window(&before, &current), Some(20));
+    }
+
+    #[test]
+    fn a_browser_window_moved_forward_in_z_order_is_preferred() {
+        let before = vec![
+            BrowserWindow {
+                handle: 10,
+                process_id: 1,
+                title: "個人用".into(),
+            },
+            BrowserWindow {
+                handle: 20,
+                process_id: 1,
+                title: "作業用".into(),
+            },
+        ];
+        let current = vec![before[1].clone(), before[0].clone()];
+        assert_eq!(choose_browser_window(&before, &current), Some(20));
+    }
+
+    #[test]
+    fn the_front_browser_window_is_the_fallback() {
+        let current = vec![BrowserWindow {
+            handle: 30,
+            process_id: 3,
+            title: "変更なし".into(),
+        }];
+        assert_eq!(choose_browser_window(&current, &current), Some(30));
+        assert_eq!(choose_browser_window(&current, &[]), None);
     }
 
     #[test]
