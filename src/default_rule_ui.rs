@@ -1,3 +1,4 @@
+use crate::app_title;
 use crate::model::{DefaultRule, Profile};
 use crate::rules;
 use crate::ui::{show_error_for, show_information_for};
@@ -127,7 +128,7 @@ pub fn run_rules(
         CreateWindowExW(
             ex_style,
             wide(&crate::app_identity::AppIdentity::current()?.window_class(WINDOW_CLASS)).as_ptr(),
-            wide("HttpSelector 既定ルール").as_ptr(),
+            wide(&app_title::default_rules()).as_ptr(),
             style,
             bounds.x,
             bounds.y,
@@ -223,6 +224,7 @@ unsafe extern "system" fn window_proc(
     }
     let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut RulesState };
     match message {
+        WM_SYSCOMMAND if common::is_maximize_command(wparam) => 0,
         WM_CREATE if !pointer.is_null() => {
             let state = unsafe { &mut *pointer };
             state.theme = Theme::new(unsafe { GetDpiForWindow(window) }.max(96));
@@ -509,7 +511,7 @@ fn apply_pattern_preset(window: HWND, state: &mut RulesState, id: i32) {
     let Some(url) = state.source_url.as_ref() else {
         show_information_for(
             window,
-            "HttpSelector 既定ルール",
+            &app_title::default_rules(),
             "新規ルール登録時のURLから作成できます。",
         );
         return;
@@ -527,7 +529,7 @@ fn save_rule(window: HWND, state: &mut RulesState) {
     let Some(profile_id) = state.selected_profile_id else {
         show_error_for(
             window,
-            "HttpSelector 既定ルール",
+            &app_title::default_rules(),
             "対象プロファイルを選択してください。",
         );
         return;
@@ -536,7 +538,7 @@ fn save_rule(window: HWND, state: &mut RulesState) {
     if pattern.is_empty() || pattern.chars().any(char::is_control) {
         show_error_for(
             window,
-            "HttpSelector 既定ルール",
+            &app_title::default_rules(),
             "URLパターンを入力してください。",
         );
         unsafe { SetFocus(state.pattern) };

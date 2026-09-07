@@ -2,6 +2,7 @@
 
 use anyhow::Context;
 use http_selector::app_paths::AppPaths;
+use http_selector::app_title;
 use http_selector::default_rule_ui::{RuleDraft, RulesAction, run_rules};
 use http_selector::integrity::{IntegrityManager, IntegrityStatus};
 use http_selector::model::DetectedProfile;
@@ -17,7 +18,7 @@ use http_selector::url_input::ValidatedUrl;
 
 fn main() {
     if let Err(error) = run() {
-        show_error("HttpSelector", &format!("{error:#}"));
+        show_error(&app_title::main(), &format!("{error:#}"));
         std::process::exit(1);
     }
 }
@@ -104,7 +105,7 @@ fn run() -> anyhow::Result<()> {
                         .and_then(|()| http_selector::browser::launch(&profile, url));
                     if let Err(error) = launched {
                         show_error(
-                            "HttpSelector",
+                            &app_title::main(),
                             &format!(
                                 "既定ルールのプロファイルを起動できませんでした。別のプロファイルを選択できます。\n{error:#}"
                             ),
@@ -198,7 +199,7 @@ fn run() -> anyhow::Result<()> {
                         .count();
                     if favorite_count >= 5 {
                         show_information(
-                            "HttpSelector",
+                            &app_title::main(),
                             "お気に入りに登録できるプロファイルは5件までです。",
                         );
                     } else {
@@ -225,10 +226,10 @@ fn run() -> anyhow::Result<()> {
                 match scan_profiles(&paths) {
                     Ok(detected) => {
                         let changes = apply_detected_profiles(&storage, &integrity, &detected)?;
-                        show_information("HttpSelector", &changes.message());
+                        show_information(&app_title::main(), &changes.message());
                     }
                     Err(error) => show_error(
-                        "HttpSelector",
+                        &app_title::main(),
                         &format!("プロファイルの更新に失敗しました。\n{error:#}"),
                     ),
                 }
@@ -275,10 +276,10 @@ fn run() -> anyhow::Result<()> {
                     SettingsAction::Rescan => match scan_profiles(&paths) {
                         Ok(detected) => {
                             let changes = apply_detected_profiles(&storage, &integrity, &detected)?;
-                            show_information("HttpSelector", &changes.message());
+                            show_information(&app_title::main(), &changes.message());
                         }
                         Err(error) => show_error(
-                            "HttpSelector",
+                            &app_title::main(),
                             &format!("プロファイル再スキャンに失敗しました。\n{error:#}"),
                         ),
                     },

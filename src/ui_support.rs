@@ -23,6 +23,10 @@ pub fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+pub fn is_maximize_command(wparam: usize) -> bool {
+    (wparam & 0xfff0) == SC_MAXIMIZE as usize
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Bounds {
     pub x: i32,
@@ -557,6 +561,14 @@ impl Drop for HiddenTestWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_maximize_system_command_is_rejected() {
+        assert!(is_maximize_command(SC_MAXIMIZE as usize));
+        assert!(is_maximize_command(SC_MAXIMIZE as usize | 3));
+        assert!(!is_maximize_command(SC_RESTORE as usize));
+        assert!(!is_maximize_command(SC_MINIMIZE as usize));
+    }
 
     #[test]
     fn japanese_font_fits_card_lines_at_each_dpi() {

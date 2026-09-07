@@ -1,3 +1,4 @@
+use crate::app_title;
 use crate::model::Profile;
 use crate::storage::{MAX_ESCAPE_HOLD_DURATION_TENTHS, MIN_ESCAPE_HOLD_DURATION_TENTHS};
 use crate::ui::show_error_for;
@@ -121,13 +122,8 @@ pub fn run_settings(
     escape_hold_duration_tenths: u32,
     open_profile_on_double_click_enabled: bool,
 ) -> anyhow::Result<SettingsOutcome> {
-    let style = WS_OVERLAPPED
-        | WS_CAPTION
-        | WS_SYSMENU
-        | WS_THICKFRAME
-        | WS_MAXIMIZEBOX
-        | WS_CLIPCHILDREN
-        | WS_VSCROLL;
+    let style =
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN | WS_VSCROLL;
     let ex_style = WS_EX_CONTROLPARENT;
     let bounds = common::initial_bounds(940, 800, style, ex_style);
     register_window_class()?;
@@ -141,7 +137,7 @@ pub fn run_settings(
         CreateWindowExW(
             ex_style,
             wide(&crate::app_identity::AppIdentity::current()?.window_class(WINDOW_CLASS)).as_ptr(),
-            wide("HttpSelector 設定").as_ptr(),
+            wide(&app_title::settings()).as_ptr(),
             style,
             bounds.x,
             bounds.y,
@@ -244,6 +240,7 @@ unsafe extern "system" fn window_proc(
     }
     let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut SettingsState };
     match message {
+        WM_SYSCOMMAND if common::is_maximize_command(wparam) => 0,
         WM_CREATE if !pointer.is_null() => {
             let state = unsafe { &mut *pointer };
             state.theme = Theme::new(unsafe { GetDpiForWindow(window) }.max(96));
@@ -573,7 +570,7 @@ fn capture_general_settings(window: HWND, state: &mut SettingsState) -> bool {
     {
         show_error_for(
             window,
-            "HttpSelector 設定",
+            &app_title::settings(),
             "お気に入りは5件までです。不要な項目のチェックを外してください。",
         );
         return false;
@@ -583,7 +580,7 @@ fn capture_general_settings(window: HWND, state: &mut SettingsState) -> bool {
     else {
         show_error_for(
             window,
-            "HttpSelector 設定",
+            &app_title::settings(),
             "ESC長押し終了時間は0.1秒から10.0秒まで、0.1秒刻みで指定してください。",
         );
         unsafe {

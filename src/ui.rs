@@ -1,3 +1,4 @@
+use crate::app_title;
 use crate::model::{DetectedProfile, Profile};
 use crate::profile_scan::BackgroundProfileScan;
 use crate::storage::{MAX_ESCAPE_HOLD_DURATION_TENTHS, MIN_ESCAPE_HOLD_DURATION_TENTHS};
@@ -255,7 +256,7 @@ fn run_selector_window(
         CreateWindowExW(
             ex_style,
             wide(&crate::app_identity::AppIdentity::current()?.window_class(WINDOW_CLASS)).as_ptr(),
-            wide("HttpSelector").as_ptr(),
+            wide(&app_title::main()).as_ptr(),
             style,
             bounds.x,
             bounds.y,
@@ -343,6 +344,7 @@ unsafe extern "system" fn window_proc(
     }
     let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut UiState };
     match message {
+        WM_SYSCOMMAND if common::is_maximize_command(wparam) => 0,
         WM_CREATE if !pointer.is_null() => {
             let state = unsafe { &mut *pointer };
             state.theme = Theme::new(unsafe { GetDpiForWindow(window) }.max(96));
@@ -482,7 +484,7 @@ unsafe extern "system" fn window_proc(
                 let Some(profile_index) = state.focused_profile else {
                     show_information_for(
                         window,
-                        "HttpSelector",
+                        &app_title::main(),
                         "先にプロファイルをクリックしてフォーカスしてください。",
                     );
                     return 0;
@@ -490,7 +492,7 @@ unsafe extern "system" fn window_proc(
                 let Some(url) = state.url.clone() else {
                     show_information_for(
                         window,
-                        "HttpSelector",
+                        &app_title::main(),
                         "URLを受け取っているときだけ既定ルールを登録できます。",
                     );
                     return 0;
@@ -509,7 +511,7 @@ unsafe extern "system" fn window_proc(
                 let Some(profile_index) = state.focused_profile else {
                     show_information_for(
                         window,
-                        "HttpSelector",
+                        &app_title::main(),
                         "先にプロファイルをクリックしてフォーカスしてください。",
                     );
                     return 0;
@@ -679,7 +681,7 @@ fn focused_profile_id(state: &UiState) -> Option<i64> {
 
 fn create_controls(window: HWND, state: &mut UiState) {
     let font = state.theme.font;
-    let title = common::label(window, "HttpSelector", state.theme.title);
+    let title = common::label(window, &app_title::main(), state.theme.title);
     let subtitle = common::label(window, "リンクを開くプロファイルを選択", font);
     let close = common::button(window, "閉じる(ESC長押)", ID_CLOSE, font);
     state.status = common::label(window, "", font);
@@ -778,7 +780,7 @@ fn open_windows_default_apps(window: HWND) {
     if result as usize <= 32 {
         show_error_for(
             window,
-            "HttpSelector",
+            &app_title::main(),
             "Windowsの既定アプリ設定を開けませんでした。",
         );
     }
@@ -1206,7 +1208,7 @@ pub fn show_information_for(owner: HWND, title: &str, message: &str) {
 }
 
 pub fn ask_integrity_recovery(has_valid_backup: bool) -> IntegrityRecoveryAction {
-    let title = wide("HttpSelector - 設定ファイルエラー");
+    let title = wide(&app_title::settings_file_error());
     if has_valid_backup {
         let message = wide(
             "設定ファイルが変更または破損しています。\r\n\r\n「はい」: バックアップから復旧\r\n「いいえ」: 破損ファイルを退避して初期化\r\n「キャンセル」: 終了",
