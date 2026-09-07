@@ -1,6 +1,6 @@
 [package]
 name = "http-selector"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 rust-version = "1.85"
 description = "Windows browser profile selector for HTTP and HTTPS links"
