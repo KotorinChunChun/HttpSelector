@@ -36,7 +36,7 @@ Assert-Rejected { & (Join-Path $PSScriptRoot 'release-msix.ps1') -Mode Build -Re
 $configPath = Join-Path $fixture 'packaging/release-config.json'
 $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
 $betaContext = Get-MsixContext $fixture beta
-Assert-True ($betaContext.Version -eq '0.0.2.0') 'Betaの0始まり版'
+Assert-True ($betaContext.Version -eq $config.packageVersion -and ([version]$betaContext.Version).Major -eq 0) 'Betaの0始まり版'
 Assert-True (Test-BetaVersionResetAllowed -Context $betaContext -PriorVersion ([version]'1.0.3.0')) '承認済み番号リセット'
 Assert-True (-not (Test-BetaVersionResetAllowed -Context $betaContext -PriorVersion ([version]'2.0.0.0'))) '番号リセット上限'
 Assert-Rejected { Get-MsixContext $fixture stable } 'Store用MSIXバージョンは先頭1以上'
