@@ -10,6 +10,8 @@ if (-not (Test-Path -LiteralPath $context.SiteSourceDirectory -PathType Containe
 [IO.Directory]::CreateDirectory($context.SiteRoot) | Out-Null
 foreach ($source in Get-ChildItem -LiteralPath $context.SiteSourceDirectory -File -Recurse -Force) {
     $relative = [IO.Path]::GetRelativePath($context.SiteSourceDirectory, $source.FullName)
+    # 共有メニューは他アプリの編集中データを保持する。公開対象に指定した場合だけ更新する。
+    if ($relative -eq 'index.html' -and 'index.html' -notin $context.Distribution.publishRelativePaths) { continue }
     $destination = [IO.Path]::GetFullPath((Join-Path $context.SiteRoot $relative))
     if (-not $destination.StartsWith($context.SiteRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'サイト出力先の外へコピーしようとしました。' }
     if ($relative -eq '.htaccess' -and (Test-Path -LiteralPath $destination -PathType Leaf)) {

@@ -9,6 +9,7 @@ $result = Assert-DistributionArtifacts -Context $context -Staged
 if ((Get-FileHash $context.PackagePath).Hash -ne (Get-FileHash $context.StagedPackagePath).Hash -or (Get-FileHash $context.CertificatePath).Hash -ne (Get-FileHash $context.StagedCertificatePath).Hash -or (Get-FileHash $context.AppInstallerPath).Hash -ne (Get-FileHash $context.StagedAppInstallerPath).Hash) { throw 'ステージ済み成果物が生成元と一致しません。' }
 foreach ($source in Get-ChildItem -LiteralPath $context.SiteSourceDirectory -File -Recurse -Force) {
     $relative = [IO.Path]::GetRelativePath($context.SiteSourceDirectory, $source.FullName)
+    if ($relative -eq 'index.html' -and 'index.html' -notin $context.Distribution.publishRelativePaths) { continue }
     $staged = Join-Path $context.SiteRoot $relative
     if (-not (Test-Path -LiteralPath $staged -PathType Leaf)) { throw "公開ページがありません: $relative" }
     if ($relative -eq '.htaccess') {
