@@ -4,53 +4,53 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="HttpSelectorのベータ版ダウンロードと初回インストールの案内ページです。">
-    <meta name="theme-color" content="#101820">
+    <meta name="theme-color" content="#ffffff">
     <title>HttpSelector ダウンロード</title>
-    <link rel="stylesheet" href="./assets/styles.css">
+    <link rel="stylesheet" href="./assets/styles.css?v=20260913-light2">
   </head>
   <body>
     <header class="site-header">
       <a class="brand" href="./index.html" aria-label="アプリ ダウンロードメニューへ戻る"><img src="./assets/httpselector-icon.png" width="44" height="44" alt=""><span>HttpSelector</span></a>
-      <span class="channel-badge">BETA AVAILABLE</span>
+      <span class="channel-badge">ベータ版</span>
     </header>
     <main>
       <nav class="breadcrumb" aria-label="パンくずリスト"><a href="./index.html">ダウンロードメニュー</a><span>/</span>HttpSelector</nav>
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-copy">
-          <p class="eyebrow">Windows 10 / 11 · x64</p>
-          <h1 id="hero-title">リンクを、開きたい場所へ。</h1>
+
+          <h1 id="hero-title">HttpSelector</h1>
           <p class="lead">HTTP/HTTPSリンクを開くブラウザーとプロファイルを、その都度選択できます。現在は <strong>v0.0.3-beta（MSIX 0.0.3.0）</strong> を公開しています。</p>
-          <div class="actions"><a class="button primary" href="./beta/HttpSelector.appinstaller" download>ベータ版のApp Installerをダウンロード</a><a class="button secondary" href="./httpselector-certificate/index.html">証明書の導入手順</a></div>
+          <div class="actions"><a class="button primary" href="./beta/HttpSelector.appinstaller" download>インストール・更新</a><a class="button secondary" href="./httpselector-certificate/index.html">証明書の導入手順</a></div>
           <p class="microcopy">初回インストール前に、配布用の自己署名証明書を管理者権限で登録してください。</p>
         </div>
         <aside class="release-card" aria-label="リリース情報"><div class="release-mark">β</div><dl><div><dt>表示バージョン</dt><dd>v0.0.3-beta</dd></div><div><dt>MSIXバージョン</dt><dd>0.0.3.0</dd></div><div><dt>アーキテクチャ</dt><dd>x64</dd></div><div><dt>公開日</dt><dd>2026-09-21</dd></div></dl></aside>
       </section>
       <section class="channel-options" aria-labelledby="channels-title">
-        <div class="section-heading"><p class="eyebrow">RELEASE CHANNELS</p><h2 id="channels-title">利用する更新チャネル</h2><p>App Installerで導入すると、ベータチャネルの更新を起動時に確認します。</p></div>
+        <div class="section-heading"><h2 id="channels-title">配布版</h2><p>App Installerで導入すると、ベータチャネルの更新を起動時に確認します。</p></div>
         <div class="channel-grid">
-          <article class="channel-card unavailable"><p class="channel-label">STABLE</p><h3>正式版</h3><p>正式版はMicrosoft Storeでの公開を予定しています。現在は準備中です。</p><span class="button disabled" aria-disabled="true">正式版 — 準備中</span></article>
+          <article class="channel-card unavailable"><p class="channel-label">STABLE</p><h3>正式版</h3><p>正式版は準備中です。</p><span class="button disabled" aria-disabled="true">正式版 — 準備中</span></article>
           <article class="channel-card featured"><p class="channel-label">BETA</p><h3>ベータ版 MSIX 0.0.3.0</h3><p>ブラウザー前面化処理、タイトルのバージョン表示、最大化の無効化を追加しました。0.0.2.0から同じベータチャネルで更新できます。</p><a class="button primary" href="./beta/HttpSelector.appinstaller" download>ベータ版をダウンロード</a></article>
         </div>
       </section>
-      <section class="notice warning" aria-labelledby="beta-notice-title"><div class="notice-icon" aria-hidden="true">!</div><div><h2 id="beta-notice-title">これはベータ版です</h2><p>予期しない不具合が含まれる可能性があります。ブラウザーの選択や既定ルールを確認して利用してください。テレメトリーや独自のデータ送信は行いません。</p></div></section>
+
       <section class="steps" aria-labelledby="install-title">
-        <div class="section-heading"><p class="eyebrow">FIRST INSTALL</p><h2 id="install-title">初回インストールは3ステップ</h2></div>
+        <div class="section-heading"><h2 id="install-title">初回インストール</h2></div>
         <ol class="step-grid">
           <li><span class="step-number">01</span><h3>証明書を確認して信頼する</h3><p>公開証明書の発行先と拇印を確認し、ローカル コンピューターの「信頼されたユーザー」へ登録します。</p><a class="text-link" href="./httpselector-certificate/index.html">証明書の導入手順を見る →</a></li>
           <li><span class="step-number">02</span><h3>App Installerを開く</h3><p>ダウンロードした <code>HttpSelector.appinstaller</code> を開き、「インストール」を選びます。</p></li>
           <li><span class="step-number">03</span><h3>既定のアプリを選ぶ</h3><p>Windowsの設定でHTTP/HTTPSの候補からHttpSelectorを選択します。アプリから設定画面を開くこともできます。</p></li>
         </ol>
       </section>
-      <section class="notice warning" aria-labelledby="existing-title"><div class="notice-icon" aria-hidden="true">!</div><div><h2 id="existing-title">旧番号系列からの移行について</h2><p>旧系列の1.0.3.0以前から0.0.2.0以降へは番号が下がるため自動更新できません。1.0.3.0以前のHttpSelectorベータ版をアンインストールしてから、この版を新規インストールしてください。</p></div></section>
+
       <section class="downloads" aria-labelledby="files-title">
-        <div class="section-heading"><p class="eyebrow">DOWNLOAD FILES</p><h2 id="files-title">ベータ版の個別ダウンロード</h2><p>通常はApp Installerを利用してください。手動で確認する場合は各ファイルを直接取得できます。</p></div>
+        <div class="section-heading"><h2 id="files-title">ベータ版の個別ダウンロード</h2><p>通常はApp Installerを利用してください。手動で確認する場合は各ファイルを直接取得できます。</p></div>
         <div class="file-list">
           <a href="./beta/HttpSelector.appinstaller" download><span><strong>App Installer</strong><small>初回導入とbeta自動更新</small></span><code>.appinstaller</code></a>
           <a href="./beta/HttpSelector_0.0.3.0_x64_dev.msix" download><span><strong>MSIX package</strong><small>HttpSelector MSIX 0.0.3.0 本体</small></span><code>.msix</code></a>
           <a href="./beta/HttpSelector.Development.cer" download><span><strong>Signing certificate</strong><small>自己署名証明書の公開鍵</small></span><code>.cer</code></a>
         </div>
       </section>
-      <section class="notice warning"><div><h2>既知の制約</h2><p>同じブラウザーの別プロファイルが前面にある場合、選択したプロファイルが前面に出ないことがあります。手動起動に失敗するとアプリは終了します。未処理のリンクがある間に新しいリンクを受信すると、最後のリンクに置き換わります。</p></div></section>
+      <section class="notice warning"><div><h2>既知の制約</h2><p>同じブラウザーの別プロファイルが前面にある場合、選択したプロファイルが前面に出ないことがあります。手動起動に失敗するとアプリは終了します。未処理のリンクがある間に新しいリンクを受信すると、最後のリンクに置き換わります。</p><p>旧番号系列の1.x版からは番号が下がるため自動更新できません。旧版をアンインストールしてから新規導入してください。</p></div></section>
       <section class="requirements"><h2>動作要件</h2><ul><li>Windows 10 version 1809以降、またはWindows 11</li><li>x64プロセッサ</li><li>Microsoft App Installer</li><li>Microsoft Edge、Google Chrome、Mozilla Firefoxのいずれか</li></ul></section>
     </main>
     <footer><p>HttpSelector beta distribution · Publisher: KotorinChunChun</p><p><a href="./index.html">アプリ一覧</a> · <a href="https://github.com/KotorinChunChun">GitHub</a></p></footer>

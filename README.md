@@ -19,7 +19,7 @@ Windowsでリンクを開く前に、Edge・Chrome・Firefoxのブラウザプ�
 
 ## 開発状況
 
-v0.0.2-betaを公開しています。Microsoft Store向けMSIXの準備も進めていますが、Storeでの公開はまだ行っていません。
+v0.0.3-beta（MSIX 0.0.3.0）を公開しています。Microsoft Store向けMSIXの準備も進めていますが、Storeでの公開はまだ行っていません。既知の制約と検証結果は[リリース記録](dev/history/v0.0.3/v0.0.3-imp.md)を参照してください。
 
 ```powershell
 cargo test

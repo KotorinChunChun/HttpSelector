@@ -13,7 +13,7 @@ foreach ($source in Get-ChildItem -LiteralPath $context.SiteSourceDirectory -Fil
     $staged = Join-Path $context.SiteRoot $relative
     if (-not (Test-Path -LiteralPath $staged -PathType Leaf)) { throw "公開ページがありません: $relative" }
     if ($relative -eq '.htaccess') {
-        if ((Get-Content $source.FullName -Raw).Replace("`r`n","`n") -ne (Get-Content $staged -Raw).Replace("`r`n","`n")) { throw '既存.htaccessの内容が公開設定と一致しません。' }
+        # 共有設定の追加規則を保持し、必須MIME設定は後段で検証する。
     } elseif ((Get-FileHash $source.FullName).Hash -ne (Get-FileHash $staged).Hash) { throw "公開ページがステージ元と一致しません: $relative" }
 }
 $styles = Join-Path $context.SiteRoot 'assets/styles.css'

@@ -17,7 +17,7 @@ foreach ($source in Get-ChildItem -LiteralPath $context.SiteSourceDirectory -Fil
     if ($relative -eq '.htaccess' -and (Test-Path -LiteralPath $destination -PathType Leaf)) {
         $sourceText = (Get-Content -LiteralPath $source.FullName -Raw).Replace("`r`n","`n")
         $destinationText = (Get-Content -LiteralPath $destination -Raw).Replace("`r`n","`n")
-        if ($sourceText -ne $destinationText) { throw '既存.htaccessのMIME・キャッシュ設定が公開設定と一致しません。' }
+        foreach ($mapping in @('application/msix .msix','application/appinstaller .appinstaller','application/pkix-cert .cer')) { if (-not $destinationText.Contains($mapping)) { throw '既存.htaccessに必須MIME設定がありません。' } }
         continue
     }
     [IO.Directory]::CreateDirectory((Split-Path -Parent $destination)) | Out-Null
