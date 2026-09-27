@@ -12,6 +12,7 @@ const SETTING_INITIAL_SCAN_COMPLETED: &str = "initial_scan_completed";
 const SETTING_RECORD_URL_HISTORY: &str = "record_url_history";
 const SETTING_ESCAPE_HOLD_DURATION_TENTHS: &str = "escape_hold_duration_tenths";
 const SETTING_OPEN_PROFILE_ON_DOUBLE_CLICK: &str = "open_profile_on_double_click";
+const SETTING_INTERRUPTION_ENABLED: &str = "interruption_enabled";
 pub const DEFAULT_ESCAPE_HOLD_DURATION_TENTHS: u32 = 10;
 pub const MIN_ESCAPE_HOLD_DURATION_TENTHS: u32 = 1;
 pub const MAX_ESCAPE_HOLD_DURATION_TENTHS: u32 = 100;
@@ -303,6 +304,20 @@ impl Storage {
         )
     }
 
+    pub fn interruption_enabled(&self) -> anyhow::Result<bool> {
+        Ok(self
+            .get_setting(SETTING_INTERRUPTION_ENABLED)?
+            .map(|value| value != "0")
+            .unwrap_or(true))
+    }
+
+    pub fn set_interruption_enabled(&self, enabled: bool) -> anyhow::Result<()> {
+        self.set_setting(
+            SETTING_INTERRUPTION_ENABLED,
+            if enabled { "1" } else { "0" },
+        )
+    }
+
     pub fn load_default_rules(&self) -> anyhow::Result<Vec<DefaultRule>> {
         let connection = self.open()?;
         let mut statement = connection.prepare(
@@ -341,6 +356,25 @@ impl Storage {
                     index as i64,
                     unix_timestamp(),
                 ],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn associate_domain(&self, profile_id: i64, patterns: &[String; 2]) -> anyhow::Result<()> {
+        let mut connection = self.open()?;
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            "DELETE FROM DefaultRules WHERE Pattern=?1 OR Pattern=?2",
+            params![patterns[0], patterns[1]],
+        )?;
+        transaction.execute("UPDATE DefaultRules SET SortOrder=SortOrder+2", [])?;
+        for (order, pattern) in patterns.iter().enumerate() {
+            transaction.execute(
+                "INSERT INTO DefaultRules (ProfileId, Pattern, Enabled, SortOrder, CreatedAt, UpdatedAt)
+                 VALUES (?1, ?2, 1, ?3, ?4, ?4)",
+                params![profile_id, pattern, order as i64, unix_timestamp()],
             )?;
         }
         transaction.commit()?;
@@ -603,6 +637,44 @@ mod tests {
         invalid.profile_id = profile_id + 1000;
         assert!(storage.replace_default_rules(&[rule, invalid]).is_err());
         assert_eq!(storage.load_default_rules().unwrap(), saved);
+    }
+
+    #[test]
+    fn interruption_setting_and_domain_association_are_persistent() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage::new(temp.path().join("test.db"));
+        storage.initialize().unwrap();
+        assert!(storage.interruption_enabled().unwrap());
+        storage.set_interruption_enabled(false).unwrap();
+        assert!(!storage.interruption_enabled().unwrap());
+        storage
+            .sync_detected(&[
+                DetectedProfile {
+                    browser_type: BrowserType::Edge,
+                    profile_id: "Default".into(),
+                    detected_name: "Edge".into(),
+                    icon_path: None,
+                },
+                DetectedProfile {
+                    browser_type: BrowserType::Chrome,
+                    profile_id: "Default".into(),
+                    detected_name: "Chrome".into(),
+                    icon_path: None,
+                },
+            ])
+            .unwrap();
+        let profiles = storage.load_all_profiles().unwrap();
+        let patterns = [
+            "http://example.com/*".into(),
+            "https://example.com/*".into(),
+        ];
+        storage.associate_domain(profiles[0].id, &patterns).unwrap();
+        storage.associate_domain(profiles[1].id, &patterns).unwrap();
+        let rules = storage.load_default_rules().unwrap();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].pattern, patterns[0]);
+        assert_eq!(rules[1].pattern, patterns[1]);
+        assert!(rules.iter().all(|rule| rule.profile_id == profiles[1].id));
     }
 
     #[test]

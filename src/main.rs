@@ -5,13 +5,13 @@ use http_selector::app_paths::AppPaths;
 use http_selector::app_title;
 use http_selector::default_rule_ui::{RuleDraft, RulesAction, run_rules};
 use http_selector::integrity::{IntegrityManager, IntegrityStatus};
-use http_selector::model::DetectedProfile;
+use http_selector::model::{DefaultRule, DetectedProfile, Profile};
 use http_selector::profile_scan;
 use http_selector::settings_ui::{SettingsAction, run_settings};
 use http_selector::single_instance::{InstanceStatus, acquire};
 use http_selector::storage::Storage;
 use http_selector::ui::{
-    IntegrityRecoveryAction, SelectorResult, ask_integrity_recovery,
+    IntegrityRecoveryAction, SelectorResult, ask_domain_association, ask_integrity_recovery,
     run_selector_with_selection_and_scan as run_selector, show_error, show_information,
 };
 use http_selector::url_input::ValidatedUrl;
@@ -71,6 +71,7 @@ fn run() -> anyhow::Result<()> {
         (!initial_scan_required).then(|| profile_scan::start_background(paths.clone()));
     let mut escape_hold_duration_tenths = storage.escape_hold_duration_tenths()?;
     let mut open_profile_on_double_click = storage.open_profile_on_double_click()?;
+    let mut interruption_enabled = storage.interruption_enabled()?;
     let mut apply_default_rules = url.is_some();
     let mut selected_profile_id = None;
 
@@ -84,23 +85,10 @@ fn run() -> anyhow::Result<()> {
         if apply_default_rules {
             if let Some(url) = url.as_ref() {
                 let all_profiles = storage.load_all_profiles()?;
-                let matching_profile = storage
-                    .load_default_rules()?
-                    .into_iter()
-                    .filter(|rule| {
-                        rule.enabled && http_selector::rules::matches(&rule.pattern, url.original())
-                    })
-                    .find_map(|rule| {
-                        all_profiles
-                            .iter()
-                            .find(|profile| {
-                                profile.id == rule.profile_id
-                                    && profile.available
-                                    && profile.enabled
-                            })
-                            .cloned()
-                    });
-                if let Some(profile) = matching_profile {
+                let rules = storage.load_default_rules()?;
+                let target_profile =
+                    resolve_profile(&all_profiles, &rules, url, interruption_enabled);
+                if let Some(profile) = target_profile {
                     let launched = http_selector::browser::ensure_profile_is_launchable(&profile)
                         .and_then(|()| http_selector::browser::launch(&profile, url));
                     if let Err(error) = launched {
@@ -131,6 +119,7 @@ fn run() -> anyhow::Result<()> {
             open_profile_on_double_click,
             selected_profile_id,
             background_scan.clone(),
+            interruption_enabled,
         )? {
             SelectorResult::UrlReceived(incoming) => {
                 url = Some(incoming);
@@ -148,8 +137,21 @@ fn run() -> anyhow::Result<()> {
                 let url = selected_url
                     .as_ref()
                     .context("開くURLが指定されていません")?;
+                let domain = url::Url::parse(url.original())?
+                    .host_str()
+                    .unwrap_or_default()
+                    .to_owned();
+                let associate = ask_domain_association(&domain, profile.display_name());
                 http_selector::browser::ensure_profile_is_launchable(&profile)?;
                 http_selector::browser::launch(&profile, url)?;
+                if associate {
+                    integrity.backup_current()?;
+                    storage.associate_domain(
+                        profile.id,
+                        &http_selector::rules::domain_patterns(url),
+                    )?;
+                    integrity.sign_current()?;
+                }
                 if storage.record_url_history_enabled()? {
                     integrity.backup_current()?;
                     let pattern = http_selector::url_pattern::from_url(url);
@@ -157,6 +159,17 @@ fn run() -> anyhow::Result<()> {
                     integrity.sign_current()?;
                 }
                 break;
+            }
+            SelectorResult::InterruptionChanged {
+                enabled,
+                url: current_url,
+            } => {
+                integrity.backup_current()?;
+                storage.set_interruption_enabled(enabled)?;
+                integrity.sign_current()?;
+                interruption_enabled = enabled;
+                url = current_url;
+                apply_default_rules = true;
             }
             SelectorResult::ConfigureDefaultRule {
                 profile_id,
@@ -312,6 +325,35 @@ fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn resolve_profile(
+    profiles: &[Profile],
+    rules: &[DefaultRule],
+    url: &ValidatedUrl,
+    interruption_enabled: bool,
+) -> Option<Profile> {
+    rules
+        .iter()
+        .filter(|rule| rule.enabled && http_selector::rules::matches(&rule.pattern, url.original()))
+        .find_map(|rule| {
+            profiles
+                .iter()
+                .find(|profile| {
+                    profile.id == rule.profile_id && profile.available && profile.enabled
+                })
+                .cloned()
+        })
+        .or_else(|| {
+            (!interruption_enabled)
+                .then(|| {
+                    profiles
+                        .iter()
+                        .find(|profile| profile.favorite && profile.available && profile.enabled)
+                        .cloned()
+                })
+                .flatten()
+        })
+}
+
 fn scan_profiles(paths: &AppPaths) -> anyhow::Result<Vec<DetectedProfile>> {
     let mut detected = profile_scan::scan_all().context("プロファイル検出に失敗しました")?;
     http_selector::browser::cache_detected_icons(paths, &mut detected)?;
@@ -331,4 +373,56 @@ fn apply_detected_profiles(
         integrity.sign_current()?;
     }
     Ok(changes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http_selector::model::BrowserType;
+
+    fn profile(id: i64, favorite: bool, available: bool) -> Profile {
+        Profile {
+            id,
+            browser_type: BrowserType::Edge,
+            profile_id: format!("Profile {id}"),
+            detected_name: format!("Profile {id}"),
+            alias_name: String::new(),
+            comment: String::new(),
+            sort_order: id,
+            favorite,
+            enabled: true,
+            available,
+            icon_path: None,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    #[test]
+    fn route_prioritizes_rules_then_first_available_favorite_when_interruption_is_off() {
+        let url = ValidatedUrl::parse("https://example.com/path").unwrap();
+        let profiles = vec![
+            profile(1, true, false),
+            profile(2, true, true),
+            profile(3, false, true),
+        ];
+        let rule = DefaultRule {
+            id: 1,
+            profile_id: 3,
+            pattern: "https://example.com/*".into(),
+            enabled: true,
+            sort_order: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        assert_eq!(
+            resolve_profile(&profiles, std::slice::from_ref(&rule), &url, false)
+                .unwrap()
+                .id,
+            3
+        );
+        assert_eq!(resolve_profile(&profiles, &[], &url, false).unwrap().id, 2);
+        assert!(resolve_profile(&profiles, &[], &url, true).is_none());
+        assert!(resolve_profile(&profiles[..1], &[], &url, false).is_none());
+    }
 }

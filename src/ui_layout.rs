@@ -143,7 +143,7 @@ impl SelectorLayout {
         let tile_width = (available - GAP * (columns as i32 - 1)) / columns as i32;
         let favorites = slots[..5].iter().flatten().count();
         let normal = slots[5..].iter().flatten().count();
-        let favorites_heading = Bounds::new(MARGIN, 352, available, 24);
+        let favorites_heading = Bounds::new(MARGIN, 352, (available - 112).max(1), 24);
         let favorite_top = favorites_heading.bottom() + 12;
         let section_height = |count: usize| {
             if count == 0 {
@@ -178,16 +178,22 @@ impl SelectorLayout {
             actions_top + 32 + 12
         };
         let action_x = MARGIN + ((available - action_width).max(0) / 2);
-        let settings_width = 160.min((available - 8).max(1) / 2);
+        let settings_width = 100.min((available - 8).max(1) / 2);
         let windows_width = 210.min((available - settings_width - 8).max(1));
-        let header_actions = available >= settings_width + windows_width + 16 + 132 + 14 + 160;
+        let header_actions =
+            available >= settings_width + windows_width + 16 + 132 + 14 + 160 + 178;
         let settings_x = if header_actions {
             width - MARGIN - 132 - 8 - windows_width - 8 - settings_width
         } else {
             MARGIN
         };
         let windows_x = settings_x + settings_width + 8;
-        let action_y = if header_actions { 18 } else { 272 };
+        let action_y = if header_actions { 18 } else { 310 };
+        let interruption = if header_actions {
+            Bounds::new(settings_x - 178, 18, 170, 32)
+        } else {
+            Bounds::new(MARGIN, 272, 210.min(available), 32)
+        };
         let mut tiles = vec![None; slots.len()];
         for (start, end, top) in [(0, 5, favorite_top), (5, slots.len(), normal_top)] {
             for (position, slot) in (start..end)
@@ -208,7 +214,7 @@ impl SelectorLayout {
                     24,
                     16,
                     if header_actions {
-                        (settings_x - MARGIN - 14).max(1)
+                        (settings_x - 178 - MARGIN - 14).max(1)
                     } else {
                         available - 146
                     },
@@ -222,7 +228,7 @@ impl SelectorLayout {
                 Bounds::new(24, 216, available, 42),
                 Bounds::new(settings_x, action_y, settings_width, 32),
                 Bounds::new(windows_x, action_y, windows_width, 32),
-                Bounds::new(MARGIN, 310, available, 32),
+                interruption,
             ],
             favorites_heading,
             favorite_pin: Bounds::new(width - MARGIN - 100, 348, 100, 32),
@@ -313,6 +319,7 @@ mod tests {
                         let layout = SelectorLayout::new(width, &slots);
                         let mut regions = vec![
                             layout.favorites_heading,
+                            layout.favorite_pin,
                             layout.refresh,
                             layout.favorite_up,
                             layout.favorite_down,
@@ -333,7 +340,12 @@ mod tests {
                             assert!(
                                 regions[index + 1..]
                                     .iter()
-                                    .all(|other| !overlaps(*rect, *other))
+                                    .all(|other| !overlaps(*rect, *other)),
+                                "dpi={dpi} width={width} favorites={favorites} normal={normal} index={index} rect=({}, {}, {}, {})",
+                                rect.x,
+                                rect.y,
+                                rect.width,
+                                rect.height
                             );
                         }
                     }
@@ -391,8 +403,8 @@ mod tests {
         assert!(windows.x + windows.width <= close.x);
 
         let compact = SelectorLayout::new(400, &vec![None; 25]);
-        assert_eq!(compact.fixed[7].y, 272);
-        assert_eq!(compact.fixed[8].y, 272);
+        assert_eq!(compact.fixed[7].y, 310);
+        assert_eq!(compact.fixed[8].y, 310);
         for width in [360, 400, 540, 600, 640, 700, 710, 800, 1120] {
             let layout = SelectorLayout::new(width, &vec![None; 25]);
             assert!(layout.fixed[0].width >= 160, "幅{width}でタイトルが隠れる");

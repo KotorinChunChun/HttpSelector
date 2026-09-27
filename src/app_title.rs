@@ -1,4 +1,5 @@
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+// CargoはSemVerの3桁に限定されるため、4桁の製品版を別に表示する。
+pub const VERSION: &str = "0.0.3.1";
 
 pub fn main() -> String {
     format!("HttpSelector v{VERSION}")
@@ -21,11 +22,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn titles_use_the_cargo_package_version() {
-        assert_eq!(
-            main(),
-            format!("HttpSelector v{}", env!("CARGO_PKG_VERSION"))
-        );
+    fn titles_use_the_four_part_product_version() {
+        assert_eq!(main(), "HttpSelector v0.0.3.1");
         assert_eq!(settings(), format!("{} - 設定", main()));
         assert_eq!(default_rules(), format!("{} - 既定ルール", main()));
         assert_eq!(

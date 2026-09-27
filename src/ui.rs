@@ -13,7 +13,9 @@ use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{GetLastError, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows_sys::Win32::UI::Controls::{DRAWITEMSTRUCT, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED};
+use windows_sys::Win32::UI::Controls::{
+    BST_CHECKED, BST_UNCHECKED, DRAWITEMSTRUCT, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED,
+};
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetFocus, SetFocus, VK_DOWN, VK_ESCAPE, VK_LEFT, VK_RETURN, VK_RIGHT, VK_UP,
@@ -34,6 +36,7 @@ const ID_FAVORITE_UP: i32 = 105;
 const ID_FAVORITE_DOWN: i32 = 106;
 const ID_REFRESH: i32 = 107;
 const ID_FAVORITE_PIN: i32 = 108;
+const ID_INTERRUPTION: i32 = 109;
 const ID_PROFILE_BASE: i32 = 1000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -44,6 +47,10 @@ pub enum SelectorResult {
         url: Option<ValidatedUrl>,
     },
     Settings {
+        url: Option<ValidatedUrl>,
+    },
+    InterruptionChanged {
+        enabled: bool,
         url: Option<ValidatedUrl>,
     },
     ConfigureDefaultRule {
@@ -90,6 +97,8 @@ struct UiState {
     favorite_up: HWND,
     favorite_down: HWND,
     favorite_pin: HWND,
+    interruption: HWND,
+    interruption_enabled: bool,
     refresh: HWND,
     default_rule: HWND,
     status: HWND,
@@ -110,6 +119,7 @@ impl UiState {
         escape_hold_duration_tenths: u32,
         open_profile_on_double_click: bool,
         selected_profile_id: Option<i64>,
+        interruption_enabled: bool,
     ) -> Self {
         let filtered_indices = profile_slots(&profiles);
         let focused_profile = filtered_indices
@@ -134,6 +144,8 @@ impl UiState {
             favorite_up: null_mut(),
             favorite_down: null_mut(),
             favorite_pin: null_mut(),
+            interruption: null_mut(),
+            interruption_enabled,
             refresh: null_mut(),
             default_rule: null_mut(),
             status: null_mut(),
@@ -188,6 +200,7 @@ pub fn run_selector_with_selection(
         open_profile_on_double_click,
         selected_profile_id,
         None,
+        true,
     )
 }
 
@@ -198,6 +211,7 @@ pub fn run_selector_with_selection_and_scan(
     open_profile_on_double_click: bool,
     selected_profile_id: Option<i64>,
     background_scan: Option<BackgroundProfileScan>,
+    interruption_enabled: bool,
 ) -> anyhow::Result<SelectorResult> {
     run_selector_window(
         url,
@@ -207,6 +221,7 @@ pub fn run_selector_with_selection_and_scan(
         WS_EX_TOOLWINDOW,
         selected_profile_id,
         background_scan,
+        interruption_enabled,
     )
 }
 
@@ -226,9 +241,11 @@ pub fn run_selector_preview(
         WS_EX_APPWINDOW,
         None,
         None,
+        true,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_selector_window(
     url: Option<ValidatedUrl>,
     profiles: Vec<Profile>,
@@ -237,6 +254,7 @@ fn run_selector_window(
     window_style: u32,
     selected_profile_id: Option<i64>,
     background_scan: Option<BackgroundProfileScan>,
+    interruption_enabled: bool,
 ) -> anyhow::Result<SelectorResult> {
     let style = WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_VSCROLL;
     let ex_style = WS_EX_TOPMOST | window_style | WS_EX_CONTROLPARENT;
@@ -252,6 +270,7 @@ fn run_selector_window(
         escape_hold_duration_tenths,
         open_profile_on_double_click,
         selected_profile_id,
+        interruption_enabled,
     );
     state.background_scan = background_scan;
     let state_pointer = Box::into_raw(Box::new(state));
@@ -475,6 +494,12 @@ unsafe extern "system" fn window_proc(
                 }
             } else if id == ID_WINDOWS_SETTINGS && notification == BN_CLICKED as u16 {
                 open_windows_default_apps(window);
+            } else if id == ID_INTERRUPTION && notification == BN_CLICKED as u16 {
+                state.result = SelectorResult::InterruptionChanged {
+                    enabled: !state.interruption_enabled,
+                    url: state.url.clone(),
+                };
+                unsafe { DestroyWindow(window) };
             } else if id == ID_REFRESH && notification == BN_CLICKED as u16 {
                 state.result = SelectorResult::RefreshRequested {
                     url: state.url.clone(),
@@ -696,6 +721,26 @@ fn create_controls(window: HWND, state: &mut UiState) {
     let preview_label = common::label(window, "デコード表示（確認専用）", state.theme.bold);
     state.preview_edit = common::edit(window, 0, true, true, font);
     let settings = common::button(window, "設定", ID_SETTINGS, font);
+    state.interruption = common::control(
+        window,
+        "BUTTON",
+        "割り込みを有効にする",
+        ID_INTERRUPTION,
+        WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+        font,
+    );
+    unsafe {
+        SendMessageW(
+            state.interruption,
+            BM_SETCHECK,
+            if state.interruption_enabled {
+                BST_CHECKED
+            } else {
+                BST_UNCHECKED
+            } as usize,
+            0,
+        );
+    }
     let windows_settings =
         common::button(window, "既定のアプリ設定を開く", ID_WINDOWS_SETTINGS, font);
     state.refresh = common::button(window, "更新", ID_REFRESH, font);
@@ -715,6 +760,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
         state.preview_edit,
         settings,
         windows_settings,
+        state.interruption,
     ];
     state.favorites_heading = common::label(window, "", state.theme.bold);
     state.normal_heading = common::label(window, "", state.theme.bold);
@@ -1210,6 +1256,21 @@ pub fn show_information(title: &str, message: &str) {
     show_information_for(null_mut(), title, message);
 }
 
+pub fn ask_domain_association(domain: &str, profile_name: &str) -> bool {
+    let title = wide(&app_title::main());
+    let message = wide(&format!(
+        "{domain} を今後 {profile_name} で開くよう連携しますか？\nHTTPとHTTPSの両方に適用します。"
+    ));
+    unsafe {
+        MessageBoxW(
+            null_mut(),
+            message.as_ptr(),
+            title.as_ptr(),
+            MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND,
+        ) == IDYES
+    }
+}
+
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn show_information_for(owner: HWND, title: &str, message: &str) {
     common::release_topmost(owner);
@@ -1283,6 +1344,56 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pin_and_interruption_controls_return_selected_actions() {
+        let mut state = Box::new(UiState::new(
+            None,
+            vec![profile(4, false)],
+            10,
+            true,
+            Some(4),
+            true,
+        ));
+        let window =
+            common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
+        assert_ne!(unsafe { IsWindow(state.favorite_pin) }, 0);
+        unsafe {
+            SendMessageW(
+                window.0,
+                WM_COMMAND,
+                ID_FAVORITE_PIN as usize,
+                state.favorite_pin as isize,
+            )
+        };
+        assert_eq!(
+            state.result,
+            SelectorResult::FavoriteChanged {
+                profile_id: 4,
+                favorite: true,
+                url: None,
+            }
+        );
+
+        let mut state = Box::new(UiState::new(None, vec![], 10, true, None, true));
+        let window =
+            common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
+        unsafe {
+            SendMessageW(
+                window.0,
+                WM_COMMAND,
+                ID_INTERRUPTION as usize,
+                state.interruption as isize,
+            )
+        };
+        assert_eq!(
+            state.result,
+            SelectorResult::InterruptionChanged {
+                enabled: false,
+                url: None,
+            }
+        );
+    }
+
+    #[test]
     fn keyboard_focus_changes_the_favorite_action_target() {
         let mut state = Box::new(UiState::new(
             None,
@@ -1290,6 +1401,7 @@ mod tests {
             10,
             true,
             None,
+            true,
         ));
         let window =
             common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
@@ -1331,6 +1443,7 @@ mod tests {
                 10,
                 double_click,
                 None,
+                true,
             ));
             let window = common::HiddenTestWindow::new(
                 Some(window_proc),
@@ -1364,7 +1477,7 @@ mod tests {
         let mut hidden = profile(1, true);
         hidden.enabled = false;
         let profiles = vec![hidden, profile(2, true), profile(3, false)];
-        let state = UiState::new(None, profiles, 10, true, Some(3));
+        let state = UiState::new(None, profiles, 10, true, Some(3), true);
         assert_eq!(state.focused_profile, Some(2));
         assert_eq!(state.filtered_indices[0], Some(1));
         assert_eq!(state.filtered_indices[5], Some(2));
@@ -1379,6 +1492,7 @@ mod tests {
             10,
             true,
             Some(7),
+            true,
         ));
         let window =
             common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
@@ -1414,6 +1528,7 @@ mod tests {
             10,
             true,
             Some(7),
+            true,
         ));
         state.background_scan = Some(BackgroundProfileScan::completed(vec![detected.clone()]));
         let window =
@@ -1445,6 +1560,7 @@ mod tests {
             10,
             true,
             None,
+            true,
         ));
         let window =
             common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
@@ -1460,7 +1576,7 @@ mod tests {
 
     #[test]
     fn releasing_escape_cancels_the_timer_before_the_next_hold() {
-        let mut state = Box::new(UiState::new(None, vec![], 1, true, None));
+        let mut state = Box::new(UiState::new(None, vec![], 1, true, None, true));
         let window =
             common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
         let mut message: MSG = unsafe { std::mem::zeroed() };

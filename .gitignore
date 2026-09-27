@@ -6,6 +6,7 @@
 *.sig
 *.key
 *.log
+/dev/history/*/logs/
 .idea/
 .vscode/
 Thumbs.db

@@ -6,6 +6,12 @@ pub fn site_pattern(url: &ValidatedUrl) -> String {
     format!("{}://{}/*", parsed.scheme(), host_with_port(&parsed))
 }
 
+pub fn domain_patterns(url: &ValidatedUrl) -> [String; 2] {
+    let parsed = Url::parse(url.original()).expect("ValidatedUrl must contain a valid URL");
+    let host = host_with_port(&parsed);
+    [format!("http://{host}/*"), format!("https://{host}/*")]
+}
+
 pub fn leading_path_pattern(url: &ValidatedUrl) -> String {
     let parsed = Url::parse(url.original()).expect("ValidatedUrl must contain a valid URL");
     let first_segment = parsed
@@ -145,6 +151,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!(site_pattern(&url), "https://portal.example.com/*");
+        assert_eq!(
+            domain_patterns(&url),
+            [
+                "http://portal.example.com/*".to_owned(),
+                "https://portal.example.com/*".to_owned()
+            ]
+        );
         assert_eq!(
             leading_path_pattern(&url),
             "https://portal.example.com/team/*"
