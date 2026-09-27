@@ -226,7 +226,9 @@ fn run() -> anyhow::Result<()> {
                 match scan_profiles(&paths) {
                     Ok(detected) => {
                         let changes = apply_detected_profiles(&storage, &integrity, &detected)?;
-                        show_information(&app_title::main(), &changes.message());
+                        if changes.changed() {
+                            show_information(&app_title::main(), &changes.message());
+                        }
                     }
                     Err(error) => show_error(
                         &app_title::main(),
@@ -276,7 +278,9 @@ fn run() -> anyhow::Result<()> {
                     SettingsAction::Rescan => match scan_profiles(&paths) {
                         Ok(detected) => {
                             let changes = apply_detected_profiles(&storage, &integrity, &detected)?;
-                            show_information(&app_title::main(), &changes.message());
+                            if changes.changed() {
+                                show_information(&app_title::main(), &changes.message());
+                            }
                         }
                         Err(error) => show_error(
                             &app_title::main(),

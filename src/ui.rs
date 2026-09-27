@@ -33,6 +33,7 @@ const ID_DEFAULT_RULE: i32 = 104;
 const ID_FAVORITE_UP: i32 = 105;
 const ID_FAVORITE_DOWN: i32 = 106;
 const ID_REFRESH: i32 = 107;
+const ID_FAVORITE_PIN: i32 = 108;
 const ID_PROFILE_BASE: i32 = 1000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -88,6 +89,7 @@ struct UiState {
     normal_empty: HWND,
     favorite_up: HWND,
     favorite_down: HWND,
+    favorite_pin: HWND,
     refresh: HWND,
     default_rule: HWND,
     status: HWND,
@@ -131,6 +133,7 @@ impl UiState {
             normal_empty: null_mut(),
             favorite_up: null_mut(),
             favorite_down: null_mut(),
+            favorite_pin: null_mut(),
             refresh: null_mut(),
             default_rule: null_mut(),
             status: null_mut(),
@@ -505,7 +508,7 @@ unsafe extern "system" fn window_proc(
                 unsafe {
                     DestroyWindow(window);
                 }
-            } else if (id == ID_FAVORITE_UP || id == ID_FAVORITE_DOWN)
+            } else if (id == ID_FAVORITE_UP || id == ID_FAVORITE_DOWN || id == ID_FAVORITE_PIN)
                 && notification == BN_CLICKED as u16
             {
                 let Some(profile_index) = state.focused_profile else {
@@ -516,7 +519,11 @@ unsafe extern "system" fn window_proc(
                     );
                     return 0;
                 };
-                let favorite = id == ID_FAVORITE_UP;
+                let favorite = if id == ID_FAVORITE_PIN {
+                    !state.profiles[profile_index].favorite
+                } else {
+                    id == ID_FAVORITE_UP
+                };
                 if state.profiles[profile_index].favorite == favorite {
                     return 0;
                 }
@@ -682,15 +689,15 @@ fn focused_profile_id(state: &UiState) -> Option<i64> {
 fn create_controls(window: HWND, state: &mut UiState) {
     let font = state.theme.font;
     let title = common::label(window, &app_title::main(), state.theme.title);
-    let subtitle = common::label(window, "リンクを開くプロファイルを選択", font);
     let close = common::button(window, "閉じる(ESC長押)", ID_CLOSE, font);
     state.status = common::label(window, "", font);
     let original_label = common::label(window, "受信したURL", state.theme.bold);
     state.original_edit = common::edit(window, 0, true, true, font);
     let preview_label = common::label(window, "デコード表示（確認専用）", state.theme.bold);
     state.preview_edit = common::edit(window, 0, true, true, font);
-    let settings = common::button(window, "アプリの設定を開く", ID_SETTINGS, font);
-    let windows_settings = common::button(window, "Windowsの設定を開く", ID_WINDOWS_SETTINGS, font);
+    let settings = common::button(window, "設定", ID_SETTINGS, font);
+    let windows_settings =
+        common::button(window, "既定のアプリ設定を開く", ID_WINDOWS_SETTINGS, font);
     state.refresh = common::button(window, "更新", ID_REFRESH, font);
     state.default_rule = common::button(
         window,
@@ -700,7 +707,6 @@ fn create_controls(window: HWND, state: &mut UiState) {
     );
     state.fixed = vec![
         title,
-        subtitle,
         close,
         state.status,
         original_label,
@@ -716,6 +722,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
     state.normal_empty = common::label(window, "", font);
     state.favorite_up = common::button(window, "↑", ID_FAVORITE_UP, font);
     state.favorite_down = common::button(window, "↓", ID_FAVORITE_DOWN, font);
+    state.favorite_pin = common::button(window, "ピン止め", ID_FAVORITE_PIN, font);
     for index in 0..MAX_TILES {
         state.profile_buttons.push(common::control(
             window,
@@ -756,7 +763,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
     refresh_selection_visuals(state);
     let focus = first_profile
         .map(|index| state.profile_buttons[index])
-        .or_else(|| state.fixed.get(8).copied())
+        .or_else(|| state.fixed.get(7).copied())
         .unwrap_or(window);
     unsafe {
         SetFocus(focus);
@@ -798,6 +805,7 @@ fn layout_controls(window: HWND, state: &mut UiState) {
         .place(state.favorites_heading, layout.favorites_heading);
     state.page.place(state.favorite_up, layout.favorite_up);
     state.page.place(state.favorite_down, layout.favorite_down);
+    state.page.place(state.favorite_pin, layout.favorite_pin);
     state.page.place(state.refresh, layout.refresh);
     state.page.place(state.default_rule, layout.default_rule);
     state
@@ -817,13 +825,8 @@ fn layout_controls(window: HWND, state: &mut UiState) {
 }
 
 fn refresh_status(state: &UiState) {
-    let open_action = if state.open_profile_on_double_click {
-        "ダブルクリック"
-    } else {
-        "クリック"
-    };
     let status = if state.url.is_some() {
-        format!("{open_action}で開く")
+        "プロファイルを選択してください".to_owned()
     } else {
         "URL未指定：設定でプロファイルを管理".to_owned()
     };
@@ -864,7 +867,7 @@ fn refresh_tiles(window: HWND, state: &mut UiState) {
     );
     common::set_text(
         state.favorite_empty,
-        "設定でお気に入りにすると、ここに表示されます。",
+        "ピン止めしたプロファイルがここに表示されます。",
     );
     common::set_text(
         state.normal_empty,
@@ -913,7 +916,22 @@ fn refresh_selection_visuals(state: &UiState) {
         .iter()
         .filter(|profile| profile.favorite)
         .count();
+    common::set_text(
+        state.favorite_pin,
+        if focused.is_some_and(|profile| profile.favorite) {
+            "ピン解除"
+        } else {
+            "ピン止め"
+        },
+    );
     unsafe {
+        EnableWindow(
+            state.favorite_pin,
+            i32::from(
+                focused.is_some()
+                    && (focused.is_some_and(|profile| profile.favorite) || favorite_count < 5),
+            ),
+        );
         EnableWindow(
             state.favorite_up,
             i32::from(focused.is_some_and(|profile| !profile.favorite) && favorite_count < 5),
