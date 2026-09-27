@@ -12,7 +12,7 @@ function Get-MsixContext {
     param([string]$Root, [ValidateSet('beta','stable')][string]$Channel)
     $config = Get-Content -LiteralPath (Join-Path $Root 'packaging/release-config.json') -Raw | ConvertFrom-Json
     if ($config.schemaVersion -ne 1 -or $config.architecture -ne 'x64') { throw '未対応のリリース構成です。' }
-    if ($config.packageVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+\.0$') { throw 'MSIXバージョンは4桁目0の4部形式にしてください。' }
+    if ($config.packageVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$') { throw 'MSIXバージョンは4部形式にしてください。' }
     $version = [version]$config.packageVersion
     foreach ($part in @($version.Major,$version.Minor,$version.Build,$version.Revision)) {
         if ($part -gt 65535) { throw 'MSIXバージョンの各部は65535以下にしてください。' }
@@ -31,6 +31,7 @@ function Get-MsixContext {
     $identity = $config.beta
     if ($Channel -eq 'stable') {
         if ($version.Major -lt 1) { throw 'Store用MSIXバージョンは先頭1以上にしてください。' }
+        if ($version.Revision -ne 0) { throw 'Store用MSIXバージョンは4桁目0にしてください。' }
         $identityPath = [IO.Path]::GetFullPath((Join-Path $Root $config.stable.identityFile))
         if (-not $identityPath.StartsWith($Root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Identity設定はプロジェクト内に配置してください。' }
         if (-not (Test-Path -LiteralPath $identityPath)) { throw 'Partner Centerの正式Identityが未設定です。store-identity.example.jsonをstore-identity.local.jsonへコピーして設定してください。' }
