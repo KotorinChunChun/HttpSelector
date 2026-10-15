@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "http-selector",
+  "name": "HttpSelector",
+  "version": "0.0.3.2",
+  "summary": "リンクの危険性を確認し、ブラウザーのプロファイルを選んで開く",
+  "category": "ブラウザー・リンク",
+  "executable": "target/management/debug/HttpSelector.exe",
+  "installedExecutable": "HttpSelector.exe",
+  "appId": "KotorinToys.HttpSelector",
+  "msix": { "familyName": "HttpSelector.Development_xtxrnffqrdk4w", "publisher": "CN=KotorinChunChun", "applicationId": "App" },
+  "manual": "docs/USERS_GUIDE.md",
+  "readme": "README.md",
+  "shortcuts": "config/shortcuts.json",
+  "distributionStatus": "unpublished",
+  "supportedEnvironment": "windows11-x64",
+  "investigationStatus": "confirmed",
+  "capabilities": ["status", "show", "stop", "silent-start"],
+  "runtimes": [
+    { "id": "vc-runtime-x64", "name": "Microsoft Visual C++ Runtime (x64)", "kind": "vc-x64", "optional": true, "feature": "開発用EXEの隔離検証", "guide": "正式な署名付きMSIXはstatic CRTを使用し、この追加ランタイムは不要です。" }
+  ]
+}
