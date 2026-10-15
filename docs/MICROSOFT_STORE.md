@@ -1,5 +1,7 @@
 # Microsoft Store公開準備
 
+現行手順の更新日: 2026-10-15。開発ソースv0.0.3.2を対象とし、下記の日付付き結果は当時の版の記録として区別する。今回、MSIXの再公開・インストール・証明書の信頼登録は行っていない。
+
 HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。正式版とは別に、excel-chunchunから自己署名MSIXをApp Installerで配布するbetaチャネルを用意する。開発用MSIXとStore提出用MSIXを分離し、既存のInno Setupは従来方式として残す。
 
 ## 現在の構成
@@ -15,7 +17,11 @@ HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。正式版�
 
 betaは自己署名証明書を利用者が明示的に信頼して導入する公開ベータ配布チャネル。`https://excel-chunchun.sakura.ne.jp/download/` からApp Installer・MSIX・公開CERを配布する。独自アップデーターは作らず、App Installerの標準更新機構を使用する。開発用SubjectはPC共通の`CN=KotorinChunChun`を使う。Storeの公開情報は実際のPartner Center画面で確認する。匿名性を保証するものではない。
 
-MSIXの版は `packaging/release-config.json` の `packageVersion` で管理する。現在のBeta版と画面表示はともに **0.0.3.1**、CargoのSemVerは **0.0.3+1**。ユーザー指定により過去に公開済み1.0.3.0から番号をリセットしたため、旧1.x版は自動更新できず、アンインストール後の新規導入が必要になる。誤って公開した0.0.4.0からも自動更新できず、アンインストール後の新規導入が必要。旧パッケージは変更・削除しない。Betaの0始まりは、この移行範囲と再インストール必須を設定した場合だけ許可する。Store版は先頭1以上・4桁目0、全チャネルで各部65535以下を維持する。
+MSIXの版は `packaging/release-config.json` の `packageVersion` で管理する。開発ソースの画面表示とMSIX生成設定はともに **0.0.3.2**、CargoのSemVerは **0.0.3+2**。公開済みのBeta MSIXは **0.0.3.1** で、生成設定の変更だけでは公開先のApp InstallerやMSIXは更新されない。高リスクURL警告とKotorinToys管理連携は開発版の機能であり、既存の公開済みMSIXには含まれない。
+
+ユーザー指定により過去に公開済み1.0.3.0から番号をリセットしたため、旧1.x版は自動更新できず、アンインストール後の新規導入が必要になる。誤って公開した0.0.4.0からも自動更新できず、アンインストール後の新規導入が必要。旧パッケージは変更・削除しない。Betaの0始まりは、この移行範囲と再インストール必須を設定した場合だけ許可する。Store版は先頭1以上・4桁目0、全チャネルで各部65535以下を維持する。Betaの4部版をStore提出規則に合わせて無断で変更せず、表示・配布版の一致とStore提出版の設計を別に確認する。
+
+通常利用は[署名付きMSIXの導入](INSTALL_MSIX.md)を必須とする。KotorinToysはOSへ登録済みのMSIXを照合し、パッケージIDを保持して起動・管理する。未導入や旧版のときに開発EXEへ自動切替しない。`distributionStatus: unpublished` は本体のInno配布台帳に載せないことを示し、署名付きMSIXの既存配布とは別である。非MSIX開発検証とMSIXはデータ・URL転送・管理窓口を分離する。詳しくは[KotorinToys連携](kotorintoys-integration.md)を参照する。
 
 ## 前提
 
@@ -26,7 +32,7 @@ MSIXの版は `packaging/release-config.json` の `packageVersion` で管理す�
 
 ## 開発用の生成と検証
 
-プロジェクトのルートで実行する。
+プロジェクトのルート `C:\develop\KotorinToys\tools\HttpSelector` で実行する。
 
 ```powershell
 pwsh -NoProfile -File dev/scripts/release-msix.ps1 -Mode Plan -Channel beta
@@ -37,7 +43,7 @@ pwsh -NoProfile -File dev/scripts/release-msix.ps1 -Mode Verify -Channel beta
 
 Buildはfmt、Rustテスト、Clippy、static CRTのreleaseビルド、画像生成、MakeAppxのManifest検証、署名、内容検証を順に行う。途中の外部コマンドが失敗したら停止し、前回のrelease成果物は検証成功まで変更しない。ビルド元commit、作業ツリーの変更有無、Cargo.lockと成果物のSHA-256を検証JSONへ記録する。
 
-出力は `release/msix/beta/0.0.2.0/`。MSIX、公開CER、SHA256SUMS.txt、verification.jsonを出力する。MSIXの中身は実行ファイル、3枚の画像、ManifestとMSIXメタデータだけ。ソース、PDB、PFX、証明書の秘密鍵、開発用文書は含めない。コンパイル時にローカルパスを置換し、配布物内の代表的な個人パスも検出する。
+現在の設定での出力先は `release/msix/beta/0.0.3.2/`。MSIX、公開CER、SHA256SUMS.txt、verification.jsonを出力する。MSIXの中身は実行ファイル、3枚の画像、ManifestとMSIXメタデータだけ。ソース、PDB、PFX、証明書の秘密鍵、開発用文書は含めない。コンパイル時にローカルパスを置換し、配布物内の代表的な個人パスも検出する。
 
 Web公開ではガード付きエントリポイント `dev/scripts/publish-msix-release.ps1` を使う。Buildは既存MSIXを再検証してApp Installerを生成でき、Stageは検証済み成果物とHttpSelector用ページだけを `C:\develop\excel-chunchun\www\download` へ配置する。Publishは `-ReleaseIntentConfirmed -PublishConfirmed` が揃った場合だけFTPのdry-run、対象限定アップロード、公開HTTPS検証を行う。
 
@@ -62,7 +68,7 @@ Verifyは既存パッケージを読むだけで、生成・修復・インス�
 ### Beta 0.0.2.0の検証結果（2026-09-06）
 
 - 起動後のバックグラウンドプロファイル更新と、選択画面の手動更新ボタンを含むアプリ版0.0.2。
-- Rustテスト50件、fmt、Clippy、static CRTのreleaseビルド、共通署名方針13件、番号リセットを含むMSIX検証31件が成功した。詳細は [v0.0.2実装報告](../dev/v0.0.2-imp.md) を参照。
+- Rustテスト50件、fmt、Clippy、static CRTのreleaseビルド、共通署名方針13件、番号リセットを含むMSIX検証31件が成功した。詳細は [v0.0.2実装報告](../dev/history/v0.0.2-imp.md) を参照。
 - MSIX: `HttpSelector_0.0.2.0_x64_dev.msix`、1,414,172バイト。SHA-256: `5027133A2B179C662F1ED422E5E26C227B8661EAE7278F657E8B8A739936562A`。生成元は `31caa0cffb23e099db29e617eb0e70f6c90529c0`。
 - Identity、Publisher、x64、署名者、公開CERは1.0.3.0と同じ。番号が低いため上書き更新はできず、旧Betaのアンインストール後に新規導入する。インストールと設定移行は実施していない。
 - excel-chunchunへの公開と公開後Verifyが成功した。製品ページは `https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html`、App Installerは `https://excel-chunchun.sakura.ne.jp/download/beta/HttpSelector.appinstaller`。
@@ -122,7 +128,7 @@ Import-Certificate -FilePath <公開CERのパス> -CertStoreLocation Cert:\Local
 
 ### runFullTrustの審査説明案
 
-HttpSelectorは、利用者がHTTP/HTTPSリンクを開くブラウザーとプロファイルを選ぶWin32ユーティリティです。インストール済みのEdge、Chrome、Firefoxのプロファイル構成とブラウザーの登録情報を読み取り、選択されたブラウザーをその利用者の権限で起動します。管理者権限への昇格、サービス、ドライバー、既定アプリの強制変更は行いません。ファイルの書き込みは原則として自身のLocalStateに限定します。独自の更新処理やテレメトリー送信は行いません。
+HttpSelectorは、利用者がHTTP/HTTPSリンクを開くブラウザーとプロファイルを選ぶWin32ユーティリティです。インストール済みのEdge、Chrome、Firefoxのプロファイル構成とブラウザーの登録情報を読み取り、選択されたブラウザーをその利用者の権限で起動します。開く直前に端末内の類似ドメイン判定とQuad9へのホスト名だけのDNS over HTTPS照会を行い、危険性の疑い・外部ブロック・確認不能を利用者に確認します。元URLやパス・クエリは外部照会へ送りません。WindowsのDNS設定変更、管理者権限への昇格、サービス、ドライバー、既定アプリの強制変更は行いません。ファイルの書き込みは原則として自身のLocalStateに限定します。管理連携は現在利用者・同一対話セッションの名前付きパイプに限定し、MSIXの管理窓口は非MSIX版から分離します。独自の更新処理やテレメトリー送信は行いません。
 
 HTTP/HTTPS候補はpackaged full-trust向けの `uap3:Protocol` で宣言する。UWP向けの予約スキーム制約と混同しない。ただし、ブラウザー本体ではない本アプリのStore審査通過や各Windows版での候補表示は、このManifestの生成成功だけでは保証できない。
 

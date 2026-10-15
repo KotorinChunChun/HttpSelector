@@ -21,7 +21,7 @@ pub fn confirm(url: &ValidatedUrl, report: &RiskReport) -> bool {
     let _busy = crate::management::busy_guard();
     let mut state = State { accepted: false };
     let class = common::wide("HttpSelector.RiskWarning");
-    let title = common::wide(&format!("URLの安全性の確認 - {}", app_title::main()));
+    let title = common::wide(&app_title::risk_warning());
     let mut wc: WNDCLASSEXW = unsafe { std::mem::zeroed() };
     wc.cbSize = size_of::<WNDCLASSEXW>() as u32;
     wc.lpfnWndProc = Some(window_proc);

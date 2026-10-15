@@ -1,8 +1,10 @@
 # HttpSelector 開発ガイド
 
+更新日: 2026-10-15。開発版v0.0.3.2。正本の配置は `C:\develop\KotorinToys\tools\HttpSelector` で、独立Gitリポジトリを維持します。管理連携の契約と運用は[KotorinToys連携](kotorintoys-integration.md)を参照してください。
+
 ## 必要環境
 
-- Windows 10 / 11 x64
+- Windows 10 1809以降 / Windows 11 x64（KotorinToys管理連携の対象はWindows 11 x64）
 - Rust 1.85以降（MSVC toolchain）
 - PowerShell 7.4以降（MSIXスクリプト）
 - Windows SDK（MSIXのMakeAppx / SignTool）
@@ -11,6 +13,7 @@
 ## ビルドとテスト
 
 ```powershell
+cd C:\develop\KotorinToys\tools\HttpSelector
 cargo fmt --all -- --check
 cargo test
 cargo clippy --all-targets -- -D warnings
@@ -20,8 +23,19 @@ cargo build --release
 テストURLでの起動:
 
 ```powershell
-pwsh ./dev/scripts/run-test.ps1
+pwsh -NoProfile -File .\dev\scripts\run-test.ps1 -Url "https://example.com/path?a=b%20c"
 ```
+
+`run-test.ps1` はルートを解決して `cargo run` を実行するデバッグ起動用の入口です。通常起動では実際の設定を使用し、プロファイル選択後にはQuad9へ照会してから実ブラウザを開きます。URLを指定しない単体起動は `cargo run` です。
+
+正式な利用・管理は[署名付きMSIXの導入](INSTALL_MSIX.md)が必須です。次の開発ビルドは隔離連携試験だけに使用し、通常のKotorinToysはこのEXEへ自動フォールバックしません。通常の `target/debug` や `target/release` と出力を分離します。
+
+```powershell
+cargo build --target-dir target/management
+& .\target\management\debug\HttpSelector.exe --startup --launch-origin via_kotorintoys
+```
+
+`--startup` は管理用の常駐待機です。初期化後に選択画面を出さず、URL・表示・停止要求を待ちます。初回のデータ初期化・プロファイル探索と、設定破損時の復旧確認は行います。`--launch-origin` は `standalone`、`host_manual`、`direct_task`、`via_kotorintoys` を受け付けます。
 
 実データやブラウザ起動に触れないUIプレビュー:
 
@@ -59,13 +73,34 @@ UIの回帰テストでは、100/125/150/200%相当の幅・お気に入り0〜5
 ## アーキテクチャ
 
 - `url_input`: URLの長さ、スキーム、ホスト、制御文字を検証
+- `app_options`: 単体・管理・隔離試験の起動引数と検証専用条件を解釈
+- `risk_local`: 元ホスト表記・IDNA・Unicode類似文字・8サービスのtypoと偽装名を副作用なしで判定し、外部照会可能なASCIIホストだけを抽出
+- `quad9`: HTTP/2のDNS over HTTPSとDNS応答検証。対象ページのHTTP取得は行わない
+- `risk`: ローカル・外部結果の集約と、承認前の起動・保存を抑止する共通ゲート
+- `risk_ui`: キャンセルを初期選択にした起動前確認画面
 - `profile_scan`: ChromiumのLocal StateとFirefoxのprofiles.iniを解析
 - `storage`: SQLiteスキーマと利用者編集項目を維持する再スキャンマージ
 - `integrity`: DPAPI鍵、HMAC署名、バックアップ、復旧
 - `browser`: App Pathsレジストリ／既知のパス解決と安全な引数起動
 - `single_instance`: 名前付きMutexとWM_COPYDATAによる後続URL転送
+- `management/pipe`: 利用者専用ACL・同一セッション照合・期限付きパイプI/Oを管理画面の状態から分離
+- `management`: KotorinToys管理契約2と、検査・画面の寿命に依存しないURL受付・順序付きキュー
 - `app_identity`: OSのPackage Familyに基づくデータ保存先とIPC名の分離
 - `ui` / `settings_ui`: Win32ネイティブ画面
+
+手動選択・ルール一致・割り込みオフの起動は `main::open_profile` へ集約し、プロファイル識別子の検証、危険性検査、必要な利用者確認、ドメイン連携確認、ブラウザ起動の順で処理します。警告キャンセルではルール追加やURL履歴を保存しません。全角表記を失わないよう `ValidatedUrl::original()` を保持し、ブラウザへは元の文字列を渡します。
+
+URLの検査・警告中も独立した受付窓口で後続URLを保持し、処理中のURLを置き換えません。受理済みURLはFIFOで扱い、上限超過は送信側へ拒否を返します。管理用 `stop` は検査・確認・設定編集中に拒否し、`show` / `status` はUI応答を確認して返します。
+
+### 高リスクURL判定の境界
+
+元authorityのホストだけを調べ、パス・クエリ内のサービス名や全角文字は類似ドメイン判定に使いません。Unicode正規化、Punycode復元、UTS39のskeletonを組み合わせます。Google・Microsoft・Apple・Amazon・PayPal・LINE・Yahoo! JAPAN・楽天を対象とし、公式ドメインはラベル境界で照合します。確認済み公式ドメイン表は網羅的ではありません。LINEの短語や一部一般語は誤検知を抑える条件を設けています。
+
+Quad9の照会先は `https://dns.quad9.net/dns-query` 固定です。WindowsのWinHTTPを使い、HTTP/2使用・TLS検証・応答サイズ・DNS質問との一致を確認し、HTTPリダイレクトを禁止します。DNS本文にはサブドメインを含むASCIIホストのA照会だけを含め、ECSは付けません。パス・クエリ・フラグメント・認証情報・元URLは渡しません。IPリテラル、ローカル・予約名、PSL未知suffixなどは照会前に除外します。組織内でのみ使う公開形式のドメインをすべて識別することはできません。
+
+外部照会の結果待ちを約5秒で打ち切り、通信失敗・DNSエラー・不正応答は確認不能の警告にします。Quad9のブロック応答と通常の不存在応答は区別し、「ブロックなし」を安全保証として扱いません。WindowsのDNS設定変更、短縮URL展開、対象ページ取得、リダイレクト追跡、URLを識別する永続検査ログは追加しません。検査前に実行する通常の初期化と、利用者が有効にする既存のURLパターン履歴は別です。
+
+ローカル判定、外部結果の集約、DNSの正常・不正応答、キャンセル時の副作用抑止はオフライン単体テストで確認できます。実Quad9への照会テストは通常テストから除外されており、必要な場合だけ明示実行します。GUI・実ブラウザ・導入確認の結果は版別報告で区別してください。
 
 `Settings.record_url_history` は既定値 `OFF` です。ONの場合だけ `UrlHistory` テーブルへワイルドカード化済みURLパターンを記録します。末尾パス・パラメータ値・フラグメントは `*` へ置換し、生URLは保存しません。通常起動で履歴テーブルを検索する処理はありません。
 
@@ -83,6 +118,8 @@ MSIX版は `packaging/AppxManifest.xml.template` の `uap3:Protocol` 宣言で�
 
 ## Microsoft Store向け配布
 
-[Microsoft Store公開準備](MICROSOFT_STORE.md)に、Plan/Build/Verifyのコマンド、自己署名証明書の再利用、正式Identityへの切り替え、ローカル導入と残課題を記載しています。Storeは更新を管理するため、App Installerや独自更新処理は実装しません。
+開発ソースの表示版・MSIX生成設定は `0.0.3.2`、Cargo版は `0.0.3+2` です。公開済みBeta MSIXは `0.0.3.1` で、生成設定の変更だけでは公開先は更新されません。KotorinToys向けの `distributionStatus: unpublished` は本体対応Innoが未公開であることを示し、既存Beta MSIXの公開状況とは別です。
+
+[Microsoft Store公開準備](MICROSOFT_STORE.md)に、Plan/Build/Verifyのコマンド、自己署名証明書の再利用、正式Identityへの切り替え、ローカル導入と残課題を記載しています。StoreチャネルはStoreの更新管理を使い、BetaチャネルのApp Installerとは分けます。独自アップデーターは実装しません。
 
 Store掲載準備には[掲載情報の草案](STORE_LISTING.md)と[プライバシーポリシー案](PRIVACY_POLICY.md)を使用し、未確定の公開情報や未実施の実機検証を確定済みとして扱わないでください。

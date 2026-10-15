@@ -359,10 +359,19 @@ mod transport {
             WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL,
             WINHTTP_PROTOCOL_FLAG_HTTP2,
         )?;
-        session.option(
-            WINHTTP_OPTION_SECURE_PROTOCOLS,
-            WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3,
-        )?;
+        if session
+            .option(
+                WINHTTP_OPTION_SECURE_PROTOCOLS,
+                WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3,
+            )
+            .is_err()
+        {
+            // TLS 1.3の指定を受け付けないWindowsでも、TLS 1.2未満へは落とさない。
+            session.option(
+                WINHTTP_OPTION_SECURE_PROTOCOLS,
+                WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2,
+            )?;
+        }
         let connection =
             InternetHandle::new(unsafe { WinHttpConnect(session.0, server.as_ptr(), 443, 0) })?;
         let request = InternetHandle::new(unsafe {

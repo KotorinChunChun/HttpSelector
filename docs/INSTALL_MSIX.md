@@ -1,0 +1,50 @@
+# 署名付きMSIXの導入
+
+HttpSelectorの通常利用には、署名付きMSIXのインストールが必須です。MSIXがHTTP/HTTPSの関連付け候補をWindowsへ登録します。EXEのコピーや開発用の `cargo run` では正式導入になりません。
+
+## 1. 配布物を取得する
+
+配布元のMSIX、公開証明書、SHA-256と署名者の案内を確認します。本ソースの対象は **0.0.3.2** です。公開済みBetaの **0.0.3.1** には今回の高リスクURL警告は含まれません。公開先が更新されるまでは、本版のローカル署名済み成果物を使ってください。
+
+ソースから署名付き成果物を作る場合:
+
+```powershell
+cd C:\develop\KotorinToys\tools\HttpSelector
+pwsh -NoProfile -File dev/scripts/release-msix.ps1 -Mode Build -Channel beta -ReleaseIntentConfirmed
+```
+
+出力は `release/msix/beta/0.0.3.2/` のMSIX、CER、SHA256SUMS.txt、verification.jsonです。生成はインストールや公開を行いません。
+
+## 2. 署名を確認する
+
+署名者は `CN=KotorinChunChun`、既存の共通証明書の拇印は `475BABC3C3D1E871D90503D45CC5236216D85EE8` です。配布元の案内とMSIX・CERの値を照合してください。秘密鍵やPFXは配布しません。
+
+自己署名Betaを初めて導入するPCでは、配布元と拇印を確認したうえで、Windowsの証明書画面から公開CERを「ローカル コンピューター」の「信頼されたユーザー」へ登録します。登録には管理者権限が必要です。既に同じ証明書を信頼済みなら再登録は不要です。信頼確認を省略したり、署名検証を無効化したりしないでください。
+
+## 3. MSIXをインストールする
+
+MSIXをダブルクリックし、App Installerの発行元・バージョンを確認して「インストール」または「更新」を選びます。現在利用者へ導入します。コマンドから行う場合も、署名検証付きの入口を使用できます。
+
+```powershell
+cd C:\develop\KotorinToys\tools\HttpSelector
+pwsh -NoProfile -File dev/scripts/install-msix.ps1
+pwsh -NoProfile -File dev/scripts/install-msix.ps1 -Install
+```
+
+最初のコマンドは検証のみです。`-Install` を付けるとWindowsのパッケージ登録を実行します。未信頼署名・製品不一致・ダウングレードでは停止し、証明書や利用者データを自動削除しません。
+
+同一Package Familyの `0.0.3.1 → 0.0.3.2` は更新として扱い、LocalStateの設定を保持します。誤公開の `0.0.4.0` や旧1.x版からは番号が下がるため、この手順では更新しません。必要な設定を退避したうえで、旧版の削除と再導入を個別に行ってください。
+
+## 4. HTTP/HTTPSを関連付ける
+
+Windowsの「設定」→「アプリ」→「既定のアプリ」で **HttpSelector（開発用）** を選び、HTTPとHTTPSにHttpSelectorを指定します。アプリの「既定のアプリ設定を開く」からも設定画面を開けます。
+
+MSIXの導入は候補の登録までです。インストーラーやKotorinToysが既定値を強制変更することはありません。通常のリンクを開いてプロファイル選択へ届くことを確認してください。
+
+## 5. KotorinToysから使う
+
+導入後にKotorinToysで状態を更新し、HttpSelectorを選んで起動します。現在ユーザーの署名付きMSIX登録、Package Family、Publisher、Manifestの4部版を照合します。未導入や旧版の場合はMSIX導入・更新を案内し、開発EXEへ自動切替しません。
+
+パッケージIDを保持するWindowsのアプリ起動経路を使用します。起動済みの場合は同じPIDの画面を表示し、設定やURL確認中の停止は拒否します。自動起動を使う場合は「KotorinToys経由」を選んでください。WindowsApps内のEXEを直接タスク登録しません。
+
+本体の旧配布済みバイナリには新しい登録が含まれない場合があります。管理機能の実装・検証状況は[本版の報告](../dev/history/v0.0.3.2/v0.0.3.2-imp.md)、詳しい契約は[KotorinToys連携](kotorintoys-integration.md)を参照してください。

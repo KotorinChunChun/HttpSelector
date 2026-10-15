@@ -1,20 +1,36 @@
 // CargoはSemVerの3桁に限定されるため、4桁の製品版を別に表示する。
 pub const VERSION: &str = "0.0.3.2";
 
+pub struct WindowTitle;
+
+impl WindowTitle {
+    pub fn create(screen: Option<&str>) -> String {
+        let product = format!("HttpSelector - ver {VERSION}");
+        match screen {
+            Some(screen) => format!("{screen} - {product}"),
+            None => product,
+        }
+    }
+}
+
 pub fn main() -> String {
-    format!("HttpSelector - ver {VERSION}")
+    WindowTitle::create(None)
 }
 
 pub fn settings() -> String {
-    format!("設定 - {}", main())
+    WindowTitle::create(Some("設定"))
 }
 
 pub fn default_rules() -> String {
-    format!("既定ルール - {}", main())
+    WindowTitle::create(Some("既定ルール"))
 }
 
 pub fn settings_file_error() -> String {
-    format!("設定ファイルエラー - {}", main())
+    WindowTitle::create(Some("設定ファイルエラー"))
+}
+
+pub fn risk_warning() -> String {
+    WindowTitle::create(Some("URLの安全性の確認"))
 }
 
 #[cfg(test)]
@@ -27,6 +43,7 @@ mod tests {
         assert_eq!(main(), "HttpSelector - ver 0.0.3.2");
         assert_eq!(settings(), format!("設定 - {}", main()));
         assert_eq!(default_rules(), format!("既定ルール - {}", main()));
+        assert_eq!(risk_warning(), format!("URLの安全性の確認 - {}", main()));
         assert_eq!(
             settings_file_error(),
             format!("設定ファイルエラー - {}", main())

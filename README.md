@@ -8,6 +8,9 @@ Windowsでリンクを開く前に、Edge・Chrome・Firefoxのブラウザプ�
 - Edge、Chrome、Firefoxの既存プロファイルを自動検出
 - お気に入り、エイリアス、コメント、並び順
 - ダブルクリック・キーボード操作とURLの既定ルール
+- 全角英字・類似文字・大手サービス名の誤字や偽ドメインを開く前に警告
+- Quad9へのドメイン照会と、確認できない場合の警告
+- KotorinToysからの無表示起動・状態取得・画面表示・正常停止
 - URLパターンを既定で保存しない設計
 - SQLite設定のDPAPI + HMAC-SHA256完全性チェック
 
@@ -19,12 +22,17 @@ Windowsでリンクを開く前に、Edge・Chrome・Firefoxのブラウザプ�
 
 ## 開発状況
 
-v0.0.3-beta（MSIX 0.0.3.0）を公開しています。Microsoft Store向けMSIXの準備も進めていますが、Storeでの公開はまだ行っていません。既知の制約と検証結果は[リリース記録](dev/history/v0.0.3/v0.0.3-imp.md)を参照してください。
+2026-10-15時点の開発版は **v0.0.3.2** です。表示版と生成設定のMSIX版はともに `0.0.3.2`、Cargo版は `0.0.3+2` です。公開済みの自己署名Beta MSIXは **0.0.3.1** で、今回の開発変更による再公開は行っていません。Microsoft StoreおよびKotorinToys用Innoインストーラーは未公開です。
+
+独立Gitを保持したまま、KotorinToysの `tools/HttpSelector` で管理します。**通常利用は署名付きMSIXからのインストールが必須です。** [MSIX導入手順](docs/INSTALL_MSIX.md)に従って導入し、WindowsでHTTP/HTTPSを関連付けてください。KotorinToysも登録済みのMSIX版を管理します。[KotorinToys連携](docs/kotorintoys-integration.md)と[本版の実装記録](dev/history/v0.0.3.2/v0.0.3.2-imp.md)を参照してください。
 
 ```powershell
+cd C:\develop\KotorinToys\tools\HttpSelector
 cargo test
-cargo run -- "https://example.com/path?a=b%20c"
+pwsh -NoProfile -File .\dev\scripts\run-test.ps1 -Url "https://example.com/path?a=b%20c"
 ```
+
+上記のEXE直接起動は開発検証専用で、MSIXによる関連付け登録を代替しません。
 
 詳細は[利用ガイド](docs/USERS_GUIDE.md)と[開発ガイド](docs/DEVELOPERS_GUIDE.md)を参照してください。
 
@@ -33,5 +41,9 @@ MSIXの生成・検証、開発証明書、Store用Identityの設定は[Microsof
 ## プライバシーとセキュリティ
 
 URLパターンの自動記録は既定でOFFです。有効にした場合も、自動記録では末尾・パラメータ値・フラグメントを `*` に置き換えます。既定ルールの新規登録初期値と「ワイルドカード」でも、URLの認証情報・末尾パス要素・クエリ値・フラグメントを `*` に置き換えます。保存前に一致範囲と残る情報を確認してください。既存ルールや手動入力はそのまま保存され、DB自体は暗号化していません。
+
+開く直前に端末内のパターン判定とQuad9へのDNS over HTTPS照会を行います。Quad9へ送るのはサブドメインを含むASCIIホスト名で、元URL、認証情報、ポート、パス、クエリ、フラグメントは送りません。警告を表示する前に照会が行われる場合があります。Quad9は接続元IPなどの通信情報を認識できるため、匿名通信ではありません。ローカル名、IPリテラル、公開suffixを確認できない名前は外部照会の対象外です。WindowsのDNS設定は変更しません。
+
+危険性が疑われる場合と照会できない場合は、キャンセルを初期選択にした確認画面を表示します。ルール一致や割り込みオフでも適用し、明示的に「それでも開く」を選ぶまで、ブラウザ起動・ドメイン連携・履歴記録を行いません。「ブロックなし」は安全保証ではなく、短縮URLの展開、対象ページの取得、リダイレクト追跡は行いません。検査用の永続URLログは追加していません。詳しくは[プライバシーポリシー案](docs/PRIVACY_POLICY.md)を参照してください。
 
 ブラウザには受け取った元URLを起動引数として渡します。ブラウザ実行ファイルパスは設定DBへ保存せず、Windowsレジストリと既知のインストール先から都度解決します。
