@@ -5,6 +5,7 @@ use http_selector::app_paths::AppPaths;
 use http_selector::app_title;
 use http_selector::default_rule_ui::{RuleDraft, RulesAction, run_rules};
 use http_selector::integrity::{IntegrityManager, IntegrityStatus};
+use http_selector::management::{self, Event};
 use http_selector::model::{DefaultRule, DetectedProfile, Profile};
 use http_selector::profile_scan;
 use http_selector::settings_ui::{SettingsAction, run_settings};
@@ -24,16 +25,15 @@ fn main() {
 }
 
 fn run() -> anyhow::Result<()> {
-    let argument = std::env::args().nth(1);
-    let mut url = argument
-        .as_deref()
-        .filter(|value| !value.starts_with("--"))
-        .map(ValidatedUrl::parse)
-        .transpose()?;
+    let arguments: Vec<_> = std::env::args().skip(1).collect();
+    let options = parse_arguments(&arguments)?;
+    let startup = options.startup;
+    let mut url = options.url;
     let _instance_guard = match acquire(url.as_ref())? {
         InstanceStatus::Primary(guard) => guard,
         InstanceStatus::Forwarded => return Ok(()),
     };
+    let management = management::start(&options.origin)?;
 
     let paths = AppPaths::for_current_user()?;
     paths.ensure_data_dir()?;
@@ -59,16 +59,54 @@ fn run() -> anyhow::Result<()> {
     integrity.sign_current()?;
     let initial_scan_required = !storage.initial_scan_completed()?;
     if initial_scan_required {
-        let mut detected =
-            profile_scan::scan_all().context("初回プロファイル検出に失敗しました")?;
+        let mut detected = if test_scan_disabled() {
+            Vec::new()
+        } else {
+            profile_scan::scan_all().context("初回プロファイル検出に失敗しました")?
+        };
         http_selector::browser::cache_detected_icons(&paths, &mut detected)?;
         integrity.backup_current()?;
         storage.sync_detected(&detected)?;
         storage.mark_initial_scan_completed()?;
         integrity.sign_current()?;
     }
-    let mut background_scan =
-        (!initial_scan_required).then(|| profile_scan::start_background(paths.clone()));
+    management.set_ready(true);
+    let mut display = !startup || url.is_some();
+    loop {
+        if display {
+            run_session(&paths, &storage, &integrity, url.take(), &management)?;
+        }
+        let event = management.try_event();
+        let event = if event.is_some() {
+            event
+        } else if startup {
+            Some(management.wait_event())
+        } else {
+            None
+        };
+        match event {
+            Some(Event::Url(incoming)) => {
+                url = Some(incoming);
+                display = true;
+            }
+            Some(Event::Show) => {
+                display = management.show_requested();
+            }
+            Some(Event::Stop) | None => break,
+        }
+    }
+    Ok(())
+}
+
+fn run_session(
+    paths: &AppPaths,
+    storage: &Storage,
+    integrity: &IntegrityManager,
+    mut url: Option<ValidatedUrl>,
+    management: &management::Management,
+) -> anyhow::Result<()> {
+    let no_scan = test_scan_disabled();
+    let mut background_scan = (!no_scan).then(|| profile_scan::start_background(paths.clone()));
     let mut escape_hold_duration_tenths = storage.escape_hold_duration_tenths()?;
     let mut open_profile_on_double_click = storage.open_profile_on_double_click()?;
     let mut interruption_enabled = storage.interruption_enabled()?;
@@ -76,6 +114,7 @@ fn run() -> anyhow::Result<()> {
     let mut selected_profile_id = None;
 
     loop {
+        management.set_processing_url(url.is_some());
         if background_scan
             .as_ref()
             .is_some_and(profile_scan::BackgroundProfileScan::is_consumed)
@@ -89,22 +128,23 @@ fn run() -> anyhow::Result<()> {
                 let target_profile =
                     resolve_profile(&all_profiles, &rules, url, interruption_enabled);
                 if let Some(profile) = target_profile {
-                    let launched = http_selector::browser::ensure_profile_is_launchable(&profile)
-                        .and_then(|()| http_selector::browser::launch(&profile, url));
-                    if let Err(error) = launched {
+                    let launched = open_profile(&profile, url, || false);
+                    if let Err(ref error) = launched {
                         show_error(
                             &app_title::main(),
                             &format!(
                                 "既定ルールのプロファイルを起動できませんでした。別のプロファイルを選択できます。\n{error:#}"
                             ),
                         );
-                    } else {
+                    } else if launched?.is_some() {
                         if storage.record_url_history_enabled()? {
                             integrity.backup_current()?;
                             let pattern = http_selector::url_pattern::from_url(url);
                             storage.record_url_pattern(profile.id, &pattern)?;
                             integrity.sign_current()?;
                         }
+                        break;
+                    } else {
                         break;
                     }
                 }
@@ -137,13 +177,17 @@ fn run() -> anyhow::Result<()> {
                 let url = selected_url
                     .as_ref()
                     .context("開くURLが指定されていません")?;
-                let domain = url::Url::parse(url.original())?
-                    .host_str()
-                    .unwrap_or_default()
-                    .to_owned();
-                let associate = ask_domain_association(&domain, profile.display_name());
-                http_selector::browser::ensure_profile_is_launchable(&profile)?;
-                http_selector::browser::launch(&profile, url)?;
+                let Some(associate) = open_profile(&profile, url, || {
+                    let domain = url::Url::parse(url.original())
+                        .ok()
+                        .and_then(|value| value.host_str().map(str::to_owned))
+                        .unwrap_or_default();
+                    let _busy = management::busy_guard();
+                    ask_domain_association(&domain, profile.display_name())
+                })?
+                else {
+                    break;
+                };
                 if associate {
                     integrity.backup_current()?;
                     storage.associate_domain(
@@ -175,6 +219,7 @@ fn run() -> anyhow::Result<()> {
                 profile_id,
                 url: current_url,
             } => {
+                let _busy = management::busy_guard();
                 url = Some(current_url.clone());
                 let outcome = run_rules(
                     storage.load_all_profiles()?,
@@ -236,9 +281,9 @@ fn run() -> anyhow::Result<()> {
             } => {
                 url = current_url;
                 selected_profile_id = current_selected_profile_id;
-                match scan_profiles(&paths) {
+                match scan_profiles(paths) {
                     Ok(detected) => {
-                        let changes = apply_detected_profiles(&storage, &integrity, &detected)?;
+                        let changes = apply_detected_profiles(storage, integrity, &detected)?;
                         if changes.changed() {
                             show_information(&app_title::main(), &changes.message());
                         }
@@ -257,9 +302,10 @@ fn run() -> anyhow::Result<()> {
                 background_scan = None;
                 url = current_url;
                 selected_profile_id = current_selected_profile_id;
-                apply_detected_profiles(&storage, &integrity, &detected)?;
+                apply_detected_profiles(storage, integrity, &detected)?;
             }
             SelectorResult::Settings { url: current_url } => {
+                let _busy = management::busy_guard();
                 url = current_url;
                 let outcome = run_settings(
                     storage.load_all_profiles()?,
@@ -288,9 +334,9 @@ fn run() -> anyhow::Result<()> {
                     integrity.sign_current()?;
                 }
                 match outcome.action {
-                    SettingsAction::Rescan => match scan_profiles(&paths) {
+                    SettingsAction::Rescan => match scan_profiles(paths) {
                         Ok(detected) => {
-                            let changes = apply_detected_profiles(&storage, &integrity, &detected)?;
+                            let changes = apply_detected_profiles(storage, integrity, &detected)?;
                             if changes.changed() {
                                 show_information(&app_title::main(), &changes.message());
                             }
@@ -323,6 +369,75 @@ fn run() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+struct LaunchOptions {
+    startup: bool,
+    origin: String,
+    url: Option<ValidatedUrl>,
+}
+
+fn test_scan_disabled() -> bool {
+    cfg!(debug_assertions)
+        && std::env::var_os("HTTPSELECTOR_TEST_DATA_DIR").is_some()
+        && std::env::var_os("HTTPSELECTOR_TEST_NO_SCAN").is_some()
+}
+
+fn parse_arguments(arguments: &[String]) -> anyhow::Result<LaunchOptions> {
+    let mut options = LaunchOptions {
+        startup: false,
+        origin: "standalone".into(),
+        url: None,
+    };
+    let mut values = arguments.iter();
+    while let Some(value) = values.next() {
+        match value.as_str() {
+            "--startup" => options.startup = true,
+            "--test-isolated" => {
+                anyhow::ensure!(
+                    test_scan_disabled()
+                        && std::env::var_os("HTTPSELECTOR_TEST_DATA_DIR")
+                            .is_some_and(|value| std::path::Path::new(&value).is_absolute()),
+                    "隔離試験はdebug版と絶対パスの専用保存先が必要です"
+                );
+            }
+            "--launch-origin" => {
+                let origin = values.next().context("起動経路が指定されていません")?;
+                anyhow::ensure!(
+                    matches!(
+                        origin.as_str(),
+                        "standalone" | "host_manual" | "direct_task" | "via_kotorintoys"
+                    ),
+                    "起動経路が正しくありません"
+                );
+                options.origin = origin.clone();
+            }
+            _ => {
+                anyhow::ensure!(options.url.is_none(), "URLは1件ずつ指定してください");
+                options.url = Some(ValidatedUrl::parse(value.clone())?);
+            }
+        }
+    }
+    Ok(options)
+}
+
+fn open_profile(
+    profile: &Profile,
+    url: &ValidatedUrl,
+    before_launch: impl FnOnce() -> bool,
+) -> anyhow::Result<Option<bool>> {
+    let _busy = management::busy_guard();
+    http_selector::browser::ensure_profile_is_launchable(profile)?;
+    let report = http_selector::risk::inspect(url);
+    http_selector::risk::guarded(
+        &report,
+        |report| http_selector::risk_ui::confirm(url, report),
+        || {
+            let value = before_launch();
+            http_selector::browser::launch(profile, url)?;
+            Ok(value)
+        },
+    )
 }
 
 fn resolve_profile(
@@ -379,6 +494,26 @@ fn apply_detected_profiles(
 mod tests {
     use super::*;
     use http_selector::model::BrowserType;
+
+    #[test]
+    fn arguments_preserve_urls_and_validate_management_options() {
+        let args = [
+            "--startup",
+            "--launch-origin",
+            "host_manual",
+            "HTTPS://example.com/a?secret=1",
+        ]
+        .map(String::from);
+        let options = parse_arguments(&args).unwrap();
+        assert!(options.startup);
+        assert_eq!(options.origin, "host_manual");
+        assert_eq!(
+            options.url.unwrap().original(),
+            "HTTPS://example.com/a?secret=1"
+        );
+        assert!(parse_arguments(&["--launch-origin".into()]).is_err());
+        assert!(parse_arguments(&["file:///C:/secret".into()]).is_err());
+    }
 
     fn profile(id: i64, favorite: bool, available: bool) -> Profile {
         Profile {

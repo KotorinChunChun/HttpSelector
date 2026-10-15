@@ -106,6 +106,10 @@ mod tests {
             assert_ne!(first.data_dir(root), second.data_dir(root));
             assert_ne!(first.mutex_name(), second.mutex_name());
             assert_ne!(
+                first.window_class("http-selector"),
+                second.window_class("http-selector")
+            );
+            assert_ne!(
                 first.window_class("HttpSelector.MainWindow"),
                 second.window_class("HttpSelector.MainWindow")
             );

@@ -153,6 +153,7 @@ pub fn run_rules(
         ShowWindow(window, SW_SHOW);
         SetForegroundWindow(window);
     }
+    crate::management::set_active_window(window);
     let mut message: MSG = unsafe { std::mem::zeroed() };
     loop {
         let status = unsafe { GetMessageW(&mut message, null_mut(), 0, 0) };
@@ -216,6 +217,11 @@ unsafe extern "system" fn window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    if let Some(result) =
+        unsafe { crate::management::handle_window_message(window, message, wparam) }
+    {
+        return result;
+    }
     if message == WM_NCCREATE {
         let create = unsafe { &*(lparam as *const CREATESTRUCTW) };
         unsafe {
@@ -360,6 +366,7 @@ unsafe extern "system" fn window_proc(
             0
         }
         WM_DESTROY => {
+            crate::management::clear_active_window(window);
             unsafe { PostQuitMessage(0) };
             0
         }

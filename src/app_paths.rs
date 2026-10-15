@@ -14,6 +14,15 @@ pub struct AppPaths {
 
 impl AppPaths {
     pub fn for_current_user() -> anyhow::Result<Self> {
+        #[cfg(debug_assertions)]
+        if let Some(directory) = std::env::var_os("HTTPSELECTOR_TEST_DATA_DIR") {
+            let directory = PathBuf::from(directory);
+            anyhow::ensure!(
+                directory.is_absolute(),
+                "テスト用データ位置は絶対パスで指定してください"
+            );
+            return Ok(Self::from_data_dir(directory));
+        }
         let local_app_data = std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
             .context("LOCALAPPDATAが取得できません")?;

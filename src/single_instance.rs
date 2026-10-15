@@ -5,13 +5,15 @@ use std::thread;
 use std::time::Duration;
 use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE};
 use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
+use windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, SMTO_ABORTIFHUNG, SW_RESTORE, SendMessageTimeoutW, SetForegroundWindow,
-    ShowWindow, WM_COPYDATA,
+    AllowSetForegroundWindow, FindWindowW, GetWindowThreadProcessId, SMTO_ABORTIFHUNG, SW_RESTORE,
+    SendMessageTimeoutW, SetForegroundWindow, ShowWindow, WM_COPYDATA,
 };
 
-const WINDOW_CLASSES: [&str; 3] = [
+const WINDOW_CLASSES: [&str; 4] = [
+    crate::management::BROKER_CLASS,
     "HttpSelector.MainWindow",
     "HttpSelector.SettingsWindow",
     "HttpSelector.RuleWindow",
@@ -99,13 +101,20 @@ fn try_acquire_primary(name: &str) -> anyhow::Result<Option<SingleInstanceGuard>
 fn forward_to_existing(url: Option<&ValidatedUrl>) -> anyhow::Result<()> {
     let identity = crate::app_identity::AppIdentity::current()?;
     let mut existing = null_mut();
+    let mut is_broker = false;
     for _ in 0..40 {
         existing = WINDOW_CLASSES
             .iter()
             .find_map(|class_name| {
+                let broker = *class_name == crate::management::BROKER_CLASS;
                 let class_name = wide(&identity.window_class(class_name));
                 let window = unsafe { FindWindowW(class_name.as_ptr(), null()) };
-                (!window.is_null()).then_some(window)
+                if window.is_null() {
+                    None
+                } else {
+                    is_broker = broker;
+                    Some(window)
+                }
             })
             .unwrap_or(null_mut());
         if !existing.is_null() {
@@ -117,6 +126,17 @@ fn forward_to_existing(url: Option<&ValidatedUrl>) -> anyhow::Result<()> {
         !existing.is_null(),
         "起動済みのHttpSelector画面が見つかりません"
     );
+    let mut process_id = 0;
+    unsafe { GetWindowThreadProcessId(existing, &mut process_id) };
+    let mut remote_session = 0;
+    let mut own_session = 0;
+    ensure!(
+        unsafe { ProcessIdToSessionId(process_id, &mut remote_session) } != 0
+            && unsafe { ProcessIdToSessionId(std::process::id(), &mut own_session) } != 0
+            && remote_session == own_session,
+        "別セッションのHttpSelectorへ転送できません"
+    );
+    unsafe { AllowSetForegroundWindow(process_id) };
     if let Some(url) = url {
         let mut encoded = wide(url.original());
         let copy_data = COPYDATASTRUCT {
@@ -141,10 +161,27 @@ fn forward_to_existing(url: Option<&ValidatedUrl>) -> anyhow::Result<()> {
             receiver_result != 0,
             "起動済みのHttpSelectorがURLを拒否しました"
         );
-    }
-    unsafe {
-        ShowWindow(existing, SW_RESTORE);
-        SetForegroundWindow(existing);
+    } else if is_broker {
+        let mut result = 0;
+        ensure!(
+            unsafe {
+                SendMessageTimeoutW(
+                    existing,
+                    crate::management::WM_MANAGEMENT_SHOW,
+                    0,
+                    0,
+                    SMTO_ABORTIFHUNG,
+                    2_000,
+                    &mut result,
+                )
+            } != 0,
+            "起動済みのHttpSelectorへ表示を要求できません"
+        );
+    } else {
+        unsafe {
+            ShowWindow(existing, SW_RESTORE);
+            SetForegroundWindow(existing);
+        }
     }
     Ok(())
 }
