@@ -23,7 +23,7 @@ Windowsでリンクを開く前に、Edge・Chrome・Firefoxのブラウザプ�
 
 ## 開発状況
 
-2026-10-17時点の開発版は **v0.0.3.3** です。表示版と生成設定のMSIX版はともに `0.0.3.3`、Cargo版は `0.0.3+3` です。公開済みの自己署名Beta MSIXは **0.0.3.1** で、今回の開発変更による再公開は行っていません。Microsoft StoreおよびKotorinToys用Innoインストーラーは未公開です。
+2026-10-17に自己署名Beta MSIX **v0.0.3.3** を[配布ページ](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)へ公開しました。表示版と実MSIX版はともに `0.0.3.3`、Cargo版は `0.0.3+3` です。署名・内容・公開ファイルのハッシュを検証済みです。Microsoft StoreおよびKotorinToys用Innoインストーラーは未公開です。
 
 独立Gitを保持したまま、KotorinToysの `tools/HttpSelector` で管理します。**通常利用は署名付きMSIXからのインストールが必須です。** [MSIX導入手順](docs/INSTALL_MSIX.md)に従って導入し、WindowsでHTTP/HTTPSを関連付けてください。KotorinToysも登録済みのMSIX版を管理します。[KotorinToys連携](docs/kotorintoys-integration.md)と[本版の実装記録](dev/history/v0.0.3.3/v0.0.3.3-imp.md)を参照してください。
 

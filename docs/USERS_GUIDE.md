@@ -1,6 +1,6 @@
 # HttpSelector 利用ガイド
 
-更新日: 2026-10-17。開発版v0.0.3.3の操作を説明します。公開済みBeta MSIX 0.0.3.1には、本書の新しい連携フォーム、高リスクURL警告とKotorinToys管理連携は含まれません。
+更新日: 2026-10-17。公開済み署名付きBeta MSIX v0.0.3.3の操作を説明します。本書の新しい連携フォーム、高リスクURL警告とKotorinToys管理連携を含みます。導入は[MSIX導入手順](INSTALL_MSIX.md)を参照してください。
 
 ## 初回起動
 
@@ -122,7 +122,7 @@ KotorinToysの管理画面から、HttpSelectorを起動、表示、状態確認
 
 設定編集中、ドメイン連携の確認中、URLの検査・警告中は、操作を失わないよう管理画面からの停止を拒否します。現在の操作を終えてから再度停止してください。
 
-今回の管理対象は非MSIXの開発ビルドです。公開済みMSIXの導入・更新やKotorinToys用Innoインストーラーの配布には対応していません。保存済み設定の位置は、ソースの配置を移動しても変わりません。詳しくは[KotorinToys連携](kotorintoys-integration.md)を参照してください。
+KotorinToysは導入済みMSIXのパッケージIDを照合して起動・管理します。MSIXの導入・更新は[MSIX導入手順](INSTALL_MSIX.md)に従って別途行います。KotorinToys用Innoインストーラーは配布していません。保存済み設定の位置は、ソースの配置を移動しても変わりません。詳しくは[KotorinToys連携](kotorintoys-integration.md)を参照してください。
 
 ## 設定破損時
 

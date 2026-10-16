@@ -1,6 +1,6 @@
 # HttpSelector FAQ
 
-更新日: 2026-10-17。開発版v0.0.3.3を対象とします。公開済みBeta MSIXは0.0.3.1で、今回の機能追加による再公開は行っていません。
+更新日: 2026-10-17。署名付きBeta MSIX v0.0.3.3を対象とします。[配布ページ](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)から導入できます。
 
 ## 連携確認を毎回出したくありません
 

@@ -1,10 +1,12 @@
 # Microsoft Store公開準備
 
-現行手順の更新日: 2026-10-17。開発ソースv0.0.3.3を対象とし、下記の日付付き結果は当時の版の記録として区別する。今回、MSIXの生成・再公開・インストール・証明書の信頼登録は行っていない。
+現行手順の更新日: 2026-10-17。v0.0.3.3の署名付きBeta MSIXを生成・公開済み。下記の日付付き結果は当時の版の記録として区別する。今回、インストール・証明書の信頼登録は行っていない。
 
 HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。正式版とは別に、excel-chunchunから自己署名MSIXをApp Installerで配布するbetaチャネルを用意する。開発用MSIXとStore提出用MSIXを分離し、既存のInno Setupは従来方式として残す。
 
 ## 現在の構成
+
+2026-10-17にBeta 0.0.3.3を公開した。署名は既存の `CN=KotorinChunChun`（拇印 `475BABC3C3D1E871D90503D45CC5236216D85EE8`）を再利用し、信頼性・内容を検証した。MSIXは2,517,124バイト、SHA-256は `B5E8D8FA7B60CB81DC9D82BF0DA1CFE021BA48363711B3A6F71ADE41FE9DC0F4`。App Installerは626バイト、CERは1,032バイト。FTPSでバックアップ付き公開後、HTTPSのMIME・長さ・MSIX/CERハッシュと参照版を検証した。実機インストール・更新は未実施。詳細は[版別報告](../dev/history/v0.0.3.3/v0.0.3.3-imp.md)を参照。
 
 |項目|beta（ローカル開発用）|stable（Store提出用）|
 |---|---|---|
@@ -17,7 +19,7 @@ HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。正式版�
 
 betaは自己署名証明書を利用者が明示的に信頼して導入する公開ベータ配布チャネル。`https://excel-chunchun.sakura.ne.jp/download/` からApp Installer・MSIX・公開CERを配布する。独自アップデーターは作らず、App Installerの標準更新機構を使用する。開発用SubjectはPC共通の`CN=KotorinChunChun`を使う。Storeの公開情報は実際のPartner Center画面で確認する。匿名性を保証するものではない。
 
-MSIXの版は `packaging/release-config.json` の `packageVersion` で管理する。開発ソースの画面表示とMSIX生成設定はともに **0.0.3.3**、CargoのSemVerは **0.0.3+3**。公開済みのBeta MSIXは **0.0.3.1** で、生成設定の変更だけでは公開先のApp InstallerやMSIXは更新されない。新しい連携フォーム、高リスクURL警告とKotorinToys管理連携は開発版の機能であり、既存の公開済みMSIXには含まれない。
+MSIXの版は `packaging/release-config.json` の `packageVersion` で管理する。画面表示・実MSIX・公開App Installerはすべて **0.0.3.3**、CargoのSemVerは **0.0.3+3**。新しい連携フォーム、高リスクURL警告とKotorinToys管理連携を公開済みBetaに含む。
 
 ユーザー指定により過去に公開済み1.0.3.0から番号をリセットしたため、旧1.x版は自動更新できず、アンインストール後の新規導入が必要になる。誤って公開した0.0.4.0からも自動更新できず、アンインストール後の新規導入が必要。旧パッケージは変更・削除しない。Betaの0始まりは、この移行範囲と再インストール必須を設定した場合だけ許可する。Store版は先頭1以上・4桁目0、全チャネルで各部65535以下を維持する。Betaの4部版をStore提出規則に合わせて無断で変更せず、表示・配布版の一致とStore提出版の設計を別に確認する。
 
@@ -45,7 +47,7 @@ Buildはfmt、Rustテスト、Clippy、static CRTのreleaseビルド、画像生
 
 現在の設定での出力先は `release/msix/beta/0.0.3.3/`。MSIX、公開CER、SHA256SUMS.txt、verification.jsonを出力する。MSIXの中身は実行ファイル、3枚の画像、ManifestとMSIXメタデータだけ。ソース、PDB、PFX、証明書の秘密鍵、開発用文書は含めない。コンパイル時にローカルパスを置換し、配布物内の代表的な個人パスも検出する。
 
-Web公開ではガード付きエントリポイント `dev/scripts/publish-msix-release.ps1` を使う。Buildは既存MSIXを再検証してApp Installerを生成でき、Stageは検証済み成果物とHttpSelector用ページだけを `C:\develop\excel-chunchun\www\download` へ配置する。Publishは `-ReleaseIntentConfirmed -PublishConfirmed` が揃った場合だけFTPのdry-run、対象限定アップロード、公開HTTPS検証を行う。
+Web公開ではガード付きエントリポイント `dev/scripts/publish-msix-release.ps1` を使う。Buildは既存MSIXを再検証してApp Installerを生成でき、Stageは検証済み成果物とHttpSelector用ページだけを `C:\develop\excel-chunchun\www\download` へ配置する。Publishは `-ReleaseIntentConfirmed -PublishConfirmed` が揃った場合だけFTPSのdry-run、公開前バックアップ、対象6ファイル限定アップロード、公開HTTPS検証を行う。秘密鍵や他製品・共有メニューは公開対象に含めない。
 
 ```powershell
 pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Plan -Channel beta
@@ -53,7 +55,7 @@ pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Full -Channel b
 pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Verify -Channel beta
 ```
 
-公開先は `HttpSelector.html`、`httpselector-certificate/`、`beta/HttpSelector.appinstaller`、版付きMSIX、公開CER。App Installerは起動時に毎回更新を確認し、現在の起動をブロックせず、取得した更新を次回起動時に適用する。1.0.3.0以前から0.0.2.0への更新には使えないため、旧BetaをアンインストールしてからApp Installerで新規導入する。stableはこのFTP経路に載せずMicrosoft Storeを使用する。
+公開先は `HttpSelector.html`、`httpselector-certificate/`、`beta/HttpSelector.appinstaller`、版付きMSIX、公開CER。App Installerは起動時に毎回更新を確認し、現在の起動をブロックせず、取得した更新を次回起動時に適用する。旧1.x版や誤公開0.0.4.0から0.0.3.3への更新には使えないため、必要な設定を退避し、対象の旧Betaをアンインストールしてから新規導入する。同一Familyの0.0.3.1/0.0.3.2からは更新対象となるが、実機更新は未検証。stableはこのFTPS経路に載せずMicrosoft Storeを使用する。
 
 2026-09-01に1.0.3.0を公開し、ダウンロードメニュー・製品ページ・証明書案内・アイコン・App Installer・MSIX・CERのHTTPS応答を確認した。MSIXとCERの公開ハッシュはステージ済み成果物と一致した。公開ページは `https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html`。
 
