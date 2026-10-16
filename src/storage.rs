@@ -32,7 +32,7 @@ impl Storage {
     pub fn initialize(&self) -> anyhow::Result<()> {
         let mut connection = self.open()?;
         let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        anyhow::ensure!(version <= 3, "新しい版の設定DBはこの版では開けません");
+        anyhow::ensure!(version <= 4, "新しい版の設定DBはこの版では開けません");
         connection.pragma_update(None, "journal_mode", "DELETE")?;
         let transaction = connection.transaction()?;
         transaction.execute_batch(
@@ -71,8 +71,25 @@ impl Storage {
                   CreatedAt INTEGER NOT NULL,
                   UpdatedAt INTEGER NOT NULL
               );
-             PRAGMA user_version=3;",
+             ",
         )?;
+        if version < 4 {
+            transaction.execute_batch(
+                "CREATE TABLE DefaultRulesV4 (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ProfileId INTEGER REFERENCES Profiles(Id) ON DELETE CASCADE,
+                    Pattern TEXT NOT NULL,
+                    Enabled INTEGER NOT NULL DEFAULT 1,
+                    SortOrder INTEGER NOT NULL DEFAULT 0,
+                    CreatedAt INTEGER NOT NULL,
+                    UpdatedAt INTEGER NOT NULL
+                 );
+                 INSERT INTO DefaultRulesV4 SELECT * FROM DefaultRules;
+                 DROP TABLE DefaultRules;
+                 ALTER TABLE DefaultRulesV4 RENAME TO DefaultRules;",
+            )?;
+        }
+        transaction.pragma_update(None, "user_version", 4)?;
         transaction.commit()?;
         Ok(())
     }
@@ -80,7 +97,7 @@ impl Storage {
     pub fn schema_needs_migration(&self) -> anyhow::Result<bool> {
         let connection = self.open()?;
         let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        Ok(version < 3)
+        Ok(version < 4)
     }
 
     pub fn profile_count(&self) -> anyhow::Result<i64> {
@@ -328,7 +345,7 @@ impl Storage {
         let rows = statement.query_map([], |row| {
             Ok(DefaultRule {
                 id: row.get(0)?,
-                profile_id: row.get(1)?,
+                profile_id: row.get::<_, Option<i64>>(1)?.unwrap_or(0),
                 pattern: row.get(2)?,
                 enabled: row.get(3)?,
                 sort_order: row.get(4)?,
@@ -345,12 +362,18 @@ impl Storage {
         let transaction = connection.transaction()?;
         transaction.execute("DELETE FROM DefaultRules", [])?;
         for (index, rule) in rules.iter().enumerate() {
+            let stored = crate::association::StoredRule::decode(&rule.pattern)?;
+            let profile_id = if stored.is_some_and(|s| s.suppress_prompt) {
+                None
+            } else {
+                Some(rule.profile_id)
+            };
             transaction.execute(
                 "INSERT INTO DefaultRules
                  (ProfileId, Pattern, Enabled, SortOrder, CreatedAt, UpdatedAt)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
                 params![
-                    rule.profile_id,
+                    profile_id,
                     rule.pattern,
                     rule.enabled,
                     index as i64,
@@ -379,6 +402,52 @@ impl Storage {
         }
         transaction.commit()?;
         Ok(())
+    }
+
+    /// 同一条件・同一動作は更新する。他の規則の評価順序は変更しない。
+    pub fn save_association(
+        &self,
+        profile_id: i64,
+        rule: &crate::association::StoredRule,
+    ) -> anyhow::Result<()> {
+        let pattern = rule.encode()?;
+        let mut rules = self.load_default_rules()?;
+        let existing = rules.iter_mut().find(|entry| {
+            crate::association::StoredRule::decode(&entry.pattern)
+                .ok()
+                .flatten()
+                .is_some_and(|saved| {
+                    saved.condition == rule.condition
+                        && saved.suppress_prompt == rule.suppress_prompt
+                })
+        });
+        if let Some(existing) = existing {
+            existing.pattern = pattern;
+            existing.profile_id = if rule.suppress_prompt { 0 } else { profile_id };
+            existing.enabled = true;
+        } else {
+            rules.push(DefaultRule {
+                id: 0,
+                profile_id: if rule.suppress_prompt { 0 } else { profile_id },
+                pattern,
+                enabled: true,
+                sort_order: rules.len() as i64,
+                created_at: 0,
+                updated_at: 0,
+            });
+        }
+        self.replace_default_rules(&rules)
+    }
+
+    pub fn association_prompt_suppressed(
+        &self,
+        url: &crate::url_input::ValidatedUrl,
+    ) -> anyhow::Result<bool> {
+        Ok(self.load_default_rules()?.iter().any(|rule| {
+            rule.enabled
+                && crate::association::suppresses_prompt(&rule.pattern)
+                && crate::rules::matches(&rule.pattern, url.original())
+        }))
     }
 
     pub fn record_url_pattern(&self, profile_id: i64, pattern: &str) -> anyhow::Result<()> {
@@ -713,6 +782,86 @@ mod tests {
     }
 
     #[test]
+    fn structured_rules_upsert_preserve_order_and_suppression_has_no_profile_dependency() {
+        use crate::association::{StoredRule, UrlParts};
+        use crate::url_input::ValidatedUrl;
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage::new(temp.path().join("test.db"));
+        storage.initialize().unwrap();
+        storage
+            .sync_detected(&[DetectedProfile {
+                browser_type: BrowserType::Chrome,
+                profile_id: "Default".into(),
+                detected_name: "個人".into(),
+                icon_path: None,
+            }])
+            .unwrap();
+        let profile = storage.load_all_profiles().unwrap()[0].id;
+        let url =
+            ValidatedUrl::parse("https://apps.powerapps.com/play?tenantId=123&private=secret")
+                .unwrap();
+        let parts = UrlParts::new(&url);
+        let mut selection = parts.defaults();
+        selection.queries[0] = true;
+        let route = StoredRule::new(parts.condition(&selection).unwrap(), false);
+        storage.save_association(profile, &route).unwrap();
+        storage.save_association(profile, &route).unwrap();
+        let skip = StoredRule::new(parts.condition(&selection).unwrap(), true);
+        storage.save_association(profile, &skip).unwrap();
+        let rules = storage.load_default_rules().unwrap();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].pattern, route.encode().unwrap());
+        assert_eq!(rules[1].profile_id, 0);
+        assert!(storage.association_prompt_suppressed(&url).unwrap());
+        storage
+            .open()
+            .unwrap()
+            .execute("DELETE FROM Profiles WHERE Id=?1", [profile])
+            .unwrap();
+        assert_eq!(storage.load_default_rules().unwrap().len(), 1);
+        assert!(storage.association_prompt_suppressed(&url).unwrap());
+        assert!(
+            !String::from_utf8_lossy(&std::fs::read(storage.database_path()).unwrap())
+                .contains("secret")
+        );
+    }
+
+    #[test]
+    fn schema_three_upgrade_preserves_rule_ids_patterns_and_order() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage::new(temp.path().join("test.db"));
+        storage.initialize().unwrap();
+        storage
+            .sync_detected(&[DetectedProfile {
+                browser_type: BrowserType::Chrome,
+                profile_id: "Default".into(),
+                detected_name: "個人".into(),
+                icon_path: None,
+            }])
+            .unwrap();
+        let profile = storage.load_all_profiles().unwrap()[0].id;
+        storage
+            .associate_domain(
+                profile,
+                &[
+                    "http://example.com/*".into(),
+                    "https://example.com/*".into(),
+                ],
+            )
+            .unwrap();
+        let before = storage.load_default_rules().unwrap();
+        storage
+            .open()
+            .unwrap()
+            .pragma_update(None, "user_version", 3)
+            .unwrap();
+        storage.initialize().unwrap();
+        storage.initialize().unwrap();
+        assert_eq!(before, storage.load_default_rules().unwrap());
+        assert!(!storage.schema_needs_migration().unwrap());
+    }
+
+    #[test]
     fn newer_schema_is_rejected_without_modifying_the_database() {
         let temp = tempfile::tempdir().unwrap();
         let storage = Storage::new(temp.path().join("test.db"));
@@ -720,7 +869,7 @@ mod tests {
         storage
             .open()
             .unwrap()
-            .pragma_update(None, "user_version", 4)
+            .pragma_update(None, "user_version", 5)
             .unwrap();
         let before = std::fs::read(storage.database_path()).unwrap();
         assert!(storage.initialize().is_err());

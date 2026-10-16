@@ -74,6 +74,12 @@ pub fn wildcard_pattern(url: &ValidatedUrl) -> String {
 }
 
 pub fn matches(pattern: &str, value: &str) -> bool {
+    if crate::association::is_structured(pattern) {
+        return crate::association::StoredRule::decode(pattern)
+            .ok()
+            .flatten()
+            .is_some_and(|rule| rule.matches(value));
+    }
     // URL形式のルールはホストとパスを別々に照合し、ホストの * が / を越えないようにする。
     // 正規化は判定だけに使い、起動へ渡す元URLは変更しない。
     if let (Ok(pattern_url), Ok(value_url)) = (Url::parse(pattern), Url::parse(value))
