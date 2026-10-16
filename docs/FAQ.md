@@ -1,6 +1,6 @@
 # HttpSelector FAQ
 
-更新日: 2026-10-17。署名付きBeta MSIX v0.0.3.3を対象とします。[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest)から導入できます。旧サイトは移行案内に変更しました。
+更新日: 2026-10-17。署名付きBeta MSIX v0.0.3.3を対象とします。[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest)からMSIXを取得して手動導入できます。自動更新の移行・旧サイト切替は配信MIMEの問題により保留中です。
 
 ## 連携確認を毎回出したくありません
 

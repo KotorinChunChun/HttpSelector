@@ -2,7 +2,7 @@
 
 現行手順の更新日: 2026-10-17。v0.0.3.3の署名付きBeta MSIXを生成・公開済み。下記の日付付き結果は当時の版の記録として区別する。今回、インストール・証明書の信頼登録は行っていない。
 
-HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。正式版とは別に、GitHub Releasesから自己署名MSIXをApp Installerで配布するbetaチャネルを用意する。2026-10-17に旧excel-chunchunでの通常配布を終了し、移行案内と旧App Installer配信だけを維持する方針へ変更した。新しい公開手順は[GitHub配布](GITHUB_RELEASE.md)を正本とし、以下のWeb公開結果は履歴として残す。開発用MSIXとStore提出用MSIXを分離する。
+HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。正式版とは別に、GitHub Releasesで自己署名MSIXを配布するbetaチャネルを用意する。旧excel-chunchunでの通常配布を終了し、移行案内と旧App Installer配信だけを維持する方針を承認されたが、GitHubの配信MIMEの問題により自動更新・旧サイト切替は保留している。現在はMSIXの手動導入・更新を推奨する。新しい公開手順は[GitHub配布](GITHUB_RELEASE.md)を正本とし、以下のWeb公開結果は履歴として残す。開発用MSIXとStore提出用MSIXを分離する。
 
 ## 現在の構成
 
@@ -14,7 +14,7 @@ HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。正式版�
 |Publisher|CN=KotorinChunChun|Partner Centerの値を設定|
 |署名|開発者PCの永続自己署名証明書|未署名で生成し、Storeが署名|
 |証明書|CurrentUser\My、PC共通設定の拇印で固定|開発証明書は使用しない|
-|更新|GitHub ReleasesのApp Installer。同一IdentityでPackage Versionを上げる|Microsoft Store|
+|更新|現在はMSIXの手動更新。GitHub App Installer移行はMIME確認で保留|Microsoft Store|
 |保存先|自身のPackage FamilyのLocalState|自身のPackage FamilyのLocalState|
 
 betaは自己署名証明書を利用者が明示的に信頼して導入する公開ベータ配布チャネル。[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest)からApp Installer・MSIX・公開CER・SHA-256を配布する。独自アップデーターは作らず、App Installerの標準更新機構を使用する。開発用SubjectはPC共通の`CN=KotorinChunChun`を使う。Storeの公開情報は実際のPartner Center画面で確認する。匿名性を保証するものではない。

@@ -6,7 +6,7 @@ HttpSelectorの通常利用には、署名付きMSIXのインストールが必�
 
 配布元のMSIX、公開証明書、SHA-256と署名者の案内を確認します。署名付きBeta **0.0.3.3** は [GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest) のAssetsから取得してください。`SHA256SUMS.txt` のハッシュを `Get-FileHash -Algorithm SHA256` の結果と照合します。新しい連携フォームと高リスクURL警告を含みます。通常利用には本版の署名付きMSIXが必要です。今回の公開作業では実機へのインストール・更新は行っていません。
 
-自動更新を使う場合は [HttpSelector.appinstaller](https://github.com/KotorinChunChun/HttpSelector/releases/latest/download/HttpSelector.appinstaller) をダウンロードして開きます。旧サイト経由の利用者もGitHubのApp Installerを開いて更新先を移してください。詳細は[GitHub配布と移行](GITHUB_RELEASE.md)を参照してください。
+現在はReleaseからMSIX本体をダウンロードして手動で導入・更新してください。GitHub上のApp Installerは移行検証用で、自動更新の動作保証はありません。GitHubが配信する汎用MIMEとWindowsの要件の差を検出したため、旧サイトの更新経路は変更せず維持しています。詳細は[GitHub配布と移行状況](GITHUB_RELEASE.md)を参照してください。
 
 ソースから署名付き成果物を作る場合:
 

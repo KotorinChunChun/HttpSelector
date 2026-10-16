@@ -2,13 +2,19 @@
 
 2026-10-17から配布の正本を [KotorinChunChun/HttpSelector](https://github.com/KotorinChunChun/HttpSelector) に移します。通常利用には署名付きMSIXが必須です。
 
+## 現在の制約
+
+GitHub Releaseの公開アセットは、API登録時に正しいMIMEを指定しても実際のHEAD/GETではすべて `application/octet-stream` でした。MicrosoftのApp Installer配信要件は正しいMIME・長さを必要とするため、GitHubへの自動更新移行は完了としていません。現時点ではMSIXをダウンロードして手動導入・更新してください。旧Webサイトの変更・既存更新経路の切替は実施せず維持しています。以下のApp Installer・旧サイト切替の記述は準備済みの移行案であり、動作保証・実施済みではありません。
+
 ## 利用者向け
 
 1. [最新Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest)で版と注意事項を確認します。
 2. `HttpSelector.Development.cer` と `SHA256SUMS.txt` を取得し、[署名の確認・導入手順](INSTALL_MSIX.md)に従います。拇印は `475BABC3C3D1E871D90503D45CC5236216D85EE8`、発行元は `CN=KotorinChunChun` です。
-3. 自動更新を使う場合は [HttpSelector.appinstaller](https://github.com/KotorinChunChun/HttpSelector/releases/latest/download/HttpSelector.appinstaller) をダウンロードして開きます。MSIXの直接導入は可能ですが、App Installerの更新登録とは別です。
+3. MSIX本体をダウンロードして開きます。GitHub上の [HttpSelector.appinstaller](https://github.com/KotorinChunChun/HttpSelector/releases/latest/download/HttpSelector.appinstaller) は移行検証用です。実機試験は未実施で、自動更新には現時点で使用を推奨しません。MSIXの直接導入とApp Installerの更新登録は別です。
 
-旧Webサイトの製品ページ・証明書ページは移行案内に置き換えます。既存利用者向けに旧 `beta/HttpSelector.appinstaller` を残し、XMLのUriをGitHubの固定URLへ変更します。既に同版を導入している環境で更新先が自動的に切り替わることは実機未検証です。確実に移行するにはGitHubのApp Installerをダウンロードして開き、Windowsの確認画面に従ってください。設定の自動削除やアンインストールは行いません。
+## 旧サイト移行案（未実施）
+
+旧Webサイトの製品ページ・証明書ページは移行案内に置き換える準備をしました。旧 `beta/HttpSelector.appinstaller` のXMLのUriをGitHubの固定URLへ変更する案は、MIMEの問題を解決し、実機で確認するまで公開しません。既に同版を導入している環境で更新先が自動的に切り替わることも実機未検証です。設定の自動削除やアンインストールは行いません。
 
 過去のMSIX・CERは破壊的に削除せず、旧ページからの配布リンクを終了します。共有ダウンロードメニューや他製品は変更しません。
 

@@ -7,11 +7,13 @@
 - ドメイン連携確認を独自フォームに変更。URLのドメイン・パス・クエリを個別に固定できます。既定はドメインのみONです。
 - 「保存」は設定だけ保存し、「開く」と分離しました。ボタンのデザインを統一しました。
 - 高リスクURLのローカル検査とQuad9へのホスト名のみの照会、KotorinToysからの署名付きMSIX管理に対応しました。
-- 配布元をGitHubへ移行しました。旧Webサイトには移行案内と既存利用者向けApp Installerを残します。
+- MSIXの入手元をGitHubにも用意しました。自動更新と旧サイト切替は配信MIMEの問題で保留中です。既存の旧Webサイト更新経路は変更していません。
 
 ## 導入
 
-[署名確認・インストール手順](https://github.com/KotorinChunChun/HttpSelector/blob/main/docs/INSTALL_MSIX.md)を確認し、Assetsから公開証明書とチェックサムを取得してください。自動更新を利用する場合は `HttpSelector.appinstaller` をダウンロードして開きます。MSIX直接導入も可能です。
+[署名確認・インストール手順](https://github.com/KotorinChunChun/HttpSelector/blob/main/docs/INSTALL_MSIX.md)を確認し、Assetsから公開証明書・チェックサム・MSIX本体を取得して手動で導入・更新してください。
+
+**App Installerについて:** 正しいMIMEを指定してアセットを登録しましたが、GitHubの実配信はすべて `application/octet-stream` です。[Microsoftの配信要件](https://learn.microsoft.com/en-us/windows/msix/app-installer/troubleshoot-appinstaller-issues)との違いを検出したため、`HttpSelector.appinstaller` は移行検証用とし、自動更新には現時点で推奨しません。旧サイトの更新経路は維持しています。
 
 - 発行元: `CN=KotorinChunChun`
 - 証明書拇印: `475BABC3C3D1E871D90503D45CC5236216D85EE8`
@@ -26,4 +28,4 @@
 
 Quad9へ送るのはサブドメインを含むホスト名だけで、元URL・パス・クエリは送りません。警告がないことは安全の保証ではありません。連携条件として選んだ値は端末内DBへ保存され、DB自体は暗号化していません。
 
-署名・パッケージ内容を検証済み。Rustテスト103件成功、既存外部照会1件ignore。実機へのインストール・上書き更新・旧App Installerからの自動移行は今回未検証です。GitHubのApp Installerを直接開く移行手順を推奨します。
+署名・パッケージ内容を検証済み。Rustテスト103件成功、既存外部照会1件ignore。実機へのインストール・上書き更新・旧App Installerからの自動移行は今回未検証です。GitHubからMSIXをダウンロードする手動導入・更新を推奨します。
