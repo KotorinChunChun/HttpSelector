@@ -21,6 +21,12 @@ function Get-DistributionContext {
     $baseUri = [uri]$config.beta.baseUri
     if (-not $baseUri.IsAbsoluteUri -or $baseUri.Scheme -ne 'https') { throw 'beta.baseUriは絶対HTTPS URLにしてください。' }
     $normalizedBaseUri = $baseUri.AbsoluteUri.TrimEnd('/') + '/'
+    $appInstallerUri = $normalizedBaseUri + $config.beta.appInstallerFileName
+    if ($config.beta.PSObject.Properties['appInstallerUri']) {
+        $appInstallerUri = [uri]$config.beta.appInstallerUri
+        if (-not $appInstallerUri.IsAbsoluteUri -or $appInstallerUri.Scheme -ne 'https') { throw 'beta.appInstallerUriは絶対HTTPS URLにしてください。' }
+        $appInstallerUri = $appInstallerUri.AbsoluteUri
+    }
     $publicDownloadBaseUri = ([uri]$distribution.publicDownloadPage).AbsoluteUri.TrimEnd('/') + '/'
     $websiteRoot = [IO.Path]::GetFullPath($distribution.websiteProjectDirectory).TrimEnd('\','/')
     $siteRoot = [IO.Path]::GetFullPath((Join-Path $websiteRoot $distribution.siteRelativeDirectory))
@@ -42,7 +48,7 @@ function Get-DistributionContext {
         StagedAppInstallerPath = Join-Path $channelSiteDirectory $config.beta.appInstallerFileName
         PackageUri = $normalizedBaseUri + $msix.FileName
         CertificateUri = $normalizedBaseUri + $certificateFileName
-        AppInstallerUri = $normalizedBaseUri + $config.beta.appInstallerFileName
+        AppInstallerUri = $appInstallerUri
         ProductPageUri = [uri]$distribution.productPage
         PublicDownloadPageUri = [uri]$distribution.publicDownloadPage
         CertificateGuideUri = [uri]($publicDownloadBaseUri + 'httpselector-certificate/')

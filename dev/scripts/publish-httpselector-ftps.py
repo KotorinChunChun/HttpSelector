@@ -23,7 +23,7 @@ def write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
 
-def plan():
+def plan(migration=False):
     config = json.loads((ROOT / 'packaging/release-config.json').read_text(encoding='utf-8-sig'))
     version = config['packageVersion']
     if not re.fullmatch(r'\d+\.\d+\.\d+\.\d+', version):
@@ -37,11 +37,14 @@ def plan():
     site_root = (website / dist['siteRelativeDirectory']).resolve()
     if site_root != website / 'www/download':
         raise ValueError('公開領域が不正です')
-    entries = checked_entries(site_root, dist['publishRelativePaths'], version)
+    if dist.get('mode') == 'github' and not migration:
+        raise ValueError('通常配布はGitHubへ移行済みです。旧サイトは--migrationによる3ファイル更新だけを許可します')
+    targets = ['HttpSelector.html', 'httpselector-certificate', 'beta/HttpSelector.appinstaller'] if migration else dist['publishRelativePaths']
+    entries = checked_entries(site_root, targets, version, migration=migration)
     return website, site_root, {'site': SITE, 'remote': REMOTE, 'version': version, 'files': entries}
 
 
-def checked_entries(site_root, targets, version):
+def checked_entries(site_root, targets, version, migration=False):
     package = f'beta/HttpSelector_{version}_x64_dev.msix'
     expected = {package, 'beta/HttpSelector.appinstaller', 'beta/HttpSelector.Development.cer',
                 'assets/httpselector-icon.png', 'httpselector-certificate/index.html', 'HttpSelector.html'}
@@ -57,10 +60,13 @@ def checked_entries(site_root, targets, version):
             files.update(path.relative_to(site_root).as_posix() for path in target.rglob('*') if path.is_file())
         else:
             files.add(item)
-    if files != expected:
-        raise ValueError('公開対象はHttpSelectorの指定6ファイルだけです')
     order = [package, 'beta/HttpSelector.Development.cer', 'assets/httpselector-icon.png',
              'httpselector-certificate/index.html', 'beta/HttpSelector.appinstaller', 'HttpSelector.html']
+    if migration:
+        expected = {'HttpSelector.html', 'httpselector-certificate/index.html', 'beta/HttpSelector.appinstaller'}
+        order = ['httpselector-certificate/index.html', 'beta/HttpSelector.appinstaller', 'HttpSelector.html']
+    if files != expected:
+        raise ValueError('公開対象が許可リストと一致しません')
     entries = []
     for relative in order:
         path = (site_root / relative).resolve()
@@ -129,11 +135,12 @@ def publish(website, site_root, value):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--migration', action='store_true', help='旧サイトの移行案内とApp Installerだけを更新')
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument('--dry-run', action='store_true')
     action.add_argument('--execute', action='store_true')
     args = parser.parse_args()
-    website, site_root, value = plan()
+    website, site_root, value = plan(migration=args.migration)
     print(json.dumps(value, ensure_ascii=False, indent=2), flush=True)
     if args.execute:
         publish(website, site_root, value)

@@ -60,6 +60,16 @@ class PublicationPlanTests(unittest.TestCase):
         (self.root / 'beta/HttpSelector.appinstaller').write_bytes(b'')
         with self.assertRaises(ValueError): self.check()
 
+    def test_migration_updates_only_guide_appinstaller_and_notice(self):
+        targets = ['HttpSelector.html', 'httpselector-certificate', 'beta/HttpSelector.appinstaller']
+        entries = publisher.checked_entries(self.root, targets, self.version, migration=True)
+        self.assertEqual([entry['path'] for entry in entries],
+                         ['httpselector-certificate/index.html', 'beta/HttpSelector.appinstaller', 'HttpSelector.html'])
+
+    def test_migration_rejects_binary_upload(self):
+        with self.assertRaises(ValueError):
+            publisher.checked_entries(self.root, self.targets, self.version, migration=True)
+
 
 if __name__ == '__main__':
     unittest.main()

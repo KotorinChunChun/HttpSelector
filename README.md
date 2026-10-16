@@ -23,7 +23,9 @@ Windowsでリンクを開く前に、Edge・Chrome・Firefoxのブラウザプ�
 
 ## 開発状況
 
-2026-10-17に自己署名Beta MSIX **v0.0.3.3** を[配布ページ](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)へ公開しました。表示版と実MSIX版はともに `0.0.3.3`、Cargo版は `0.0.3+3` です。署名・内容・公開ファイルのハッシュを検証済みです。Microsoft StoreおよびKotorinToys用Innoインストーラーは未公開です。
+自己署名Beta MSIX **v0.0.3.3** は [GitHub Releases](https://github.com/KotorinChunChun/HttpSelector/releases/latest) から取得してください。表示版と実MSIX版はともに `0.0.3.3`、Cargo版は `0.0.3+3` です。署名・内容を検証済みです。Microsoft StoreおよびKotorinToys用Innoインストーラーは未公開です。
+
+[署名付きMSIXの導入手順](docs/INSTALL_MSIX.md) ／ [GitHub配布・旧サイトからの移行](docs/GITHUB_RELEASE.md)。旧Webサイトでの通常配布は終了し、移行案内と既存App Installerの移行用配信だけを維持します。
 
 独立Gitを保持したまま、KotorinToysの `tools/HttpSelector` で管理します。**通常利用は署名付きMSIXからのインストールが必須です。** [MSIX導入手順](docs/INSTALL_MSIX.md)に従って導入し、WindowsでHTTP/HTTPSを関連付けてください。KotorinToysも登録済みのMSIX版を管理します。[KotorinToys連携](docs/kotorintoys-integration.md)と[本版の実装記録](dev/history/v0.0.3.3/v0.0.3.3-imp.md)を参照してください。
 

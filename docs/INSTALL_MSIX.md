@@ -4,7 +4,9 @@ HttpSelectorの通常利用には、署名付きMSIXのインストールが必�
 
 ## 1. 配布物を取得する
 
-配布元のMSIX、公開証明書、SHA-256と署名者の案内を確認します。2026-10-17に署名付きBeta **0.0.3.3** を[配布ページ](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)へ公開しました。新しい連携フォームと高リスクURL警告を含みます。通常利用には本版の署名付きMSIXが必要です。今回の公開作業では実機へのインストール・更新は行っていません。
+配布元のMSIX、公開証明書、SHA-256と署名者の案内を確認します。署名付きBeta **0.0.3.3** は [GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest) のAssetsから取得してください。`SHA256SUMS.txt` のハッシュを `Get-FileHash -Algorithm SHA256` の結果と照合します。新しい連携フォームと高リスクURL警告を含みます。通常利用には本版の署名付きMSIXが必要です。今回の公開作業では実機へのインストール・更新は行っていません。
+
+自動更新を使う場合は [HttpSelector.appinstaller](https://github.com/KotorinChunChun/HttpSelector/releases/latest/download/HttpSelector.appinstaller) をダウンロードして開きます。旧サイト経由の利用者もGitHubのApp Installerを開いて更新先を移してください。詳細は[GitHub配布と移行](GITHUB_RELEASE.md)を参照してください。
 
 ソースから署名付き成果物を作る場合:
 

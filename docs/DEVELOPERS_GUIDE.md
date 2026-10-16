@@ -127,6 +127,8 @@ MSIX版は `packaging/AppxManifest.xml.template` の `uap3:Protocol` 宣言で�
 
 ## Microsoft Store向け配布
 
+Beta配布は[GitHub Releases](https://github.com/KotorinChunChun/HttpSelector/releases/latest)へ移行しました。以降の公開・旧サイト移行手順は[GitHub配布](GITHUB_RELEASE.md)を正本とします。従来のWeb向けStage/Publish/Verify/Fullは誤公開防止のため停止します。
+
 表示版・実MSIX版は `0.0.3.3`、Cargo版は `0.0.3+3` です。2026-10-17に署名付きBeta MSIXを公開し、公開後のHTTPS・ハッシュ・参照版を検証しました。KotorinToys向けの `distributionStatus: unpublished` は本体対応Innoが未公開であることを示し、Beta MSIXの公開状況とは別です。
 
 [Microsoft Store公開準備](MICROSOFT_STORE.md)に、Plan/Build/Verifyのコマンド、自己署名証明書の再利用、正式Identityへの切り替え、ローカル導入と残課題を記載しています。StoreチャネルはStoreの更新管理を使い、BetaチャネルのApp Installerとは分けます。独自アップデーターは実装しません。

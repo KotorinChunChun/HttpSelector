@@ -1,6 +1,6 @@
 # HttpSelector FAQ
 
-更新日: 2026-10-17。署名付きBeta MSIX v0.0.3.3を対象とします。[配布ページ](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)から導入できます。
+更新日: 2026-10-17。署名付きBeta MSIX v0.0.3.3を対象とします。[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest)から導入できます。旧サイトは移行案内に変更しました。
 
 ## 連携確認を毎回出したくありません
 

@@ -15,6 +15,10 @@ if ($Mode -ne 'Plan' -and -not $Channel) { throw 'Channelをbeta/stableで指定
 if ($Mode -in @('Build','Stage','Publish','Full') -and -not $ReleaseIntentConfirmed) { throw "$Mode には明示的な -ReleaseIntentConfirmed が必要です。" }
 if ($Mode -in @('Publish','Full') -and -not $PublishConfirmed) { throw "$Mode には明示的な -PublishConfirmed が必要です。" }
 if ($AllowRebuild -and $Mode -notin @('Build','Full')) { throw '-AllowRebuildはBuildまたはFull専用です。' }
+$releaseConfig = Get-Content -LiteralPath (Join-Path $root 'packaging/release-config.json') -Raw | ConvertFrom-Json
+if ($releaseConfig.distribution.PSObject.Properties['mode'] -and $releaseConfig.distribution.mode -eq 'github' -and $Mode -in @('Stage','Publish','Verify','Full')) {
+    throw '通常配布はGitHubへ移行済みです。docs/GITHUB_RELEASE.mdを参照してください。旧サイトは移行用3ファイルだけを更新します。'
+}
 
 function Invoke-Build([string]$SelectedChannel) {
     $context = Get-DistributionContext -Root $root -Channel $SelectedChannel
@@ -50,7 +54,7 @@ function Invoke-Publish([string]$SelectedChannel) {
 
 switch ($Mode) {
     'Plan' {
-        if (-not $Channel) { Write-Output 'beta: excel-chunchunのApp Installer配布 / stable: Microsoft Store'; Write-Output 'Planは生成・ステージ・公開・インストールを行いません。'; break }
+        if (-not $Channel) { Write-Output 'beta: GitHub ReleasesのApp Installer配布 / stable: Microsoft Store'; Write-Output 'Planは生成・ステージ・公開・インストールを行いません。'; break }
         if ($Channel -eq 'stable') { & (Join-Path $PSScriptRoot 'release-msix.ps1') -Mode Plan -Channel stable; break }
         $context = Get-DistributionContext -Root $root -Channel $Channel
         [pscustomobject]@{ Channel=$Channel; Version=$context.Msix.Version; Identity=$context.Msix.Identity.name; Publisher=$context.Msix.Identity.publisher; AppInstaller=$context.AppInstallerUri; Package=$context.PackageUri; ProductPage=$context.ProductPageUri; Installation='実行しない'; Publication='実行しない' }
