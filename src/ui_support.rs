@@ -407,9 +407,14 @@ pub fn draw_text(dc: HDC, text: &str, mut rect: RECT, font: HFONT, color: u32) {
 
 /// 共通の操作ボタンを、アプリの配色に合わせて描画する。
 pub fn draw_button(item: &DRAWITEMSTRUCT) {
+    draw_button_state(item, false, false);
+}
+
+/// 操作ボタンとURL部分トグルで、枠線・角丸・配色を共有する。
+pub fn draw_button_state(item: &DRAWITEMSTRUCT, checked: bool, multiline: bool) {
     let rect = item.rcItem;
     let disabled = item.itemState & ODS_DISABLED != 0;
-    let selected = item.itemState & ODS_SELECTED != 0;
+    let selected = checked || item.itemState & ODS_SELECTED != 0;
     let focused = item.itemState & ODS_FOCUS != 0;
     let (fill, border, text) = if disabled {
         (0x00F1EFEC, 0x00D8D3CD, MUTED)
@@ -458,12 +463,27 @@ pub fn draw_button(item: &DRAWITEMSTRUCT) {
             bottom: rect.bottom - 2,
         };
         let value = wide(&window_text(item.hwndItem));
+        let flags = if multiline {
+            let mut measured = text_rect;
+            DrawTextW(
+                item.hDC,
+                value.as_ptr(),
+                (value.len() - 1) as i32,
+                &mut measured,
+                DT_CALCRECT | DT_CENTER | DT_WORDBREAK | DT_NOPREFIX,
+            );
+            text_rect.top +=
+                ((text_rect.bottom - text_rect.top) - (measured.bottom - measured.top)).max(0) / 2;
+            DT_CENTER | DT_WORDBREAK | DT_NOPREFIX
+        } else {
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX
+        };
         DrawTextW(
             item.hDC,
             value.as_ptr(),
             (value.len() - 1) as i32,
             &mut text_rect,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
+            flags,
         );
         if !font.is_null() {
             SelectObject(item.hDC, old_font);

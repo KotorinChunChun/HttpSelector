@@ -19,6 +19,7 @@ use windows_sys::Win32::{
         Controls::*,
         HiDpi::GetDpiForWindow,
         Input::KeyboardAndMouse::{GetFocus, SetFocus, VK_ESCAPE, VK_RETURN},
+        Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
         WindowsAndMessaging::*,
     },
 };
@@ -372,6 +373,53 @@ unsafe extern "system" fn window_proc(
     }
 }
 
+unsafe extern "system" fn chip_proc(
+    window: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    id: usize,
+    _: usize,
+) -> LRESULT {
+    match message {
+        WM_PAINT => {
+            let mut paint: PAINTSTRUCT = unsafe { std::mem::zeroed() };
+            let dc = unsafe { BeginPaint(window, &mut paint) };
+            paint_chip(window, dc);
+            unsafe { EndPaint(window, &paint) };
+            0
+        }
+        WM_PRINTCLIENT => {
+            paint_chip(window, wparam as HDC);
+            0
+        }
+        WM_ERASEBKGND => 1,
+        WM_NCDESTROY => unsafe {
+            RemoveWindowSubclass(window, Some(chip_proc), id);
+            DefSubclassProc(window, message, wparam, lparam)
+        },
+        _ => unsafe { DefSubclassProc(window, message, wparam, lparam) },
+    }
+}
+
+fn paint_chip(window: HWND, dc: HDC) {
+    let mut item: DRAWITEMSTRUCT = unsafe { std::mem::zeroed() };
+    item.hwndItem = window;
+    item.hDC = dc;
+    unsafe { GetClientRect(window, &mut item.rcItem) };
+    if unsafe { GetFocus() } == window {
+        item.itemState |= ODS_FOCUS;
+    }
+    if unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled(window) } == 0 {
+        item.itemState |= ODS_DISABLED;
+    }
+    if unsafe { SendMessageW(window, BM_GETSTATE, 0, 0) } as u32 & BST_PUSHED != 0 {
+        item.itemState |= ODS_SELECTED;
+    }
+    let checked = unsafe { SendMessageW(window, BM_GETCHECK, 0, 0) } == BST_CHECKED as isize;
+    common::draw_button_state(&item, checked, true);
+}
+
 fn create_controls(window: HWND, state: &mut State<'_>) {
     let font = state.theme.font;
     state.title = common::label(
@@ -390,14 +438,17 @@ fn create_controls(window: HWND, state: &mut State<'_>) {
         .chain(state.parts.queries.iter().cloned())
         .collect::<Vec<_>>();
     for (index, label) in labels.iter().enumerate() {
-        state.chips.push(common::control(
+        let chip = common::control(
             window,
             "BUTTON",
             label,
             CHIP_BASE + index as i32,
             WS_TABSTOP | BS_AUTOCHECKBOX as u32 | BS_PUSHLIKE as u32 | BS_MULTILINE as u32,
             font,
-        ));
+        );
+        // 標準チェックボックスの操作・アクセシビリティを保ち、描画だけを共通化する。
+        unsafe { SetWindowSubclass(chip, Some(chip_proc), 1, 0) };
+        state.chips.push(chip);
     }
     state.query_prefix = common::label(window, "?", font);
     state.auto = common::control(
@@ -467,6 +518,7 @@ fn update(state: &State<'_>) {
                 0,
             )
         };
+        unsafe { InvalidateRect(*control, null(), 0) };
     }
     unsafe {
         SendMessageW(
@@ -840,6 +892,67 @@ fn fit_height(window: HWND, state: &State<'_>) {
 mod tests {
     use super::*;
     const URL: &str = "https://apps.powerapps.com/play/e/default-11111111-2222-3333-4444-555555555555/a/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?tenantId=11111111-2222-3333-4444-555555555555&hint=66666666-7777-8888-9999-000000000000&source=portal&screen=Requests&itemId=12345&locale=ja-JP&theme=light&mode=edit&hideNavBar=true&debug=false";
+
+    #[test]
+    fn chip_uses_common_button_frame_and_keeps_native_checked_state() {
+        let mut save = |_: &StoredRule| Ok(());
+        let mut state = Box::new(State::new(
+            &ValidatedUrl::parse(URL).unwrap(),
+            "Chrome / 個人".into(),
+            &mut save,
+        ));
+        let _window = common::HiddenTestWindow::new(
+            Some(window_proc),
+            (&mut *state as *mut State<'_>).cast(),
+        );
+        let chip = state.chips[0];
+        unsafe {
+            MoveWindow(chip, 0, 0, 160, 48, 0);
+            let dc = CreateCompatibleDC(null_mut());
+            let mut info: BITMAPINFO = std::mem::zeroed();
+            info.bmiHeader.biSize = size_of::<BITMAPINFOHEADER>() as u32;
+            info.bmiHeader.biWidth = 160;
+            info.bmiHeader.biHeight = -48;
+            info.bmiHeader.biPlanes = 1;
+            info.bmiHeader.biBitCount = 32;
+            let mut bits = null_mut();
+            let bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut bits, null_mut(), 0);
+            assert!(!bitmap.is_null());
+            let previous = SelectObject(dc, bitmap);
+            let mut reference: DRAWITEMSTRUCT = std::mem::zeroed();
+            reference.hwndItem = state.back;
+            reference.hDC = dc;
+            reference.rcItem = RECT {
+                left: 0,
+                top: 0,
+                right: 160,
+                bottom: 48,
+            };
+            // 最初はホストON。クリックでOFFにし、標準ボタンと同じ枠・背景になる。
+            SendMessageW(chip, BM_CLICK, 0, 0);
+            assert!(!state.selection.host);
+            assert_eq!(
+                SendMessageW(chip, BM_GETCHECK, 0, 0),
+                BST_UNCHECKED as isize
+            );
+            reference.itemState = if GetFocus() == chip { ODS_FOCUS } else { 0 };
+            common::draw_button(&reference);
+            let frame = [GetPixel(dc, 0, 0), GetPixel(dc, 1, 24), GetPixel(dc, 14, 8)];
+            SendMessageW(chip, WM_PRINTCLIENT, dc as usize, 0);
+            assert_eq!(
+                [GetPixel(dc, 0, 0), GetPixel(dc, 1, 24), GetPixel(dc, 14, 8)],
+                frame
+            );
+            SendMessageW(chip, BM_CLICK, 0, 0);
+            assert!(state.selection.host);
+            assert_eq!(SendMessageW(chip, BM_GETCHECK, 0, 0), BST_CHECKED as isize);
+            SendMessageW(chip, WM_PRINTCLIENT, dc as usize, 0);
+            assert_eq!(GetPixel(dc, 14, 8), common::ACCENT);
+            SelectObject(dc, previous);
+            DeleteObject(bitmap);
+            DeleteDC(dc);
+        }
+    }
 
     #[test]
     fn incoming_url_does_not_close_or_overwrite_editor_and_second_pending_is_rejected() {
