@@ -68,7 +68,8 @@ impl UrlParts {
                 .queries
                 .iter()
                 .zip(&selection.queries)
-                .filter_map(|(value, on)| on.then(|| value.clone()))
+                .filter(|(_, on)| **on)
+                .map(|(value, _)| value.clone())
                 .collect(),
         })
     }
@@ -231,6 +232,20 @@ pub fn display_pattern(pattern: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn malformed_or_tampered_structured_rule_never_falls_back_to_wildcard() {
+        assert!(!crate::rules::matches(
+            "urlparts-v1:*",
+            "https://example.com/"
+        ));
+        let parts = UrlParts::new(&sample());
+        let mut rule = StoredRule::new(parts.condition(&parts.defaults()).unwrap(), false);
+        rule.regexes = vec![".*".into()];
+        assert!(rule.encode().is_err());
+        let text = format!("{PREFIX}{}", serde_json::to_string(&rule).unwrap());
+        assert!(!crate::rules::matches(&text, sample().original()));
+    }
     fn sample() -> ValidatedUrl {
         ValidatedUrl::parse(
             "https://apps.powerapps.com/play/e/tenant/a/app?tenantId=123&mode=edit&itemId=5#secret",

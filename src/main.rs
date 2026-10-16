@@ -13,7 +13,7 @@ use http_selector::settings_ui::{SettingsAction, run_settings};
 use http_selector::single_instance::{InstanceStatus, acquire};
 use http_selector::storage::Storage;
 use http_selector::ui::{
-    IntegrityRecoveryAction, SelectorResult, ask_domain_association, ask_integrity_recovery,
+    IntegrityRecoveryAction, SelectorResult, ask_integrity_recovery,
     run_selector_with_selection_and_scan as run_selector, show_error, show_information,
 };
 use http_selector::url_input::ValidatedUrl;
@@ -129,7 +129,7 @@ fn run_session(
                 let target_profile =
                     resolve_profile(&all_profiles, &rules, url, interruption_enabled);
                 if let Some(profile) = target_profile {
-                    let launched = open_profile(&profile, url, || false);
+                    let launched = open_profile(&profile, url, || Ok(true));
                     if let Err(ref error) = launched {
                         show_error(
                             &app_title::main(),
@@ -175,33 +175,60 @@ fn run_session(
                     .into_iter()
                     .find(|profile| profile.id == profile_id)
                     .context("選択したプロファイルが見つかりません")?;
-                let url = selected_url
+                let current_url = selected_url
                     .as_ref()
                     .context("開くURLが指定されていません")?;
-                let Some(associate) = open_profile(&profile, url, || {
-                    let domain = url::Url::parse(url.original())
-                        .ok()
-                        .and_then(|value| value.host_str().map(str::to_owned))
-                        .unwrap_or_default();
-                    let _busy = management::busy_guard();
-                    ask_domain_association(&domain, profile.display_name())
-                })?
-                else {
-                    break;
-                };
-                if associate {
-                    integrity.backup_current()?;
-                    storage.associate_domain(
-                        profile.id,
-                        &http_selector::rules::domain_patterns(url),
-                    )?;
-                    integrity.sign_current()?;
+                let mut pending_url = None;
+                let launched = open_profile(&profile, current_url, || {
+                    if storage.association_prompt_suppressed(current_url)? {
+                        return Ok(true);
+                    }
+                    let outcome =
+                        http_selector::association_ui::run(current_url, &profile, |rule| {
+                            integrity.backup_current()?;
+                            storage.save_association(profile.id, rule)?;
+                            if let Err(error) = integrity.sign_current() {
+                                integrity
+                                    .restore_backup()
+                                    .context("署名失敗後の設定復元に失敗しました")?;
+                                return Err(error);
+                            }
+                            Ok(())
+                        })?;
+                    pending_url = outcome.pending_url;
+                    Ok(outcome.action == http_selector::association_ui::Action::Open)
+                });
+                match launched {
+                    Ok(Some(true)) => {}
+                    Ok(Some(false)) => {
+                        selected_profile_id = Some(profile_id);
+                        apply_default_rules = pending_url.is_some();
+                        url = pending_url.or(selected_url);
+                        continue;
+                    }
+                    Ok(None) => break,
+                    Err(error) => {
+                        show_error(
+                            &app_title::main(),
+                            &format!("プロファイルを起動できませんでした。\n{error:#}"),
+                        );
+                        selected_profile_id = Some(profile_id);
+                        apply_default_rules = pending_url.is_some();
+                        url = pending_url.or(selected_url);
+                        continue;
+                    }
                 }
                 if storage.record_url_history_enabled()? {
                     integrity.backup_current()?;
-                    let pattern = http_selector::url_pattern::from_url(url);
+                    let pattern = http_selector::url_pattern::from_url(current_url);
                     storage.record_url_pattern(profile.id, &pattern)?;
                     integrity.sign_current()?;
+                }
+                if let Some(incoming) = pending_url {
+                    url = Some(incoming);
+                    apply_default_rules = true;
+                    selected_profile_id = Some(profile_id);
+                    continue;
                 }
                 break;
             }
@@ -375,7 +402,7 @@ fn run_session(
 fn open_profile(
     profile: &Profile,
     url: &ValidatedUrl,
-    before_launch: impl FnOnce() -> bool,
+    before_launch: impl FnOnce() -> anyhow::Result<bool>,
 ) -> anyhow::Result<Option<bool>> {
     let _busy = management::busy_guard();
     http_selector::browser::ensure_profile_is_launchable(profile)?;
@@ -384,9 +411,11 @@ fn open_profile(
         &report,
         |report| http_selector::risk_ui::confirm(url, report),
         || {
-            let value = before_launch();
+            if !before_launch()? {
+                return Ok(false);
+            }
             http_selector::browser::launch(profile, url)?;
-            Ok(value)
+            Ok(true)
         },
     )
 }
@@ -399,7 +428,11 @@ fn resolve_profile(
 ) -> Option<Profile> {
     rules
         .iter()
-        .filter(|rule| rule.enabled && http_selector::rules::matches(&rule.pattern, url.original()))
+        .filter(|rule| {
+            rule.enabled
+                && !http_selector::association::suppresses_prompt(&rule.pattern)
+                && http_selector::rules::matches(&rule.pattern, url.original())
+        })
         .find_map(|rule| {
             profiles
                 .iter()
@@ -510,5 +543,53 @@ mod tests {
         assert_eq!(resolve_profile(&profiles, &[], &url, false).unwrap().id, 2);
         assert!(resolve_profile(&profiles, &[], &url, true).is_none());
         assert!(resolve_profile(&profiles[..1], &[], &url, false).is_none());
+    }
+
+    #[test]
+    fn question_suppression_never_routes_and_structured_rules_keep_legacy_order() {
+        use http_selector::association::{StoredRule, UrlParts};
+        let url = ValidatedUrl::parse("https://apps.powerapps.com/play?tenantId=123").unwrap();
+        let profiles = vec![profile(1, false, true), profile(2, false, true)];
+        let parts = UrlParts::new(&url);
+        let condition = parts.condition(&parts.defaults()).unwrap();
+        let skip = DefaultRule {
+            id: 1,
+            profile_id: 1,
+            pattern: StoredRule::new(condition.clone(), true).encode().unwrap(),
+            enabled: true,
+            sort_order: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        assert!(resolve_profile(&profiles, std::slice::from_ref(&skip), &url, true).is_none());
+        let route = DefaultRule {
+            id: 2,
+            profile_id: 2,
+            pattern: StoredRule::new(condition, false).encode().unwrap(),
+            ..skip.clone()
+        };
+        let legacy = DefaultRule {
+            id: 3,
+            profile_id: 1,
+            pattern: "https://apps.powerapps.com/*".into(),
+            ..skip.clone()
+        };
+        assert_eq!(
+            resolve_profile(
+                &profiles,
+                &[skip, legacy.clone(), route.clone()],
+                &url,
+                true
+            )
+            .unwrap()
+            .id,
+            1
+        );
+        assert_eq!(
+            resolve_profile(&profiles, &[route, legacy], &url, true)
+                .unwrap()
+                .id,
+            2
+        );
     }
 }

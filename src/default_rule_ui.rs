@@ -11,7 +11,7 @@ use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{GetLastError, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows_sys::Win32::UI::Controls::DRAWITEMSTRUCT;
+use windows_sys::Win32::UI::Controls::{DRAWITEMSTRUCT, EM_SETREADONLY};
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN,
@@ -489,6 +489,14 @@ fn refresh_list(state: &mut RulesState) {
 }
 
 fn load_editor(state: &RulesState) {
+    let structured = state
+        .selected
+        .and_then(|index| state.rules.get(index))
+        .and_then(|rule| {
+            crate::association::StoredRule::decode(&rule.pattern)
+                .ok()
+                .flatten()
+        });
     let selected = state
         .profiles
         .iter()
@@ -502,15 +510,34 @@ fn load_editor(state: &RulesState) {
         )
     };
     let initial_pattern = state.source_url.as_ref().map(rules::wildcard_pattern);
+    let display = structured.as_ref().map(|rule| rule.regexes.join("  AND  "));
     common::set_text(
         state.pattern,
         state
             .selected
             .and_then(|index| state.rules.get(index))
-            .map(|rule| rule.pattern.as_str())
+            .map(|rule| display.as_deref().unwrap_or(&rule.pattern))
             .or(initial_pattern.as_deref())
             .unwrap_or_default(),
     );
+    unsafe {
+        SendMessageW(
+            state.pattern,
+            EM_SETREADONLY,
+            usize::from(structured.is_some()),
+            0,
+        );
+        EnableWindow(
+            state.profile,
+            i32::from(!structured.as_ref().is_some_and(|s| s.suppress_prompt)),
+        );
+        for id in [ID_SITE, ID_LEADING_PATH, ID_WILDCARD] {
+            EnableWindow(
+                GetDlgItem(GetParent(state.pattern), id),
+                i32::from(structured.is_none()),
+            );
+        }
+    }
     unsafe { EnableWindow(state.delete, i32::from(state.selected.is_some())) };
 }
 
@@ -533,6 +560,21 @@ fn apply_pattern_preset(window: HWND, state: &mut RulesState, id: i32) {
 }
 
 fn save_rule(window: HWND, state: &mut RulesState) {
+    // 生成済み式を旧ワイルドカード入力として上書きしない。
+    if let Some(selected) = state.selected
+        && let Ok(Some(stored)) =
+            crate::association::StoredRule::decode(&state.rules[selected].pattern)
+    {
+        if !stored.suppress_prompt {
+            let Some(profile_id) = state.selected_profile_id else {
+                return;
+            };
+            state.rules[selected].profile_id = profile_id;
+        }
+        state.dirty = true;
+        refresh_list(state);
+        return;
+    }
     let Some(profile_id) = state.selected_profile_id else {
         show_error_for(
             window,
@@ -612,17 +654,61 @@ fn normalize_sort_order(rules: &mut [DefaultRule]) {
 }
 
 fn list_text(rule: &DefaultRule, profiles: &[Profile]) -> String {
+    if crate::association::suppresses_prompt(&rule.pattern) {
+        return format!(
+            "質問しない → {}",
+            crate::association::display_pattern(&rule.pattern)
+        );
+    }
     let profile = profiles
         .iter()
         .find(|profile| profile.id == rule.profile_id)
         .map(Profile::display_name)
         .unwrap_or("（削除されたプロファイル）");
-    format!("{} → {}", profile, rule.pattern)
+    format!(
+        "{} → {}",
+        profile,
+        crate::association::display_pattern(&rule.pattern)
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_rules_are_not_rewritten_as_wildcards_and_suppression_is_identified() {
+        let url = ValidatedUrl::parse("https://apps.powerapps.com/play?tenantId=123").unwrap();
+        let parts = crate::association::UrlParts::new(&url);
+        let pattern =
+            crate::association::StoredRule::new(parts.condition(&parts.defaults()).unwrap(), true)
+                .encode()
+                .unwrap();
+        let rule = DefaultRule {
+            id: 1,
+            profile_id: 0,
+            pattern: pattern.clone(),
+            enabled: true,
+            sort_order: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        assert!(list_text(&rule, &[]).starts_with("質問しない → http(s)://"));
+        let mut state = Box::new(RulesState::new(vec![], vec![rule], None));
+        let window = common::HiddenTestWindow::new(
+            Some(window_proc),
+            (&mut *state as *mut RulesState).cast(),
+        );
+        assert!(!window_text(state.pattern).starts_with("urlparts-v1:"));
+        assert_ne!(
+            unsafe { GetWindowLongW(state.pattern, GWL_STYLE) } & ES_READONLY,
+            0
+        );
+        save_rule(window.0, &mut state);
+        assert_eq!(state.rules[0].pattern, pattern);
+        delete_selected_rule(&mut state);
+        assert!(state.rules.is_empty());
+    }
 
     #[test]
     fn draft_and_preset_save_redacted_values_without_changing_existing_rules() {

@@ -3,6 +3,7 @@ pub mod app_options;
 pub mod app_paths;
 pub mod app_title;
 pub mod association;
+pub mod association_ui;
 pub mod browser;
 pub mod default_rule_ui;
 pub mod integrity;

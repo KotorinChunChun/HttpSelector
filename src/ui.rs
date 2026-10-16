@@ -1263,21 +1263,6 @@ pub fn show_information(title: &str, message: &str) {
     show_information_for(null_mut(), title, message);
 }
 
-pub fn ask_domain_association(domain: &str, profile_name: &str) -> bool {
-    let title = wide(&app_title::main());
-    let message = wide(&format!(
-        "{domain} を今後 {profile_name} で開くよう連携しますか？\nHTTPとHTTPSの両方に適用します。"
-    ));
-    unsafe {
-        MessageBoxW(
-            null_mut(),
-            message.as_ptr(),
-            title.as_ptr(),
-            MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND,
-        ) == IDYES
-    }
-}
-
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn show_information_for(owner: HWND, title: &str, message: &str) {
     common::release_topmost(owner);
