@@ -28,6 +28,7 @@
     "websiteProjectDirectory": "C:\\develop\\excel-chunchun",
     "siteRelativeDirectory": "www\\download",
     "ftpUploadScript": "scripts\\upload_ftp.py",
+    "ftpsUploadScript": "dev/scripts/publish-httpselector-ftps.py",
     "publicDownloadPage": "https://excel-chunchun.sakura.ne.jp/download/",
     "productPage": "https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html",
     "publishRelativePaths": [

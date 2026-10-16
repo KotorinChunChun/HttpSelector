@@ -33,7 +33,7 @@ function Get-DistributionContext {
         Root = $Root; Msix = $msix; Config = $config; Distribution = $distribution
         WebsiteRoot = $websiteRoot; SiteRoot = $siteRoot
         SiteSourceDirectory = [IO.Path]::GetFullPath((Join-Path $Root $distribution.siteSourceDirectory))
-        FtpUploadScript = [IO.Path]::GetFullPath((Join-Path $websiteRoot $distribution.ftpUploadScript))
+        FtpUploadScript = [IO.Path]::GetFullPath((Join-Path $Root $distribution.ftpsUploadScript))
         ChannelSiteDirectory = $channelSiteDirectory
         PackagePath = $packagePath; CertificatePath = Join-Path $msix.Output $certificateFileName
         AppInstallerPath = $appInstallerPath

@@ -42,11 +42,9 @@ function Invoke-Publish([string]$SelectedChannel) {
     & (Join-Path $PSScriptRoot 'verify-staged-msix-release.ps1') -Channel $SelectedChannel
     if (-not (Test-Path -LiteralPath $context.FtpUploadScript -PathType Leaf)) { throw 'FTPアップロードスクリプトがありません。' }
     $python = Resolve-Python
-    $targets = @($context.Distribution.publishRelativePaths)
-    if ($targets.Count -eq 0) { throw '公開対象が設定されていません。' }
-    foreach ($relative in $targets) { $target = [IO.Path]::GetFullPath((Join-Path $context.SiteRoot $relative)); if (-not $target.StartsWith($context.SiteRoot, [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $target)) { throw "公開対象が不正です: $relative" }; Invoke-CheckedProcess -FilePath $python -ArgumentList @($context.FtpUploadScript,$target,'--dry-run') -WorkingDirectory $context.WebsiteRoot }
-    Write-Output 'FTP dry-runが成功しました。明示承認済みの公開を開始します。'
-    foreach ($relative in $targets) { $target = [IO.Path]::GetFullPath((Join-Path $context.SiteRoot $relative)); Invoke-CheckedProcess -FilePath $python -ArgumentList @($context.FtpUploadScript,$target) -WorkingDirectory $context.WebsiteRoot }
+    Invoke-CheckedProcess -FilePath $python -ArgumentList @($context.FtpUploadScript,'--dry-run') -WorkingDirectory $root
+    Write-Output 'FTPS dry-runが成功しました。公開前バックアップを取得し、対象を限定して公開します。'
+    Invoke-CheckedProcess -FilePath $python -ArgumentList @($context.FtpUploadScript,'--execute') -WorkingDirectory $root
     & (Join-Path $PSScriptRoot 'verify-published-msix-release.ps1') -Channel $SelectedChannel
 }
 
