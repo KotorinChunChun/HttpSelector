@@ -1,12 +1,12 @@
 # KotorinToys連携
 
-更新日: 2026-10-15。HttpSelector v0.0.3.2 / 管理契約2。
+更新日: 2026-10-17。HttpSelector v0.0.3.3 / 管理契約2。
 
 ## 配置と管理対象
 
 正本は `C:\develop\KotorinToys\tools\HttpSelector` です。HttpSelectorの独立したGit履歴を保持し、KotorinToys側は `catalog/tools.json` から子の [tool.json](../tool.json) を参照します。親のGitには子をGitリンクとして登録します。子にはremoteが設定されていないため、親の `.gitmodules` は `update = none` とし、リモートからの取得を前提にしません。
 
-通常利用はWindows 11 x64の署名付きMSIXを必須とします。[MSIX導入手順](INSTALL_MSIX.md)に従ってインストール・HTTP/HTTPS関連付けを行ってください。表示・管理定義・MSIX生成設定の製品版は `0.0.3.2`、Cargo版は `0.0.3+2` です。公開済みBetaは `0.0.3.1` で、今回の変更では公開物を差し替えていません。KotorinToys用Innoインストーラーは作成せず、定義の `distributionStatus: unpublished` は本体のInno配布台帳に載せないことを表します。
+通常利用はWindows 11 x64の署名付きMSIXを必須とします。[MSIX導入手順](INSTALL_MSIX.md)に従ってインストール・HTTP/HTTPS関連付けを行ってください。表示・管理定義・MSIX生成設定の製品版は `0.0.3.3`、Cargo版は `0.0.3+3` です。公開済みBetaは `0.0.3.1` で、今回の変更では公開物を差し替えていません。0.0.3.3のMSIXは未生成・未導入です。KotorinToys用Innoインストーラーは作成せず、定義の `distributionStatus: unpublished` は本体のInno配布台帳に載せないことを表します。
 
 KotorinToysは現在ユーザーのMSIX登録、Publisher、署名付き配布の登録由来、Manifestの製品識別と4部版を照合します。未導入・旧版・確認不能では開発EXEへ切り替えず導入・更新へ案内します。Windowsのパッケージ起動APIから起動し、MSIXのPackage Family別管理窓口へ接続します。管理資料は子リポジトリ側を参照します。
 

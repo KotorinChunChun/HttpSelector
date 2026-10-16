@@ -1,6 +1,6 @@
 # HttpSelector 開発ガイド
 
-更新日: 2026-10-15。開発版v0.0.3.2。正本の配置は `C:\develop\KotorinToys\tools\HttpSelector` で、独立Gitリポジトリを維持します。管理連携の契約と運用は[KotorinToys連携](kotorintoys-integration.md)を参照してください。
+更新日: 2026-10-17。開発版v0.0.3.3。正本の配置は `C:\develop\KotorinToys\tools\HttpSelector` で、独立Gitリポジトリを維持します。管理連携の契約と運用は[KotorinToys連携](kotorintoys-integration.md)を参照してください。
 
 ## 必要環境
 
@@ -45,9 +45,12 @@ cargo run --example ui_preview -- --no-url
 cargo run --example ui_preview -- --empty
 cargo run --example ui_preview -- --settings
 cargo run --example ui_preview -- --settings --empty
+cargo run --example ui_preview -- --association
 ```
 
 プレビューは長い日本語名・複数行メモ・25件のサンプルを使用します。選択してもブラウザは起動せず、設定画面の保存操作もDBへ書き込みません。アイコン未指定時の代替表示を確認できます。
+
+`--association` は架空のPower Apps URIと10個のクエリを使います。製品と同じフォームを使用し、保存コールバックだけを出力へ差し替えています。実DB、外部照会、ブラウザー起動には触れません。
 
 本体のdebug EXEが使用中の場合は、停止せず `cargo build --all-targets --target-dir target/review-check` で検証用ビルドを分離できます。自動テストは非表示の独立Win32ウィンドウを使ってフォーカス通知・クリック方式・ESC・ルール登録を確認します。実ブラウザ起動、MSIX導入、表示の目視確認を代替するものではありません。
 
@@ -74,6 +77,8 @@ UIの回帰テストでは、100/125/150/200%相当の幅・お気に入り0〜5
 
 - `url_input`: URLの長さ、スキーム、ホスト、制御文字を検証
 - `app_options`: 単体・管理・隔離試験の起動引数と検証専用条件を解釈
+- `association`: URLの部分選択、固定部分だけの永続モデル、正規表現生成とAND照合
+- `association_ui`: 初期折りたたみの連携フォーム。保存コールバックと開く／戻るの結果を分離
 - `risk_local`: 元ホスト表記・IDNA・Unicode類似文字・8サービスのtypoと偽装名を副作用なしで判定し、外部照会可能なASCIIホストだけを抽出
 - `quad9`: HTTP/2のDNS over HTTPSとDNS応答検証。対象ページのHTTP取得は行わない
 - `risk`: ローカル・外部結果の集約と、承認前の起動・保存を抑止する共通ゲート
@@ -88,7 +93,7 @@ UIの回帰テストでは、100/125/150/200%相当の幅・お気に入り0〜5
 - `app_identity`: OSのPackage Familyに基づくデータ保存先とIPC名の分離
 - `ui` / `settings_ui`: Win32ネイティブ画面
 
-手動選択・ルール一致・割り込みオフの起動は `main::open_profile` へ集約し、プロファイル識別子の検証、危険性検査、必要な利用者確認、ドメイン連携確認、ブラウザ起動の順で処理します。警告キャンセルではルール追加やURL履歴を保存しません。全角表記を失わないよう `ValidatedUrl::original()` を保持し、ブラウザへは元の文字列を渡します。
+手動選択・ルール一致・割り込みオフの起動は `main::open_profile` へ集約し、プロファイル識別子の検証、危険性検査、必要な利用者確認、連携フォーム、ブラウザ起動の順で処理します。フォームは手動選択かつ質問省略ルールに一致しない場合だけ表示します。保存コールバックは署名済みバックアップ→DB保存→署名の順で実行し、署名失敗時はバックアップを復元します。開くを選んだ場合だけ起動し、保存後に戻っても設定は残ります。警告キャンセルではルール追加やURL履歴を保存しません。全角表記を失わないよう `ValidatedUrl::original()` を保持し、ブラウザへは元の文字列を渡します。
 
 URLの検査・警告中も独立した受付窓口で後続URLを保持し、処理中のURLを置き換えません。受理済みURLはFIFOで扱い、上限超過は送信側へ拒否を返します。管理用 `stop` は検査・確認・設定編集中に拒否し、`show` / `status` はUI応答を確認して返します。
 
@@ -110,6 +115,10 @@ Quad9の照会先は `https://dns.quad9.net/dns-query` 固定です。Windowsの
 
 設定画面のプロファイルと一般設定は1トランザクションで保存します。外部キー制約は接続ごとに有効化し、スキーマ移行前には署名済みDBをバックアップします。DB署名はトランザクションの外で更新するため、DB確定と署名確定の間の電源断は復旧対象です。
 
+schema 4ではDefaultRules.ProfileIdをNULL可能にし、質問省略ルールをプロファイル削除と独立させます。従来ルールのID・順序・文字列を維持して移行します。新形式はPattern内の `urlparts-v1:` に続くJSONです。生成器の版、固定したhost/path/query、生成済み正規表現群、質問省略フラグを保存します。未選択の値と認証情報・フラグメントを保存しません。
+
+正規表現はRustのregexクレートでコンパイルし、全体一致式のANDとして照合します。URL本体と選択したクエリごとに式を分け、先読みや順列列挙を使いません。実行時は保存式と条件の整合性を確認し、保存式で正規化URL（認証情報を除く）を照合します。不正な新形式は一致させず、旧形式のワイルドカードとして解釈しません。既定ルール一覧では要約と読み取り専用の生成式を表示し、削除または対象プロファイルの変更を行えます。条件変更は削除・再登録です。
+
 ## 関連付け方針
 
 `installer.iss`はRegisteredApplicationsとURLAssociationsへHttpSelectorを候補登録します。Windowsの既定値は変更しません。利用者がWindows設定からhttpとhttpsを選択します。
@@ -118,7 +127,7 @@ MSIX版は `packaging/AppxManifest.xml.template` の `uap3:Protocol` 宣言で�
 
 ## Microsoft Store向け配布
 
-開発ソースの表示版・MSIX生成設定は `0.0.3.2`、Cargo版は `0.0.3+2` です。公開済みBeta MSIXは `0.0.3.1` で、生成設定の変更だけでは公開先は更新されません。KotorinToys向けの `distributionStatus: unpublished` は本体対応Innoが未公開であることを示し、既存Beta MSIXの公開状況とは別です。
+開発ソースの表示版・MSIX生成設定は `0.0.3.3`、Cargo版は `0.0.3+3` です。公開済みBeta MSIXは `0.0.3.1` で、生成設定の変更だけでは公開先は更新されません。KotorinToys向けの `distributionStatus: unpublished` は本体対応Innoが未公開であることを示し、既存Beta MSIXの公開状況とは別です。
 
 [Microsoft Store公開準備](MICROSOFT_STORE.md)に、Plan/Build/Verifyのコマンド、自己署名証明書の再利用、正式Identityへの切り替え、ローカル導入と残課題を記載しています。StoreチャネルはStoreの更新管理を使い、BetaチャネルのApp Installerとは分けます。独自アップデーターは実装しません。
 

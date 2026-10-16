@@ -8,6 +8,7 @@ Windowsでリンクを開く前に、Edge・Chrome・Firefoxのブラウザプ�
 - Edge、Chrome、Firefoxの既存プロファイルを自動検出
 - お気に入り、エイリアス、コメント、並び順
 - ダブルクリック・キーボード操作とURLの既定ルール
+- URLのドメイン・パス・クエリを個別選択し、自動起動または関連付けの質問省略を設定
 - 全角英字・類似文字・大手サービス名の誤字や偽ドメインを開く前に警告
 - Quad9へのドメイン照会と、確認できない場合の警告
 - KotorinToysからの無表示起動・状態取得・画面表示・正常停止
@@ -22,9 +23,9 @@ Windowsでリンクを開く前に、Edge・Chrome・Firefoxのブラウザプ�
 
 ## 開発状況
 
-2026-10-15時点の開発版は **v0.0.3.2** です。表示版と生成設定のMSIX版はともに `0.0.3.2`、Cargo版は `0.0.3+2` です。公開済みの自己署名Beta MSIXは **0.0.3.1** で、今回の開発変更による再公開は行っていません。Microsoft StoreおよびKotorinToys用Innoインストーラーは未公開です。
+2026-10-17時点の開発版は **v0.0.3.3** です。表示版と生成設定のMSIX版はともに `0.0.3.3`、Cargo版は `0.0.3+3` です。公開済みの自己署名Beta MSIXは **0.0.3.1** で、今回の開発変更による再公開は行っていません。Microsoft StoreおよびKotorinToys用Innoインストーラーは未公開です。
 
-独立Gitを保持したまま、KotorinToysの `tools/HttpSelector` で管理します。**通常利用は署名付きMSIXからのインストールが必須です。** [MSIX導入手順](docs/INSTALL_MSIX.md)に従って導入し、WindowsでHTTP/HTTPSを関連付けてください。KotorinToysも登録済みのMSIX版を管理します。[KotorinToys連携](docs/kotorintoys-integration.md)と[本版の実装記録](dev/history/v0.0.3.2/v0.0.3.2-imp.md)を参照してください。
+独立Gitを保持したまま、KotorinToysの `tools/HttpSelector` で管理します。**通常利用は署名付きMSIXからのインストールが必須です。** [MSIX導入手順](docs/INSTALL_MSIX.md)に従って導入し、WindowsでHTTP/HTTPSを関連付けてください。KotorinToysも登録済みのMSIX版を管理します。[KotorinToys連携](docs/kotorintoys-integration.md)と[本版の実装記録](dev/history/v0.0.3.3/v0.0.3.3-imp.md)を参照してください。
 
 ```powershell
 cd C:\develop\KotorinToys\tools\HttpSelector
@@ -39,6 +40,8 @@ pwsh -NoProfile -File .\dev\scripts\run-test.ps1 -Url "https://example.com/path?
 MSIXの生成・検証、開発証明書、Store用Identityの設定は[Microsoft Store公開準備](docs/MICROSOFT_STORE.md)を参照してください。開発用MSIXと正式版は設定データを分離します。
 
 ## プライバシーとセキュリティ
+
+新しい連携フォームでは既定はドメインのみ固定し、パス・クエリはOFFです。ONにした部分の文字列と生成済み正規表現だけを保存します。`tenantId`等をONにすると、その名前と値も端末内DBへ保存されます。「保存」は設定だけを保存して折りたたみを閉じます。URLを開くには続けて「開く」を押してください。
 
 URLパターンの自動記録は既定でOFFです。有効にした場合も、自動記録では末尾・パラメータ値・フラグメントを `*` に置き換えます。既定ルールの新規登録初期値と「ワイルドカード」でも、URLの認証情報・末尾パス要素・クエリ値・フラグメントを `*` に置き換えます。保存前に一致範囲と残る情報を確認してください。既存ルールや手動入力はそのまま保存され、DB自体は暗号化していません。
 
