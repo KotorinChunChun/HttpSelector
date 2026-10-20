@@ -23,7 +23,9 @@ Windowsでリンクを開く前に、Edge・Chrome・Firefoxのブラウザプ�
 
 ## 開発状況
 
-自己署名Beta MSIX **v0.0.3.3** は [GitHub Releases](https://github.com/KotorinChunChun/HttpSelector/releases/latest) から取得してください。表示版と実MSIX版はともに `0.0.3.3`、Cargo版は `0.0.3+3` です。署名・内容を検証済みです。Microsoft StoreおよびKotorinToys用Innoインストーラーは未公開です。
+開発版は **v0.0.3.4**（Cargo `0.0.3+4`）です。Teams Safe Linksの入れ子条件・TeamsCID別の振り分けと、承認済み名称警告の抑制を追加しました。表示版・MSIX生成設定は `0.0.3.4` ですが、この版のMSIX作成・公開はまだ行っていません。[今回の実装記録](dev/history/v0.0.3.4/v0.0.3.4-imp.md)を参照してください。
+
+公開済み自己署名Beta MSIX **v0.0.3.3** は [GitHub Releases](https://github.com/KotorinChunChun/HttpSelector/releases/latest) から取得できます。公開済み成果物の表示版と実MSIX版はともに `0.0.3.3` で、今回の追加機能は含みません。Microsoft StoreおよびKotorinToys用Innoインストーラーは未公開です。
 
 [署名付きMSIXの導入手順](docs/INSTALL_MSIX.md) ／ [GitHub配布・旧サイトからの移行状況](docs/GITHUB_RELEASE.md)。GitHubからMSIXを直接取得できます。GitHubの配信MIMEがApp Installerの要件と合わないため、自動更新のGitHub移行と旧サイトの切替は保留しています。現時点ではMSIXの手動導入・更新を推奨します。
 

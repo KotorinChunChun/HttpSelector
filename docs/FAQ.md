@@ -1,5 +1,7 @@
 # HttpSelector FAQ
 
+開発版v0.0.3.4（2026-10-21）では、Teamsのurl内を展開してSharePointホストとTeamsCIDを個別に選択できます。名称警告を明示承認して記憶する機能も追加しています。これらは下記公開済み0.0.3.3には未収録です。[操作手順](USERS_GUIDE.md)を参照してください。
+
 更新日: 2026-10-17。署名付きBeta MSIX v0.0.3.3を対象とします。[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest)からMSIXを取得して手動導入できます。自動更新の移行・旧サイト切替は配信MIMEの問題により保留中です。
 
 ## 連携確認を毎回出したくありません

@@ -117,6 +117,14 @@ Quad9の照会先は `https://dns.quad9.net/dns-query` 固定です。Windowsの
 
 schema 4ではDefaultRules.ProfileIdをNULL可能にし、質問省略ルールをプロファイル削除と独立させます。従来ルールのID・順序・文字列を維持して移行します。新形式はPattern内の `urlparts-v1:` に続くJSONです。生成器の版、固定したhost/path/query、生成済み正規表現群、質問省略フラグを保存します。未選択の値と認証情報・フラグメントを保存しません。
 
+v0.0.3.4はschema 5です。入れ子条件を知らない旧版が外側ホストだけで自動起動しないよう、版ガードを上げます。schema 4のテーブルと既存行は維持します。移行前は既存の署名済みバックアップ経路を利用し、移行後DBは旧版で開けません。
+
+入れ子はCondition.nestedへ親クエリ名・内側条件・生成済み式を保存します。各段の選択された条件だけを保存し、最大3段・子候補16件・URL長32 KiBに制限します。同名の親クエリは曖昧性のため拒否し、各段のクエリ値を1回ずつ復号します。実行時には各段の式と保存条件の整合性を検証し、原文を起動します。
+
+Teamsの特定ホスト・パスではurl内のSharePointホストと一意のGUID形式TeamsCIDを条件とするルールだけを自動起動に使います。未知・欠落・重複・登録競合ではお気に入りへの自動転送も行いません。TeamsCIDはURL由来の振り分けヒントで、認証やアカウントの本人確認ではありません。
+
+Settings.risk_approved_domainsへ完全一致のASCIIホスト名をJSON配列で保持します。明示承認は名称偽装の理由だけを抑制し、他の検査と内側検査は維持します。署名更新が失敗した場合は既存バックアップへ戻します。
+
 正規表現はRustのregexクレートでコンパイルし、全体一致式のANDとして照合します。URL本体と選択したクエリごとに式を分け、先読みや順列列挙を使いません。実行時は保存式と条件の整合性を確認し、保存式で正規化URL（認証情報を除く）を照合します。不正な新形式は一致させず、旧形式のワイルドカードとして解釈しません。既定ルール一覧では要約と読み取り専用の生成式を表示し、削除または対象プロファイルの変更を行えます。条件変更は削除・再登録です。
 
 ## 関連付け方針
@@ -129,7 +137,7 @@ MSIX版は `packaging/AppxManifest.xml.template` の `uap3:Protocol` 宣言で�
 
 Beta配布は[GitHub Releases](https://github.com/KotorinChunChun/HttpSelector/releases/latest)へ移行しました。以降の公開・旧サイト移行手順は[GitHub配布](GITHUB_RELEASE.md)を正本とします。従来のWeb向けStage/Publish/Verify/Fullは誤公開防止のため停止します。
 
-表示版・実MSIX版は `0.0.3.3`、Cargo版は `0.0.3+3` です。2026-10-17に署名付きBeta MSIXを公開し、公開後のHTTPS・ハッシュ・参照版を検証しました。KotorinToys向けの `distributionStatus: unpublished` は本体対応Innoが未公開であることを示し、Beta MSIXの公開状況とは別です。
+開発ソースの表示版・MSIX生成設定は `0.0.3.4`、Cargo版は `0.0.3+4` です。実際に公開済みの署名付きBeta MSIXは0.0.3.3で、0.0.3.4は未生成・未公開です。KotorinToys向けの `distributionStatus: unpublished` は本体対応インストーラーの台帳とは未連携であることを示し、Beta MSIXの公開状況とは別です。
 
 [Microsoft Store公開準備](MICROSOFT_STORE.md)に、Plan/Build/Verifyのコマンド、自己署名証明書の再利用、正式Identityへの切り替え、ローカル導入と残課題を記載しています。StoreチャネルはStoreの更新管理を使い、BetaチャネルのApp Installerとは分けます。独自アップデーターは実装しません。
 

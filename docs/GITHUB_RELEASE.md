@@ -1,5 +1,7 @@
 # GitHubでの配布・更新
 
+2026-10-21時点の開発ソースは0.0.3.4で、この版のpush・MSIX作成・Release公開は未実施です。以下の公開アセットと配信検証は0.0.3.3に対する記録です。
+
 2026-10-17から配布の正本を [KotorinChunChun/HttpSelector](https://github.com/KotorinChunChun/HttpSelector) に移します。通常利用には署名付きMSIXが必須です。
 
 ## 現在の制約
