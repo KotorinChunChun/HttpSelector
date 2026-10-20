@@ -17,15 +17,15 @@
       "requiresUninstall": true
     },
     "relativeDirectory": "beta",
-    "baseUri": "https://github.com/KotorinChunChun/HttpSelector/releases/download/v0.0.3.4/",
-    "appInstallerUri": "https://github.com/KotorinChunChun/HttpSelector/releases/latest/download/HttpSelector.appinstaller",
+    "baseUri": "https://excel-chunchun.sakura.ne.jp/download/beta/",
+    "appInstallerUri": "https://excel-chunchun.sakura.ne.jp/download/beta/HttpSelector.appinstaller",
     "appInstallerFileName": "HttpSelector.appinstaller"
   },
   "stable": {
     "identityFile": "packaging/store-identity.local.json"
   },
   "distribution": {
-    "mode": "github",
+    "mode": "dual",
     "repository": "KotorinChunChun/HttpSelector",
     "siteSourceDirectory": "packaging/site",
     "websiteProjectDirectory": "C:\\develop\\excel-chunchun",
