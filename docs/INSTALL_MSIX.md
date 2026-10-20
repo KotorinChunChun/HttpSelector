@@ -2,13 +2,13 @@
 
 HttpSelectorの通常利用には、署名付きMSIXのインストールが必須です。MSIXがHTTP/HTTPSの関連付け候補をWindowsへ登録します。EXEのコピーや開発用の `cargo run` では正式導入になりません。
 
-開発ソースは0.0.3.4で、この版のMSIXは未生成・未公開です。以下の公開物案内は0.0.3.3向けです。0.0.3.4を将来導入すると初回起動時にDBをschema 5へ移行するため、移行後DBを0.0.3.3以前では開けません。今回は実ユーザーDBを移行していません。
+署名付きBeta 0.0.3.4をGitHubと公開サイトで配布しています。初回起動時にDBをschema 5へ移行するため、移行後DBを0.0.3.3以前では開けません。今回は実ユーザーDBの移行・実機導入は行っていません。
 
 ## 1. 配布物を取得する
 
-配布元のMSIX、公開証明書、SHA-256と署名者の案内を確認します。署名付きBeta **0.0.3.3** は [GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest) のAssetsから取得してください。`SHA256SUMS.txt` のハッシュを `Get-FileHash -Algorithm SHA256` の結果と照合します。新しい連携フォームと高リスクURL警告を含みます。通常利用には本版の署名付きMSIXが必要です。今回の公開作業では実機へのインストール・更新は行っていません。
+配布元のMSIX、公開証明書、SHA-256と署名者の案内を確認します。署名付きBeta **0.0.3.4** は [GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest) のAssetsから取得してください。`SHA256SUMS.txt` のハッシュを `Get-FileHash -Algorithm SHA256` の結果と照合します。新しい連携フォームと高リスクURL警告を含みます。通常利用には本版の署名付きMSIXが必要です。今回の公開作業では実機へのインストール・更新は行っていません。
 
-現在はReleaseからMSIX本体をダウンロードして手動で導入・更新してください。GitHub上のApp Installerは移行検証用で、自動更新の動作保証はありません。GitHubが配信する汎用MIMEとWindowsの要件の差を検出したため、旧サイトの更新経路は変更せず維持しています。詳細は[GitHub配布と移行状況](GITHUB_RELEASE.md)を参照してください。
+推奨は[公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)のApp Installerです。GitHubから取得するApp Installerも更新先は同サイトです。GitHubのMSIXを直接開いて手動導入もできます。両拠点の署名付きMSIXは同一です。HTTPSのMIME・参照版・内容一致を検証しましたが、実機の導入・自動更新操作は未検証です。詳細は[二拠点配布手順](GITHUB_RELEASE.md)を参照してください。
 
 ソースから署名付き成果物を作る場合:
 
@@ -17,7 +17,7 @@ cd C:\develop\KotorinToys\tools\HttpSelector
 pwsh -NoProfile -File dev/scripts/release-msix.ps1 -Mode Build -Channel beta -ReleaseIntentConfirmed
 ```
 
-現在のソースからの出力先設定は `release/msix/beta/0.0.3.4/` です。MSIX、CER、SHA256SUMS.txt、verification.jsonを生成しますが、今回の実装作業では実行していません。生成はインストールや公開を行いません。
+現在のソースからの出力先設定は `release/msix/beta/0.0.3.4/` です。MSIX、CER、SHA256SUMS.txt、verification.jsonを生成します。公開入口ではApp Installerも生成します。生成はインストールや公開を行いません。
 
 ## 2. 署名を確認する
 
@@ -37,7 +37,7 @@ pwsh -NoProfile -File dev/scripts/install-msix.ps1 -Install
 
 最初のコマンドは検証のみです。`-Install` を付けるとWindowsのパッケージ登録を実行します。未信頼署名・製品不一致・ダウングレードでは停止し、証明書や利用者データを自動削除しません。
 
-同一Package Familyの `0.0.3.1 / 0.0.3.2 → 0.0.3.3` は更新として扱い、LocalStateの設定を保持します。初回起動時に設定DBをschema 4へ移行するため、更新後のDBは旧版では開けません。署名済みバックアップは更新時に保持します。誤公開の `0.0.4.0` や旧1.x版からは番号が下がるため、この手順では更新しません。必要な設定を退避したうえで、旧版の削除と再導入を個別に行ってください。
+同一Package Familyの `0.0.3.1 / 0.0.3.2 / 0.0.3.3 → 0.0.3.4` は更新として扱い、LocalStateの設定を保持します。初回起動時に設定DBをschema 5へ移行するため、更新後のDBは旧版では開けません。署名済みバックアップは更新時に保持します。誤公開の `0.0.4.0` や旧1.x版からは番号が下がるため、この手順では更新しません。必要な設定を退避したうえで、旧版の削除と再導入を個別に行ってください。
 
 開発中に同じ版番号のMSIXを作り直すと、Windowsが内容の異なる同番号パッケージを `0x80073CFB` で拒否する場合があります。インストール入口は自動アンインストールしません。再導入が必要な場合はアプリを正常終了し、対象パッケージのLocalStateを退避してから、当該パッケージだけを削除・再導入し、データを復元してください。公開配布では同番号の内容差し替えを避けます。
 

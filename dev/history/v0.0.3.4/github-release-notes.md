@@ -15,7 +15,7 @@ HTTP/HTTPSの関連付け登録のため、通常利用には署名付きMSIXか
 
 [公開サイト・App Installer](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html) / [証明書の導入手順](https://excel-chunchun.sakura.ne.jp/download/httpselector-certificate/index.html) / [詳細手順](https://github.com/KotorinChunChun/HttpSelector/blob/main/docs/INSTALL_MSIX.md)
 
-GitHubのAssetsにも同じMSIX・公開CER・App Installer・SHA256SUMS.txtを掲載します。App Installerの更新先は、適切な配信MIMEを提供する上記サイトです。GitHubではMSIXの直接取得も可能です。
+GitHubのAssetsにも同じMSIX・公開CER・App Installer・SHA256SUMS.txtを掲載しています。App Installerの更新先は、適切な配信MIMEを提供する上記サイトです。GitHubではMSIXの直接取得も可能です。
 
 - 発行元: `CN=KotorinChunChun`
 - 証明書拇印: `475BABC3C3D1E871D90503D45CC5236216D85EE8`
@@ -29,3 +29,5 @@ GitHubのAssetsにも同じMSIX・公開CER・App Installer・SHA256SUMS.txtを�
 同一ベータ系列0.0.3.3からの更新を想定しています。旧1.xや誤公開0.0.4.0は番号が下がるため自動更新できません。
 
 Rust回帰試験113件、fmt、Clippy、合成URLの実画面操作を確認済み。実Teamsアカウント・業務PDF・実ユーザーDB・このPCへのMSIX導入と更新操作は未検証です。警告がないことは安全を保証しません。
+
+署名付きMSIXは2,552,234バイト、SHA-256は `C9DD9F33453AC1F5B2DBCE20D5CEAA2127F8196ACCC2738DE30416AEE8C8A2E4`。ビルド元はタグv0.0.3.4の `82168282fc18f02bf1a5e31b75080b46aa5f2b0e` です。署名・パッケージ内容・改ざん拒否を検証し、両配布先からの匿名再取得で一致を確認しました。

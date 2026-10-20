@@ -1,12 +1,12 @@
 # KotorinToys連携
 
-更新日: 2026-10-21。開発版HttpSelector v0.0.3.4 / 管理契約2。公開済みMSIXは0.0.3.3で、0.0.3.4は未生成・未導入です。今回KotorinToys本体は改修・公開しません。
+更新日: 2026-10-21。HttpSelector v0.0.3.4 / 管理契約2。署名付きMSIX 0.0.3.4をGitHubと公開サイトへ公開済みですが、このPCへは未導入です。今回KotorinToys本体は改修・公開しません。
 
 ## 配置と管理対象
 
 正本は `C:\develop\KotorinToys\tools\HttpSelector` です。HttpSelectorの独立したGit履歴を保持し、KotorinToys側は `catalog/tools.json` から子の [tool.json](../tool.json) を参照します。子の公開先は [KotorinChunChun/HttpSelector](https://github.com/KotorinChunChun/HttpSelector) です。親の採用Gitリンクや配信configへの反映は、子のソース・Release公開とは別に管理します。
 
-通常利用はWindows 11 x64の署名付きMSIXを必須とします。[MSIX導入手順](INSTALL_MSIX.md)に従ってインストール・HTTP/HTTPS関連付けを行ってください。開発ソースの表示・管理定義・生成設定は `0.0.3.4`、Cargo版は `0.0.3+4` です。公開済み実MSIXは0.0.3.3です。今回の実装作業ではMSIX作成・インストール・公開・本体配信一覧の変更は行っていません。定義の `distributionStatus: unpublished` は本体対応インストーラー台帳へ載せないことを表します。
+通常利用はWindows 11 x64の署名付きMSIXを必須とします。[MSIX導入手順](INSTALL_MSIX.md)に従ってインストール・HTTP/HTTPS関連付けを行ってください。開発ソースの表示・管理定義・生成設定は `0.0.3.4`、Cargo版は `0.0.3+4` です。公開済み実MSIXも0.0.3.4です。今回このPCへのインストール・本体配信一覧の変更は行っていません。定義の `distributionStatus: unpublished` は本体対応インストーラー台帳へ載せないことを表します。
 
 KotorinToysは現在ユーザーのMSIX登録、Publisher、署名付き配布の登録由来、Manifestの製品識別と4部版を照合します。未導入・旧版・確認不能では開発EXEへ切り替えず導入・更新へ案内します。Windowsのパッケージ起動APIから起動し、MSIXのPackage Family別管理窓口へ接続します。管理資料は子リポジトリ側を参照します。
 

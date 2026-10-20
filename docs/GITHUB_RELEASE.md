@@ -1,32 +1,36 @@
-# GitHubでの配布・更新
+# GitHub・公開サイトでの配布と更新
 
-2026-10-21時点の開発ソースは0.0.3.4で、この版のpush・MSIX作成・Release公開は未実施です。以下の公開アセットと配信検証は0.0.3.3に対する記録です。
+更新日: 2026-10-21。署名付きBeta MSIX **v0.0.3.4**を[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/tag/v0.0.3.4)と[公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)へ公開しました。表示・MSIX・App Installerの数値はすべて0.0.3.4です。通常利用には署名付きMSIXが必須です。
 
-2026-10-17から配布の正本を [KotorinChunChun/HttpSelector](https://github.com/KotorinChunChun/HttpSelector) に移します。通常利用には署名付きMSIXが必須です。
+## 配布先の役割
 
-## 現在の制約
+- GitHub: ソース、版別Release、同一のMSIX・公開CER・App Installer・SHA256SUMS.txt。
+- 公開サイト: 導入案内、証明書案内、App InstallerとMSIXの更新先。既存サイトは廃止しません。
+- App InstallerのUriとMainPackageのUriは公開サイトです。GitHubから取得するApp Installerも同じ内容です。
 
-GitHub Releaseの公開アセットは、API登録時に正しいMIMEを指定しても実際のHEAD/GETではすべて `application/octet-stream` でした。MicrosoftのApp Installer配信要件は正しいMIME・長さを必要とするため、GitHubへの自動更新移行は完了としていません。現時点ではMSIXをダウンロードして手動導入・更新してください。旧Webサイトの変更・既存更新経路の切替は実施せず維持しています。以下のApp Installer・旧サイト切替の記述は準備済みの移行案であり、動作保証・実施済みではありません。
+前版と同様、GitHub APIに正しいMIMEを登録しても匿名取得時はapplication/octet-streamでした。このため、GitHubをApp Installerの直接更新先にはしません。公開サイトではapplication/appinstaller・application/msix・application/pkix-cert、正のContent-LengthとHTTPS取得を確認済みです。自動更新の実機操作は別に検証が必要です。
 
 ## 利用者向け
 
-1. [最新Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest)で版と注意事項を確認します。
-2. `HttpSelector.Development.cer` と `SHA256SUMS.txt` を取得し、[署名の確認・導入手順](INSTALL_MSIX.md)に従います。拇印は `475BABC3C3D1E871D90503D45CC5236216D85EE8`、発行元は `CN=KotorinChunChun` です。
-3. MSIX本体をダウンロードして開きます。GitHub上の [HttpSelector.appinstaller](https://github.com/KotorinChunChun/HttpSelector/releases/latest/download/HttpSelector.appinstaller) は移行検証用です。実機試験は未実施で、自動更新には現時点で使用を推奨しません。MSIXの直接導入とApp Installerの更新登録は別です。
-
-## 旧サイト移行案（未実施）
-
-旧Webサイトの製品ページ・証明書ページは移行案内に置き換える準備をしました。旧 `beta/HttpSelector.appinstaller` のXMLのUriをGitHubの固定URLへ変更する案は、MIMEの問題を解決し、実機で確認するまで公開しません。既に同版を導入している環境で更新先が自動的に切り替わることも実機未検証です。設定の自動削除やアンインストールは行いません。
-
-過去のMSIX・CERは破壊的に削除せず、旧ページからの配布リンクを終了します。共有ダウンロードメニューや他製品は変更しません。
+1. [公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)で版と注意事項を確認します。
+2. 初回は[署名の確認・証明書導入手順](INSTALL_MSIX.md)に従います。拇印は `475BABC3C3D1E871D90503D45CC5236216D85EE8`、発行元は `CN=KotorinChunChun` です。同じ証明書を信頼済みなら再登録は不要です。
+3. 公開サイトの[HttpSelector.appinstaller](https://excel-chunchun.sakura.ne.jp/download/beta/HttpSelector.appinstaller)を開いて導入・更新します。GitHubのMSIXを直接取得し手動導入することもできます。
+4. GitHubのSHA256SUMS.txtと `Get-FileHash -Algorithm SHA256` を照合できます。設定DBはschema 5へ移行し、旧版では開けません。
 
 ## 保守者向け
 
-- `packaging/release-config.json` のMSIX版と表示版を一致させます。`beta.baseUri` は版付きGitHub Release、`beta.appInstallerUri` は `releases/latest/download/HttpSelector.appinstaller` とします。
-- MSIX生成・署名・検証後、`dev/scripts/build-appinstaller.ps1` を実行します。同版MSIXの再生成・差し替えは禁止し、既存の署名済みバイト列を再利用します。
-- GitHub Releaseはdraftで準備し、MSIX、公開CER、App Installer、SHA256SUMS.txtをアップロードしてから公開します。秘密鍵・PFX・ユーザーデータ・実行ログは公開しません。
-- GitHub APIのアセットアップロード時にMSIXは `application/msix`、App Installerは `application/appinstaller`、CERは `application/pkix-cert`、チェックサムは `text/plain` を指定します。公開URLのGET/HEAD、MIME・長さ・SHA-256とXML参照を検査します。
-- ベータ品質であることを名称・本文へ明記しつつ、固定 `latest/download` を更新経路に使うため、GitHub上ではprereleaseフラグを使わずlatest Releaseに指定します。Store正式版を意味しません。
-- 旧サイトへの通常Publishは停止します。移行案内更新だけ `publish-httpselector-ftps.py --migration --dry-run` → `--migration --execute` を使い、案内2ファイルと旧App InstallerだけをFTPSでバックアップ付き更新します。
+- `packaging/release-config.json` のpackageVersionと表示版を一致させます。distribution.modeはdual、beta.baseUriとbeta.appInstallerUriは既存公開サイトです。
+- `publish-msix-release.ps1 -Mode Build -Channel beta -ReleaseIntentConfirmed` で既存証明書による署名と検証、App Installer生成を行います。公開済み同版MSIXは再生成・差し替えず、同一の署名済みバイト列を再利用します。
+- `-Mode Stage` で対象をステージ・検証し、`-Mode Publish -ReleaseIntentConfirmed -PublishConfirmed` でFTPS dry-run・公開前退避・対象限定配信・匿名HTTPS検証を実施します。対象は製品ページ、証明書案内、アイコン、MSIX、公開CER、App Installerの6ファイルだけです。共有メニュー・他製品を含めません。
+- ソース・版タグをpushし、GitHub Releaseをdraftで準備します。MSIX、公開CER、App Installer、SHA256SUMS.txtの4ファイルを添付し、Web公開検証後にReleaseを公開します。秘密鍵・PFX・利用者データ・生ログは公開しません。
+- アセットのAPI登録にはMSIX=application/msix、App Installer=application/appinstaller、CER=application/pkix-cert、チェックサム=text/plainを指定します。ただし配信時のMIMEとは区別します。
+- ベータ品質であることを名称・本文へ明記します。最新Releaseから入手できるようprereleaseではなくlatestを指定しますが、Store正式版を意味しません。
+- 公開後は両拠点から認証なしで再取得してローカルの長さとSHA-256に照合し、XML参照版・参照URL・署名・タグを記録します。
+- Web側は独立したdownloadリポジトリで対象ファイルだけコミットし、親・他製品の変更を混ぜません。
 
-App InstallerのUriによる移行動作は[Microsoftの仕様](https://learn.microsoft.com/en-us/uwp/schemas/appinstallerschema/element-appinstaller)、配信時のMIME・長さ要件は[Microsoftのトラブルシューティング](https://learn.microsoft.com/en-us/windows/msix/app-installer/troubleshoot-appinstaller-issues)を参照してください。HTTPS配信検証と実機インストール・更新の証明は区別します。
+## v0.0.3.4公開結果
+
+MSIX: 2,552,234バイト、SHA-256 `C9DD9F33453AC1F5B2DBCE20D5CEAA2127F8196ACCC2738DE30416AEE8C8A2E4`。
+署名元コミットは `82168282fc18f02bf1a5e31b75080b46aa5f2b0e`（タグv0.0.3.4）。署名・ペイロード・BlockMap・改ざん拒否を検証し、両配布先の匿名取得内容が一致しました。
+
+実Teamsアカウント・業務PDF・実利用者DB移行・実機のMSIX導入と自動更新は未検証です。今回このPCへ導入せず、証明書の信頼登録も変更していません。[版別報告](../dev/history/v0.0.3.4/v0.0.3.4-imp.md)を参照してください。
