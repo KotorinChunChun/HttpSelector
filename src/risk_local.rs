@@ -10,6 +10,7 @@ pub struct LocalAssessment {
     pub original_host: String,
     pub findings: Vec<String>,
     pub external_domain: Option<String>,
+    pub name_findings: Vec<String>,
 }
 
 struct Service {
@@ -51,6 +52,8 @@ const SERVICES: &[Service] = &[
             "bing.com",
             "msn.com",
             "aka.ms",
+            "static.microsoft",
+            "cloud.microsoft",
         ],
     },
     Service {
@@ -157,6 +160,7 @@ pub fn assess(url: &ValidatedUrl) -> LocalAssessment {
         _ => None,
     };
 
+    let name_start = findings.len();
     if matches!(parsed.host(), Some(Host::Domain(_))) && !known_service_domain(&host) {
         let (unicode_host, decoded) = idna::domain_to_unicode(&host);
         if decoded.is_err() {
@@ -174,11 +178,13 @@ pub fn assess(url: &ValidatedUrl) -> LocalAssessment {
         }
     }
 
+    let name_findings = findings[name_start..].to_vec();
     LocalAssessment {
         host,
         original_host,
         findings,
         external_domain,
+        name_findings,
     }
 }
 
@@ -398,6 +404,8 @@ mod tests {
             "google.co.jp",
             "login.microsoftonline.com",
             "www.microsoft.com",
+            "teams.public.onecdn.static.microsoft",
+            "outlook.cloud.microsoft",
             "appleid.apple.com",
             "www.amazon.co.jp",
             "www.amazon.com",
@@ -471,6 +479,7 @@ mod tests {
             "apple.com.evil.com",
             "paypal.security.evil.com",
             "google.com.evil.invalid",
+            "teams.public.onecdn.static.microsoft.evil.com",
         ] {
             assert_warning(&format!("https://{host}/"));
         }

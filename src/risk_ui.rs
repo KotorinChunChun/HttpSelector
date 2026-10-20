@@ -12,14 +12,30 @@ use windows_sys::Win32::{
 
 const CONTINUE_ID: usize = 100;
 const CANCEL_ID: usize = 2;
+const APPROVE_ID: i32 = 101;
+
+pub struct Decision {
+    pub accepted: bool,
+    pub approve_domains: bool,
+}
 
 struct State {
     accepted: bool,
+    approval: HWND,
+    approve_domains: bool,
 }
 
 pub fn confirm(url: &ValidatedUrl, report: &RiskReport) -> bool {
+    confirm_with_approval(url, report).accepted
+}
+
+pub fn confirm_with_approval(url: &ValidatedUrl, report: &RiskReport) -> Decision {
     let _busy = crate::management::busy_guard();
-    let mut state = State { accepted: false };
+    let mut state = State {
+        accepted: false,
+        approval: null_mut(),
+        approve_domains: false,
+    };
     let class = common::wide("HttpSelector.RiskWarning");
     let title = common::wide(&app_title::risk_warning());
     let mut wc: WNDCLASSEXW = unsafe { std::mem::zeroed() };
@@ -49,11 +65,14 @@ pub fn confirm(url: &ValidatedUrl, report: &RiskReport) -> bool {
         )
     };
     if window.is_null() {
-        return false;
+        return Decision {
+            accepted: false,
+            approve_domains: false,
+        };
     }
     let dpi = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(window) }.max(96);
     let font = unsafe { GetStockObject(DEFAULT_GUI_FONT) as HFONT };
-    let text = format!(
+    let mut text = format!(
         "このリンクを開く前に確認してください。\r\n\r\n実際のアクセス先（ASCII）: {}\r\n元のドメイン表記: {}\r\n\r\n判定理由:\r\n{}\r\n\r\n元URL:\r\n{}\r\n\r\n判定は安全を保証するものではありません。",
         visible(&report.host),
         visible(&report.original_host),
@@ -65,6 +84,25 @@ pub fn confirm(url: &ValidatedUrl, report: &RiskReport) -> bool {
             .join("\r\n"),
         visible(url.original())
     );
+    if !report.approvable_domains.is_empty() {
+        text.push_str(&format!(
+            "\r\n\r\n名称警告の承認対象: {}",
+            report
+                .approvable_domains
+                .iter()
+                .map(|h| visible(h))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        state.approval = common::control(
+            window,
+            "BUTTON",
+            "上記ドメインの名称警告を今後表示しない（他の警告は維持）",
+            APPROVE_ID,
+            WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+            font,
+        );
+    }
     let edit = common::edit(window, 10, true, true, font);
     common::set_text(edit, &text);
     let cancel = common::control(
@@ -94,9 +132,26 @@ pub fn confirm(url: &ValidatedUrl, report: &RiskReport) -> bool {
             margin,
             margin,
             rect.right - margin * 2,
-            rect.bottom - margin * 3 - height,
+            rect.bottom
+                - margin * 3
+                - height
+                - if state.approval.is_null() {
+                    0
+                } else {
+                    height + margin
+                },
             1,
         );
+        if !state.approval.is_null() {
+            MoveWindow(
+                state.approval,
+                margin,
+                rect.bottom - margin * 2 - height * 2,
+                rect.right - margin * 2,
+                height,
+                1,
+            );
+        }
         MoveWindow(
             cancel,
             rect.right - margin * 2 - width * 2,
@@ -139,7 +194,10 @@ pub fn confirm(url: &ValidatedUrl, report: &RiskReport) -> bool {
             }
         }
     }
-    state.accepted
+    Decision {
+        accepted: state.accepted,
+        approve_domains: state.accepted && state.approve_domains,
+    }
 }
 
 const VK_ESCAPE_VALUE: usize = 0x1b;
@@ -170,6 +228,8 @@ unsafe extern "system" fn window_proc(
             if id == CONTINUE_ID || id == CANCEL_ID {
                 unsafe {
                     (*pointer).accepted = id == CONTINUE_ID;
+                    (*pointer).approve_domains = !(*pointer).approval.is_null()
+                        && SendMessageW((*pointer).approval, BM_GETCHECK, 0, 0) == 1;
                     DestroyWindow(window);
                 }
             }

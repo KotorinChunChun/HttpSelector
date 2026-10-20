@@ -129,7 +129,7 @@ fn run_session(
                 let target_profile =
                     resolve_profile(&all_profiles, &rules, url, interruption_enabled);
                 if let Some(profile) = target_profile {
-                    let launched = open_profile(&profile, url, || Ok(true));
+                    let launched = open_profile(&profile, url, storage, integrity, || Ok(true));
                     if let Err(ref error) = launched {
                         show_error(
                             &app_title::main(),
@@ -179,7 +179,7 @@ fn run_session(
                     .as_ref()
                     .context("開くURLが指定されていません")?;
                 let mut pending_url = None;
-                let launched = open_profile(&profile, current_url, || {
+                let launched = open_profile(&profile, current_url, storage, integrity, || {
                     if storage.association_prompt_suppressed(current_url)? {
                         return Ok(true);
                     }
@@ -362,6 +362,14 @@ fn run_session(
                     integrity.sign_current()?;
                 }
                 match outcome.action {
+                    SettingsAction::ClearDomainApprovals => {
+                        integrity.backup_current()?;
+                        storage.set_approved_domains(&[])?;
+                        if let Err(error) = integrity.sign_current() {
+                            integrity.restore_backup()?;
+                            return Err(error);
+                        }
+                    }
                     SettingsAction::Rescan => match scan_profiles(paths) {
                         Ok(detected) => {
                             let changes = apply_detected_profiles(storage, integrity, &detected)?;
@@ -402,15 +410,35 @@ fn run_session(
 fn open_profile(
     profile: &Profile,
     url: &ValidatedUrl,
+    storage: &Storage,
+    integrity: &IntegrityManager,
     before_launch: impl FnOnce() -> anyhow::Result<bool>,
 ) -> anyhow::Result<Option<bool>> {
     let _busy = management::busy_guard();
     http_selector::browser::ensure_profile_is_launchable(profile)?;
-    let report = http_selector::risk::inspect(url);
+    let report = http_selector::risk::inspect_approved(url, &storage.approved_domains()?);
+    let decision = if report.requires_confirmation() {
+        http_selector::risk_ui::confirm_with_approval(url, &report)
+    } else {
+        http_selector::risk_ui::Decision {
+            accepted: true,
+            approve_domains: false,
+        }
+    };
     http_selector::risk::guarded(
         &report,
-        |report| http_selector::risk_ui::confirm(url, report),
+        |_| decision.accepted,
         || {
+            if decision.approve_domains {
+                let mut approved = storage.approved_domains()?;
+                approved.extend(report.approvable_domains.iter().cloned());
+                integrity.backup_current()?;
+                storage.set_approved_domains(&approved)?;
+                if let Err(error) = integrity.sign_current() {
+                    integrity.restore_backup()?;
+                    return Err(error);
+                }
+            }
             if !before_launch()? {
                 return Ok(false);
             }

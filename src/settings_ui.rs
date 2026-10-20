@@ -32,12 +32,14 @@ const ID_RECORD_URL_HISTORY: i32 = 110;
 const ID_ESCAPE_HOLD_DURATION: i32 = 111;
 const ID_OPEN_PROFILE_ON_DOUBLE_CLICK: i32 = 112;
 const ID_RULE_LIST: i32 = 113;
+const ID_CLEAR_APPROVALS: i32 = 114;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SettingsAction {
     Saved,
     Rescan,
     RuleList,
+    ClearDomainApprovals,
     Cancelled,
 }
 
@@ -68,6 +70,7 @@ struct SettingsState {
     escape_hold_duration: HWND,
     open_profile_on_double_click: HWND,
     rule_list: HWND,
+    clear_approvals: HWND,
     record_url_history_enabled: bool,
     escape_hold_duration_tenths: u32,
     open_profile_on_double_click_enabled: bool,
@@ -106,6 +109,7 @@ impl SettingsState {
             escape_hold_duration: null_mut(),
             open_profile_on_double_click: null_mut(),
             rule_list: null_mut(),
+            clear_approvals: null_mut(),
             record_url_history_enabled,
             escape_hold_duration_tenths,
             open_profile_on_double_click_enabled,
@@ -360,6 +364,11 @@ unsafe extern "system" fn window_proc(
                         DestroyWindow(window);
                     }
                 }
+            } else if id == ID_CLEAR_APPROVALS && notification == BN_CLICKED as u16 {
+                state.action = SettingsAction::ClearDomainApprovals;
+                unsafe {
+                    DestroyWindow(window);
+                }
             } else if id == ID_CANCEL && notification == BN_CLICKED as u16 {
                 state.action = SettingsAction::Cancelled;
                 unsafe {
@@ -504,6 +513,12 @@ fn create_controls(window: HWND, state: &mut SettingsState) {
         font,
     );
     state.rule_list = common::button(window, "既定ルール一覧", ID_RULE_LIST, font);
+    state.clear_approvals = common::button(
+        window,
+        "名称警告のドメイン承認をすべて解除",
+        ID_CLEAR_APPROVALS,
+        font,
+    );
     let cancel = common::button(window, "キャンセル", ID_CANCEL, font);
     let save = common::button(window, "保存", ID_SAVE, state.theme.bold);
     let rescan = common::button(window, "保存して再スキャン", ID_RESCAN, font);
@@ -549,7 +564,16 @@ fn layout_controls(window: HWND, state: &mut SettingsState) {
     for (control, bounds) in state.fixed.iter().zip(layout.fixed) {
         state.page.place(*control, bounds);
     }
-    state.page.height = layout.height;
+    state.page.place(
+        state.clear_approvals,
+        common::Bounds::new(
+            20,
+            layout.height + 4,
+            (Page::width(window, state.theme.dpi) - 40).max(300),
+            36,
+        ),
+    );
+    state.page.height = layout.height + 56;
     state.page.apply(window, state.theme.dpi);
 }
 

@@ -271,6 +271,20 @@ impl Storage {
             .is_some_and(|value| value == "1"))
     }
 
+    pub fn approved_domains(&self) -> anyhow::Result<Vec<String>> {
+        let domains: Vec<String> = self
+            .get_setting("risk_approved_domains")?
+            .map(|json| serde_json::from_str(&json))
+            .transpose()?
+            .unwrap_or_default();
+        crate::risk::normalize_approved_domains(&domains)
+    }
+
+    pub fn set_approved_domains(&self, domains: &[String]) -> anyhow::Result<()> {
+        let domains = crate::risk::normalize_approved_domains(domains)?;
+        self.set_setting("risk_approved_domains", &serde_json::to_string(&domains)?)
+    }
+
     pub fn mark_initial_scan_completed(&self) -> anyhow::Result<()> {
         self.set_setting(SETTING_INITIAL_SCAN_COMPLETED, "1")
     }
@@ -519,6 +533,29 @@ fn unix_timestamp() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn domain_approval_is_persistent_normalized_revocable_and_rejects_wildcards() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("approval.db");
+        let storage = Storage::new(&file);
+        storage.initialize().unwrap();
+        assert!(storage.approved_domains().unwrap().is_empty());
+        storage
+            .set_approved_domains(&["Microsoft-login.EXAMPLE.".into()])
+            .unwrap();
+        assert_eq!(
+            Storage::new(&file).approved_domains().unwrap(),
+            ["microsoft-login.example"]
+        );
+        assert!(storage.set_approved_domains(&["*.example".into()]).is_err());
+        assert_eq!(
+            storage.approved_domains().unwrap(),
+            ["microsoft-login.example"]
+        );
+        storage.set_approved_domains(&[]).unwrap();
+        assert!(Storage::new(&file).approved_domains().unwrap().is_empty());
+    }
 
     #[test]
     fn preferences_are_atomic_and_reject_more_than_five_favorites() {

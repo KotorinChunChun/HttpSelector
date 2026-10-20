@@ -10,6 +10,7 @@ fn main() -> anyhow::Result<()> {
         ValidatedUrl::parse("https://ｇｏｏｇｌｅ.com.login.example/path?token=preview#section")?;
     let local = http_selector::risk_local::assess(&url);
     let report = RiskReport {
+        approvable_domains: vec!["microsoft-login.example".into()],
         host: local.host,
         original_host: local.original_host,
         reasons: local
