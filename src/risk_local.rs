@@ -160,7 +160,7 @@ pub fn assess(url: &ValidatedUrl) -> LocalAssessment {
         _ => None,
     };
 
-    let name_start = findings.len();
+    let mut name_findings = Vec::new();
     if matches!(parsed.host(), Some(Host::Domain(_))) && !known_service_domain(&host) {
         let (unicode_host, decoded) = idna::domain_to_unicode(&host);
         if decoded.is_err() {
@@ -172,13 +172,13 @@ pub fn assess(url: &ValidatedUrl) -> LocalAssessment {
             let labels: Vec<_> = unicode_host.split('.').collect();
             for service in SERVICES {
                 if let Some(reason) = service_finding(service, &labels, registered_label) {
+                    name_findings.push(reason.clone());
                     findings.push(reason);
                 }
             }
         }
     }
 
-    let name_findings = findings[name_start..].to_vec();
     LocalAssessment {
         host,
         original_host,
