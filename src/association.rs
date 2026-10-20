@@ -14,10 +14,15 @@ pub struct UrlParts {
     pub paths: Vec<String>,
     /// エンコード済みの名前と値。`=`なしと空値を区別する。
     pub queries: Vec<String>,
+    pub nested: Vec<(String, UrlParts)>,
 }
 
 impl UrlParts {
     pub fn new(url: &ValidatedUrl) -> Self {
+        Self::at_depth(url, 0)
+    }
+
+    fn at_depth(url: &ValidatedUrl, depth: usize) -> Self {
         let parsed = Url::parse(url.original()).expect("validated URL");
         Self {
             host: parsed[Position::BeforeHost..Position::AfterPort].to_owned(),
@@ -33,6 +38,14 @@ impl UrlParts {
                 .filter(|s| !s.is_empty())
                 .map(|s| s.split('&').map(str::to_owned).collect())
                 .unwrap_or_default(),
+            nested: if depth < crate::nested_url::MAX_DEPTH {
+                crate::nested_url::children(&parsed)
+                    .into_iter()
+                    .map(|(key, child)| (key, Self::at_depth(&child, depth + 1)))
+                    .collect()
+            } else {
+                vec![]
+            },
         }
     }
 
@@ -41,6 +54,15 @@ impl UrlParts {
             host: true,
             paths: vec![false; self.paths.len()],
             queries: vec![false; self.queries.len()],
+            nested: self
+                .nested
+                .iter()
+                .map(|(_, child)| {
+                    let mut selection = child.defaults();
+                    selection.host = false;
+                    selection
+                })
+                .collect(),
         }
     }
 
@@ -49,6 +71,10 @@ impl UrlParts {
             selection.paths.len() == self.paths.len()
                 && selection.queries.len() == self.queries.len(),
             "URLの選択状態が不正です"
+        );
+        ensure!(
+            selection.nested.len() == self.nested.len(),
+            "入れ子の選択状態が不正です"
         );
         let last = selection.paths.iter().rposition(|on| *on);
         let paths = last
@@ -71,6 +97,18 @@ impl UrlParts {
                 .filter(|(_, on)| **on)
                 .map(|(value, _)| value.clone())
                 .collect(),
+            nested: self
+                .nested
+                .iter()
+                .zip(&selection.nested)
+                .filter(|(_, selected)| selected.any())
+                .map(|((key, child), selected)| {
+                    Ok(NestedCondition {
+                        key: key.clone(),
+                        condition: Box::new(child.condition(selected)?),
+                    })
+                })
+                .collect::<anyhow::Result<_>>()?,
         })
     }
 }
@@ -80,6 +118,22 @@ pub struct Selection {
     pub host: bool,
     pub paths: Vec<bool>,
     pub queries: Vec<bool>,
+    pub nested: Vec<Selection>,
+}
+
+impl Selection {
+    pub fn any(&self) -> bool {
+        self.host
+            || self.paths.iter().any(|b| *b)
+            || self.queries.iter().any(|b| *b)
+            || self.nested.iter().any(Self::any)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NestedCondition {
+    pub key: String,
+    pub condition: Box<Condition>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -88,6 +142,8 @@ pub struct Condition {
     pub paths: Vec<Option<String>>,
     pub descendants: bool,
     pub queries: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nested: Vec<NestedCondition>,
 }
 
 impl Condition {
@@ -135,7 +191,52 @@ impl Condition {
         } else {
             format!("?{}", self.queries.join("&"))
         };
-        format!("http(s)://{host}{paths}{tail}{query}")
+        let nested = self
+            .nested
+            .iter()
+            .map(|n| format!(" [{}内: {}]", n.key, n.condition.summary()))
+            .collect::<String>();
+        format!("http(s)://{host}{paths}{tail}{query}{nested}")
+    }
+
+    fn matches_at(&self, value: &str, depth: usize) -> bool {
+        if depth > crate::nested_url::MAX_DEPTH || value.len() > crate::nested_url::MAX_LENGTH {
+            return false;
+        }
+        let Ok(mut url) = Url::parse(value) else {
+            return false;
+        };
+        if !matches!(url.scheme(), "http" | "https") {
+            return false;
+        }
+        let _ = url.set_username("");
+        let _ = url.set_password(None);
+        self.regexes()
+            .iter()
+            .all(|s| compile(s).is_ok_and(|r| r.is_match(url.as_str())))
+            && self.nested.iter().all(|nested| {
+                crate::nested_url::child(&url, &nested.key)
+                    .is_some_and(|child| nested.condition.matches_at(child.original(), depth + 1))
+            })
+    }
+
+    fn validate_at(&self, depth: usize) -> anyhow::Result<()> {
+        ensure!(
+            depth <= crate::nested_url::MAX_DEPTH
+                && self.nested.len() <= crate::nested_url::MAX_CHILDREN,
+            "入れ子URLの上限を超えています"
+        );
+        for expression in self.regexes() {
+            compile(&expression)?;
+        }
+        for nested in &self.nested {
+            ensure!(
+                !nested.key.is_empty() && nested.key.len() < 1024,
+                "パラメータ名が不正です"
+            );
+            nested.condition.validate_at(depth + 1)?;
+        }
+        Ok(())
     }
 }
 
@@ -173,6 +274,7 @@ impl StoredRule {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
+        self.condition.validate_at(0)?;
         ensure!(
             self.generator_version == GENERATOR_VERSION,
             "対応していないURL部分ルールです"
@@ -188,18 +290,41 @@ impl StoredRule {
     }
 
     pub fn matches(&self, value: &str) -> bool {
-        let Ok(mut url) = Url::parse(value) else {
+        self.condition.matches_at(value, 0)
+    }
+
+    pub fn display_regexes(&self) -> String {
+        fn append(condition: &Condition, label: &str, output: &mut Vec<String>) {
+            output.push(format!(
+                "{label}\r\n{}",
+                condition.regexes().join("\r\n\r\n")
+            ));
+            for nested in &condition.nested {
+                append(
+                    &nested.condition,
+                    &format!("{label} → {} 内（1段復号）", nested.key),
+                    output,
+                );
+            }
+        }
+        let mut output = vec![];
+        append(&self.condition, "元URL", &mut output);
+        output.join("\r\n\r\n")
+    }
+
+    pub fn maps_teams_account(&self, value: &ValidatedUrl) -> bool {
+        let Some((host, cid)) = crate::nested_url::teams_account(value) else {
             return false;
         };
-        if !matches!(url.scheme(), "http" | "https") {
-            return false;
-        }
-        // 認証情報は照合・保存に含めない。起動には元のValidatedUrlをそのまま使う。
-        let _ = url.set_username("");
-        let _ = url.set_password(None);
-        self.regexes
-            .iter()
-            .all(|s| compile(s).is_ok_and(|regex| regex.is_match(url.as_str())))
+        self.condition.nested.iter().any(|nested| {
+            nested.key == "url"
+                && nested.condition.host.as_deref() == Some(&host)
+                && nested
+                    .condition
+                    .queries
+                    .iter()
+                    .any(|q| q == &format!("TeamsCID={cid}"))
+        }) && self.matches(value.original())
     }
 }
 
@@ -232,6 +357,68 @@ pub fn display_pattern(pattern: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn wrapped(inner: &str) -> ValidatedUrl {
+        let mut wrapper = Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
+        wrapper
+            .query_pairs_mut()
+            .append_pair("url", inner)
+            .append_pair("pc", "do-not-save");
+        ValidatedUrl::parse(wrapper.to_string()).unwrap()
+    }
+
+    #[test]
+    fn nested_account_rule_ignores_document_and_other_parameters() {
+        let url = wrapped(
+            "https://tenant.sharepoint.com/sites/work/a%20b.pdf?TeamsCID=11111111-2222-3333-4444-555555555555&secret=unselected",
+        );
+        let parts = UrlParts::new(&url);
+        let mut selected = parts.defaults();
+        assert_eq!(parts.nested[0].0, "url");
+        selected.nested[0].host = true;
+        selected.nested[0].queries[0] = true;
+        let rule = StoredRule::new(parts.condition(&selected).unwrap(), false);
+        let encoded = rule.encode().unwrap();
+        for secret in ["do-not-save", "unselected", "a%20b.pdf"] {
+            assert!(!encoded.contains(secret));
+        }
+        let restored = StoredRule::decode(&encoded).unwrap().unwrap();
+        assert!(restored.maps_teams_account(&url));
+        assert!(restored.matches(wrapped("https://tenant.sharepoint.com/another.pdf?x=1&TeamsCID=11111111-2222-3333-4444-555555555555").original()));
+        for inner in [
+            "https://tenant.sharepoint.com/a?TeamsCID=aaaaaaaa-2222-3333-4444-555555555555",
+            "https://other.sharepoint.com/a?TeamsCID=11111111-2222-3333-4444-555555555555",
+            "https://tenant.sharepoint.com/a",
+        ] {
+            assert!(!restored.matches(wrapped(inner).original()));
+        }
+        assert!(restored.display_regexes().contains("url 内"));
+    }
+
+    #[test]
+    fn nesting_limits_and_old_saved_conditions_are_preserved() {
+        let parts = UrlParts::new(&sample());
+        let saved = StoredRule::new(parts.condition(&parts.defaults()).unwrap(), false);
+        assert!(!saved.encode().unwrap().contains("nested"));
+        assert!(
+            StoredRule::decode(&saved.encode().unwrap())
+                .unwrap()
+                .unwrap()
+                .matches(sample().original())
+        );
+        let mut current = sample().original().to_string();
+        for _ in 0..5 {
+            current = wrapped(&current).original().into();
+        }
+        let parts = UrlParts::new(&ValidatedUrl::parse(current).unwrap());
+        let mut depth = 0;
+        let mut node = &parts;
+        while let Some((_, child)) = node.nested.first() {
+            depth += 1;
+            node = child;
+        }
+        assert_eq!(depth, crate::nested_url::MAX_DEPTH);
+    }
 
     #[test]
     fn malformed_or_tampered_structured_rule_never_falls_back_to_wildcard() {

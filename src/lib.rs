@@ -9,6 +9,7 @@ pub mod default_rule_ui;
 pub mod integrity;
 pub mod management;
 pub mod model;
+pub mod nested_url;
 pub mod profile_scan;
 pub mod quad9;
 pub mod risk;
