@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "entryScript": "dev/scripts/publish-msix-release.ps1",
-  "packageVersion": "0.0.3.3",
+  "packageVersion": "0.0.3.4",
   "architecture": "x64",
   "minimumOSVersion": "10.0.17763.0",
   "maximumTestedOSVersion": "10.0.22631.0",
@@ -17,7 +17,7 @@
       "requiresUninstall": true
     },
     "relativeDirectory": "beta",
-    "baseUri": "https://github.com/KotorinChunChun/HttpSelector/releases/download/v0.0.3.3/",
+    "baseUri": "https://github.com/KotorinChunChun/HttpSelector/releases/download/v0.0.3.4/",
     "appInstallerUri": "https://github.com/KotorinChunChun/HttpSelector/releases/latest/download/HttpSelector.appinstaller",
     "appInstallerFileName": "HttpSelector.appinstaller"
   },
@@ -39,7 +39,7 @@
       "httpselector-certificate",
       "assets/httpselector-icon.png",
       "beta/HttpSelector.appinstaller",
-      "beta/HttpSelector_0.0.3.3_x64_dev.msix",
+      "beta/HttpSelector_0.0.3.4_x64_dev.msix",
       "beta/HttpSelector.Development.cer"
     ]
   }

@@ -454,6 +454,28 @@ fn resolve_profile(
     url: &ValidatedUrl,
     interruption_enabled: bool,
 ) -> Option<Profile> {
+    let teams = http_selector::nested_url::is_teams_link(url);
+    if teams {
+        let mut matches = rules
+            .iter()
+            .filter(|rule| {
+                rule.enabled
+                    && !http_selector::association::suppresses_prompt(&rule.pattern)
+                    && http_selector::association::StoredRule::decode(&rule.pattern)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|rule| rule.maps_teams_account(url))
+            })
+            .filter_map(|rule| {
+                profiles.iter().find(|profile| {
+                    profile.id == rule.profile_id && profile.available && profile.enabled
+                })
+            });
+        let profile = matches.next()?;
+        return matches
+            .all(|other| other.id == profile.id)
+            .then(|| profile.clone());
+    }
     rules
         .iter()
         .filter(|rule| {
@@ -619,5 +641,57 @@ mod tests {
                 .id,
             2
         );
+    }
+
+    #[test]
+    fn teams_routes_only_registered_account_and_never_falls_back_to_favorite() {
+        use http_selector::association::{StoredRule, UrlParts};
+        let wrapper = |cid: &str| {
+            let mut url = url::Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
+            url.query_pairs_mut().append_pair(
+                "url",
+                &format!("https://tenant.sharepoint.com/a.pdf?TeamsCID={cid}"),
+            );
+            ValidatedUrl::parse(url.to_string()).unwrap()
+        };
+        let first = wrapper("11111111-2222-3333-4444-555555555555");
+        let second = wrapper("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        let profiles = [profile(1, true, true), profile(2, false, true)];
+        let base = DefaultRule {
+            id: 1,
+            profile_id: 1,
+            pattern: "https://teams.public.onecdn.static.microsoft/*".into(),
+            enabled: true,
+            sort_order: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        let parts = UrlParts::new(&first);
+        let mut selection = parts.defaults();
+        selection.nested[0].host = true;
+        selection.nested[0].queries[0] = true;
+        let account = DefaultRule {
+            profile_id: 2,
+            pattern: StoredRule::new(parts.condition(&selection).unwrap(), false)
+                .encode()
+                .unwrap(),
+            ..base.clone()
+        };
+        assert_eq!(
+            resolve_profile(&profiles, &[base.clone(), account.clone()], &first, false)
+                .unwrap()
+                .id,
+            2
+        );
+        assert!(
+            resolve_profile(&profiles, &[base.clone(), account.clone()], &second, false).is_none()
+        );
+        assert!(resolve_profile(&profiles, &[base], &first, false).is_none());
+        let conflict = DefaultRule {
+            profile_id: 1,
+            ..account.clone()
+        };
+        assert!(resolve_profile(&profiles, &[account, conflict], &first, false).is_none());
+        assert!(resolve_profile(&profiles, &[], &wrapper(""), false).is_none());
     }
 }

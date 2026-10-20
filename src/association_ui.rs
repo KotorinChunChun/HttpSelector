@@ -32,6 +32,45 @@ const SKIP: i32 = 104;
 const COPY: i32 = 105;
 const SAVE: i32 = 106;
 const CHIP_BASE: i32 = 1000;
+const NESTED_GROUP_BASE: i32 = 20000;
+const NESTED_CHIP_BASE: i32 = 30000;
+
+struct NestedGroup {
+    path: Vec<usize>,
+    parts: UrlParts,
+    heading: HWND,
+    chips: Vec<HWND>,
+    expanded: bool,
+}
+
+fn selection_at<'a>(selection: &'a Selection, path: &[usize]) -> &'a Selection {
+    path.iter()
+        .fold(selection, |selection, index| &selection.nested[*index])
+}
+fn selection_at_mut<'a>(selection: &'a mut Selection, path: &[usize]) -> &'a mut Selection {
+    path.iter()
+        .fold(selection, |selection, index| &mut selection.nested[*index])
+}
+fn part_flags(selection: &Selection) -> impl Iterator<Item = bool> + '_ {
+    std::iter::once(selection.host)
+        .chain(selection.paths.iter().copied())
+        .chain(selection.queries.iter().copied())
+}
+fn toggle_part(selection: &mut Selection, index: usize) {
+    if index == 0 {
+        selection.host = !selection.host;
+    } else if index <= selection.paths.len() {
+        selection.paths[index - 1] = !selection.paths[index - 1];
+    } else if let Some(on) = selection.queries.get_mut(index - 1 - selection.paths.len()) {
+        *on = !*on;
+    }
+}
+fn part_labels(parts: &UrlParts) -> Vec<String> {
+    std::iter::once(parts.host.clone())
+        .chain(parts.paths.iter().map(|p| format!("/ {p}")))
+        .chain(parts.queries.iter().cloned())
+        .collect()
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {
@@ -58,6 +97,8 @@ struct State<'a> {
     page: Page,
     fixed: Vec<HWND>,
     chips: Vec<HWND>,
+    nested: Vec<NestedGroup>,
+    nested_bindings: Vec<(usize, usize)>,
     detail: Vec<HWND>,
     title: HWND,
     url: HWND,
@@ -98,6 +139,8 @@ impl<'a> State<'a> {
             page: Page::default(),
             fixed: vec![],
             chips: vec![],
+            nested: vec![],
+            nested_bindings: vec![],
             detail: vec![],
             title: null_mut(),
             url: null_mut(),
@@ -293,6 +336,11 @@ unsafe extern "system" fn window_proc(
             for control in state.fixed.iter().chain(&state.chips) {
                 unsafe { SendMessageW(*control, WM_SETFONT, state.theme.font as usize, 1) };
             }
+            for group in &state.nested {
+                for control in std::iter::once(&group.heading).chain(&group.chips) {
+                    unsafe { SendMessageW(*control, WM_SETFONT, state.theme.font as usize, 1) };
+                }
+            }
             unsafe { SendMessageW(state.title, WM_SETFONT, state.theme.title as usize, 1) };
             let previous = state.code_font;
             state.code_font = code_font(state.theme.dpi);
@@ -433,15 +481,12 @@ fn create_controls(window: HWND, state: &mut State<'_>) {
     state.back = common::button(window, "戻る", BACK, font);
     state.expand = common::button(window, "▶ 今後の動作を設定", EXPAND, font);
     state.scheme = common::label(window, "http(s)://", font);
-    let labels = std::iter::once(state.parts.host.clone())
-        .chain(state.parts.paths.iter().map(|p| format!("/ {p}")))
-        .chain(state.parts.queries.iter().cloned())
-        .collect::<Vec<_>>();
+    let labels = part_labels(&state.parts);
     for (index, label) in labels.iter().enumerate() {
         let chip = common::control(
             window,
             "BUTTON",
-            label,
+            &crate::nested_url::preview(label),
             CHIP_BASE + index as i32,
             WS_TABSTOP | BS_AUTOCHECKBOX as u32 | BS_PUSHLIKE as u32 | BS_MULTILINE as u32,
             font,
@@ -450,6 +495,49 @@ fn create_controls(window: HWND, state: &mut State<'_>) {
         unsafe { SetWindowSubclass(chip, Some(chip_proc), 1, 0) };
         state.chips.push(chip);
     }
+    fn groups(
+        window: HWND,
+        parts: &UrlParts,
+        path: Vec<usize>,
+        names: String,
+        state: &mut State<'_>,
+    ) {
+        for (index, (key, child)) in parts.nested.iter().enumerate() {
+            let mut child_path = path.clone();
+            child_path.push(index);
+            let title = format!("{names}{key} 内");
+            let group_index = state.nested.len();
+            let heading = common::button(
+                window,
+                &format!("▶ {title}"),
+                NESTED_GROUP_BASE + group_index as i32,
+                state.theme.font,
+            );
+            let mut chips = vec![];
+            for (part_index, label) in part_labels(child).iter().enumerate() {
+                let chip = common::control(
+                    window,
+                    "BUTTON",
+                    &crate::nested_url::preview(label),
+                    NESTED_CHIP_BASE + state.nested_bindings.len() as i32,
+                    WS_TABSTOP | BS_AUTOCHECKBOX as u32 | BS_PUSHLIKE as u32 | BS_MULTILINE as u32,
+                    state.theme.font,
+                );
+                unsafe { SetWindowSubclass(chip, Some(chip_proc), 1, 0) };
+                chips.push(chip);
+                state.nested_bindings.push((group_index, part_index));
+            }
+            state.nested.push(NestedGroup {
+                path: child_path.clone(),
+                parts: child.clone(),
+                heading,
+                chips,
+                expanded: false,
+            });
+            groups(window, child, child_path, format!("{names}{key} → "), state);
+        }
+    }
+    groups(window, &state.parts.clone(), vec![], String::new(), state);
     state.query_prefix = common::label(window, "?", font);
     state.auto = common::control(
         window,
@@ -544,7 +632,7 @@ fn update(state: &State<'_>) {
     }
     match state.rule() {
         Ok(rule) => {
-            common::set_text(state.regex, &rule.regexes.join("\r\n\r\n"));
+            common::set_text(state.regex, &rule.display_regexes());
             common::set_text(
                 state.regex_label,
                 if rule.regexes.len() > 1 {
@@ -570,6 +658,46 @@ fn update(state: &State<'_>) {
     if state.parts.queries.is_empty() {
         unsafe { ShowWindow(state.query_prefix, SW_HIDE) };
     }
+    for group in &state.nested {
+        let ancestors_visible = state
+            .nested
+            .iter()
+            .filter(|parent| {
+                parent.path.len() < group.path.len() && group.path.starts_with(&parent.path)
+            })
+            .all(|parent| parent.expanded);
+        let visible = state.expanded && ancestors_visible;
+        let current = common::window_text(group.heading);
+        let title = current.trim_start_matches(['▶', '▼', ' ']);
+        common::set_text(
+            group.heading,
+            &format!("{} {title}", if group.expanded { "▼" } else { "▶" }),
+        );
+        unsafe { ShowWindow(group.heading, if visible { SW_SHOW } else { SW_HIDE }) };
+        for (chip, on) in group
+            .chips
+            .iter()
+            .zip(part_flags(selection_at(&state.selection, &group.path)))
+        {
+            unsafe {
+                SendMessageW(
+                    *chip,
+                    BM_SETCHECK,
+                    if on { BST_CHECKED } else { BST_UNCHECKED } as usize,
+                    0,
+                );
+                InvalidateRect(*chip, null(), 0);
+                ShowWindow(
+                    *chip,
+                    if visible && group.expanded {
+                        SW_SHOW
+                    } else {
+                        SW_HIDE
+                    },
+                );
+            }
+        }
+    }
 }
 
 fn command(window: HWND, state: &mut State<'_>, id: i32) {
@@ -592,7 +720,11 @@ fn command(window: HWND, state: &mut State<'_>, id: i32) {
             update(state);
         }
         SAVE => {
-            let result = state.rule().and_then(|rule| (state.save)(&rule));
+            let result = state.rule().and_then(|rule| {
+                let url = ValidatedUrl::parse(state.original_url.clone())?;
+                ensure!(!crate::nested_url::is_teams_link(&url) || rule.suppress_prompt || rule.maps_teams_account(&url), "Teamsの自動振り分けには、url内のSharePointドメインとTeamsCIDをONにしてください。識別値がない場合は今回だけ開いてください。");
+                (state.save)(&rule)
+            });
             match result {
                 Ok(()) => {
                     state.expanded = false;
@@ -617,6 +749,26 @@ fn command(window: HWND, state: &mut State<'_>, id: i32) {
                 SendMessageW(state.regex, EM_SETSEL, 0, 0)
             };
             common::set_text(state.status, "正規表現をコピーしました。");
+        }
+        _ if id >= NESTED_CHIP_BASE => {
+            if let Some(&(group_index, part)) =
+                state.nested_bindings.get((id - NESTED_CHIP_BASE) as usize)
+            {
+                toggle_part(
+                    selection_at_mut(&mut state.selection, &state.nested[group_index].path),
+                    part,
+                );
+                common::set_text(state.status, "");
+                update(state);
+            }
+        }
+        _ if id >= NESTED_GROUP_BASE => {
+            if let Some(group) = state.nested.get_mut((id - NESTED_GROUP_BASE) as usize) {
+                group.expanded = !group.expanded;
+            }
+            update(state);
+            layout(window, state);
+            fit_height(window, state);
         }
         _ if id >= CHIP_BASE => {
             let index = (id - CHIP_BASE) as usize;
@@ -745,6 +897,7 @@ fn layout(window: HWND, state: &mut State<'_>) {
             } else {
                 format!("/ {}", state.parts.paths[index - 1])
             };
+            let text = crate::nested_url::preview(&text);
             let desired = measure(window, &text, 32760, state.theme.font, state.theme.dpi).0 + 28;
             let w = desired.clamp(48, content);
             let text = wrapped(window, &text, w - 24, state.theme.font, state.theme.dpi);
@@ -775,7 +928,9 @@ fn layout(window: HWND, state: &mut State<'_>) {
                 for (index, control) in row.iter().enumerate() {
                     let text = wrapped(
                         window,
-                        &state.parts.queries[row_index * columns as usize + index],
+                        &crate::nested_url::preview(
+                            &state.parts.queries[row_index * columns as usize + index],
+                        ),
                         w - 24,
                         state.theme.font,
                         state.theme.dpi,
@@ -804,6 +959,70 @@ fn layout(window: HWND, state: &mut State<'_>) {
                     );
                 }
                 y += h + 8;
+            }
+            y += 8;
+        }
+        for group in &state.nested {
+            if !state
+                .nested
+                .iter()
+                .filter(|parent| {
+                    parent.path.len() < group.path.len() && group.path.starts_with(&parent.path)
+                })
+                .all(|parent| parent.expanded)
+            {
+                continue;
+            }
+            let indent = (group.path.len() as i32 * 12).min(48);
+            let left = margin + indent;
+            let available = content - indent;
+            state
+                .page
+                .place(group.heading, Bounds::new(left, y, available, 36));
+            y += 44;
+            if !group.expanded {
+                continue;
+            }
+            for (index, (chip, label)) in group
+                .chips
+                .iter()
+                .zip(part_labels(&group.parts))
+                .enumerate()
+            {
+                let label = if index > group.parts.paths.len() {
+                    format!(
+                        "{} {}",
+                        if index == group.parts.paths.len() + 1 {
+                            "?"
+                        } else {
+                            "&"
+                        },
+                        crate::nested_url::preview(&label)
+                    )
+                } else {
+                    crate::nested_url::preview(&label)
+                };
+                let text = wrapped(
+                    window,
+                    &label,
+                    available - 24,
+                    state.theme.font,
+                    state.theme.dpi,
+                );
+                common::set_text(*chip, &text);
+                let height = (measure(
+                    window,
+                    &text,
+                    available - 24,
+                    state.theme.font,
+                    state.theme.dpi,
+                )
+                .1 + 18)
+                    .max(36);
+                state
+                    .page
+                    .place(*chip, Bounds::new(left, y, available, height));
+                y += height + 8;
             }
             y += 8;
         }
@@ -891,6 +1110,71 @@ fn fit_height(window: HWND, state: &State<'_>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nested_chips_save_only_selected_account_and_collapse_without_opening() {
+        let mut url = url::Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
+        url.query_pairs_mut().append_pair("url", "https://tenant.sharepoint.com/a.pdf?TeamsCID=11111111-2222-3333-4444-555555555555&other=private")
+            .append_pair("pc", &"synthetic-only-".repeat(100));
+        let input = ValidatedUrl::parse(url.to_string()).unwrap();
+        let mut saved = vec![];
+        let mut save = |rule: &StoredRule| {
+            saved.push(rule.clone());
+            Ok(())
+        };
+        let mut state = Box::new(State::new(&input, "Edge / 仕事".into(), &mut save));
+        let window = common::HiddenTestWindow::new(
+            Some(window_proc),
+            (&mut *state as *mut State<'_>).cast(),
+        );
+        assert!(state.nested.iter().all(|group| !group.expanded));
+        command(window.0, &mut state, EXPAND);
+        command(window.0, &mut state, SAVE);
+        assert!(state.expanded); // 外側ホストだけの自動振り分けは保存しない。
+        assert!(common::window_text(state.status).contains("TeamsCID"));
+        command(window.0, &mut state, NESTED_GROUP_BASE);
+        assert!(state.nested[0].expanded);
+        let child = &state.parts.nested[0].1;
+        let cid_part = 1 + child.paths.len();
+        let cid_binding = state
+            .nested_bindings
+            .iter()
+            .position(|binding| *binding == (0, cid_part))
+            .unwrap();
+        unsafe {
+            SendMessageW(state.nested[0].chips[0], BM_CLICK, 0, 0);
+        }
+        command(window.0, &mut state, NESTED_CHIP_BASE + cid_binding as i32);
+        assert!(state.selection.nested[0].host && state.selection.nested[0].queries[0]);
+        assert!(common::window_text(state.regex).contains("url 内"));
+        unsafe {
+            MoveWindow(window.0, 0, 0, 380, 400, 0);
+        }
+        layout(window.0, &mut state);
+        assert!(
+            state
+                .page
+                .controls
+                .iter()
+                .all(|(_, b)| b.x >= 0 && b.width > 0)
+        );
+        assert!(
+            common::window_text(*state.chips.last().unwrap())
+                .chars()
+                .count()
+                < 160
+        );
+        command(window.0, &mut state, SAVE);
+        assert!(!state.expanded);
+        assert_eq!(state.action, Action::Back);
+        assert_ne!(unsafe { IsWindow(window.0) }, 0);
+        drop(state);
+        drop(save);
+        assert_eq!(saved.len(), 1);
+        assert!(saved[0].maps_teams_account(&input));
+        let encoded = saved[0].encode().unwrap();
+        assert!(!encoded.contains("synthetic-only") && !encoded.contains("private"));
+    }
     const URL: &str = "https://apps.powerapps.com/play/e/default-11111111-2222-3333-4444-555555555555/a/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?tenantId=11111111-2222-3333-4444-555555555555&hint=66666666-7777-8888-9999-000000000000&source=portal&screen=Requests&itemId=12345&locale=ja-JP&theme=light&mode=edit&hideNavBar=true&debug=false";
 
     #[test]

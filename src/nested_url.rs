@@ -33,8 +33,19 @@ pub fn is_teams_wrapper(url: &ValidatedUrl) -> bool {
             && url.username().is_empty()
             && url.password().is_none()
             && url.port_or_known_default() == Some(443)
-            && url.host_str() == Some("teams.public.onecdn.static.microsoft")
+            && url.host_str().is_some_and(|host| {
+                host.trim_end_matches('.') == "teams.public.onecdn.static.microsoft"
+            })
             && url.path() == "/evergreen-assets/safelinks/2/atp-safelinks.html"
+    })
+}
+
+/// 非HTTPS・認証情報つきも振り分けの保護対象にするが、展開・自動起動は許可しない。
+pub fn is_teams_link(url: &ValidatedUrl) -> bool {
+    Url::parse(url.original()).is_ok_and(|url| {
+        url.host_str().is_some_and(|host| {
+            host.trim_end_matches('.') == "teams.public.onecdn.static.microsoft"
+        }) && url.path() == "/evergreen-assets/safelinks/2/atp-safelinks.html"
     })
 }
 
@@ -126,5 +137,22 @@ mod tests {
             .is_none()
         );
         assert_eq!(url.original().matches("synthetic-only").count(), 1);
+    }
+
+    #[test]
+    fn double_encoding_credentials_and_insecure_wrapper_do_not_map_accounts() {
+        let double = wrapper("https%3A%2F%2Ftenant.sharepoint.com%2Fa");
+        assert!(teams_target(&double).is_none());
+        assert!(teams_target(&wrapper("https://user:secret@tenant.sharepoint.com/a")).is_none());
+        let insecure = ValidatedUrl::parse(
+            wrapper("https://tenant.sharepoint.com/a")
+                .original()
+                .replacen("https:", "http:", 1),
+        )
+        .unwrap();
+        assert!(is_teams_link(&insecure));
+        assert!(!is_teams_wrapper(&insecure));
+        assert!(teams_account(&insecure).is_none());
+        assert!(preview(&"x".repeat(1000)).chars().count() <= 111);
     }
 }

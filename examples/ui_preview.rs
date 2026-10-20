@@ -42,16 +42,28 @@ fn main() -> anyhow::Result<()> {
             })
             .collect()
     };
-    if args.iter().any(|arg| arg == "--association") {
+    if args
+        .iter()
+        .any(|arg| arg == "--association" || arg == "--teams")
+    {
         let profile = Profile {
             browser_type: BrowserType::Chrome,
             detected_name: "個人".into(),
             alias_name: String::new(),
             ..profiles[0].clone()
         };
-        let url = ValidatedUrl::parse(
-            "https://apps.powerapps.com/play/e/default-11111111-2222-3333-4444-555555555555/a/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?tenantId=11111111-2222-3333-4444-555555555555&hint=66666666-7777-8888-9999-000000000000&source=portal&screen=Requests&itemId=12345&locale=ja-JP&theme=light&mode=edit&hideNavBar=true&debug=false",
-        )?;
+        let url = if args.iter().any(|arg| arg == "--teams") {
+            let mut url = url::Url::parse(
+                "https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html",
+            )?;
+            url.query_pairs_mut().append_pair("url", "https://tenant.sharepoint.com/sites/work/Shared%20Documents/sample.pdf?TeamsCID=11111111-2222-3333-4444-555555555555&view=preview")
+                .append_pair("locale", "ja-jp").append_pair("pc", &"synthetic-token-not-real-".repeat(60)).append_pair("dest", "https://teams.microsoft.com/api/reputation");
+            ValidatedUrl::parse(url.to_string())?
+        } else {
+            ValidatedUrl::parse(
+                "https://apps.powerapps.com/play/e/default-11111111-2222-3333-4444-555555555555/a/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?tenantId=11111111-2222-3333-4444-555555555555&hint=66666666-7777-8888-9999-000000000000&source=portal&screen=Requests&itemId=12345&locale=ja-JP&theme=light&mode=edit&hideNavBar=true&debug=false",
+            )?
+        };
         let result = http_selector::association_ui::run(&url, &profile, |rule| {
             println!("保存プレビュー: {}（保存先なし）", rule.condition.summary());
             Ok(())

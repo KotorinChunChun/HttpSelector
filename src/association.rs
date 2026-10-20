@@ -103,9 +103,11 @@ impl UrlParts {
                 .zip(&selection.nested)
                 .filter(|(_, selected)| selected.any())
                 .map(|((key, child), selected)| {
+                    let condition = child.condition(selected)?;
                     Ok(NestedCondition {
                         key: key.clone(),
-                        condition: Box::new(child.condition(selected)?),
+                        regexes: condition.regexes(),
+                        condition: Box::new(condition),
                     })
                 })
                 .collect::<anyhow::Result<_>>()?,
@@ -134,6 +136,7 @@ impl Selection {
 pub struct NestedCondition {
     pub key: String,
     pub condition: Box<Condition>,
+    pub regexes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -230,6 +233,10 @@ impl Condition {
             compile(&expression)?;
         }
         for nested in &self.nested {
+            ensure!(
+                nested.regexes == nested.condition.regexes(),
+                "入れ子の保存式と条件が一致しません"
+            );
             ensure!(
                 !nested.key.is_empty() && nested.key.len() < 1024,
                 "パラメータ名が不正です"
@@ -383,6 +390,9 @@ mod tests {
             assert!(!encoded.contains(secret));
         }
         let restored = StoredRule::decode(&encoded).unwrap().unwrap();
+        let mut tampered = restored.clone();
+        tampered.condition.nested[0].regexes = vec![".*".into()];
+        assert!(tampered.encode().is_err());
         assert!(restored.maps_teams_account(&url));
         assert!(restored.matches(wrapped("https://tenant.sharepoint.com/another.pdf?x=1&TeamsCID=11111111-2222-3333-4444-555555555555").original()));
         for inner in [

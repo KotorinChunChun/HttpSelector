@@ -72,6 +72,11 @@ pub fn inspect_with_approved(
     lookup: &mut impl FnMut(&str) -> quad9::Reputation,
 ) -> RiskReport {
     let mut report = single(url, approved, lookup);
+    if crate::nested_url::is_teams_link(url) && !crate::nested_url::is_teams_wrapper(url) {
+        report
+            .reasons
+            .push("Teamsの中継URLが通常のHTTPS形式ではないため、リンク先を確認できません。".into());
+    }
     let mut current = url.clone();
     let mut depth = 0;
     while crate::nested_url::is_teams_wrapper(&current) {

@@ -32,7 +32,7 @@ impl Storage {
     pub fn initialize(&self) -> anyhow::Result<()> {
         let mut connection = self.open()?;
         let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        anyhow::ensure!(version <= 4, "新しい版の設定DBはこの版では開けません");
+        anyhow::ensure!(version <= 5, "新しい版の設定DBはこの版では開けません");
         connection.pragma_update(None, "journal_mode", "DELETE")?;
         let transaction = connection.transaction()?;
         transaction.execute_batch(
@@ -89,7 +89,8 @@ impl Storage {
                  ALTER TABLE DefaultRulesV4 RENAME TO DefaultRules;",
             )?;
         }
-        transaction.pragma_update(None, "user_version", 4)?;
+        // 入れ子条件を知らない旧版が外側ホストだけで自動起動しないように版を上げる。
+        transaction.pragma_update(None, "user_version", 5)?;
         transaction.commit()?;
         Ok(())
     }
@@ -97,7 +98,7 @@ impl Storage {
     pub fn schema_needs_migration(&self) -> anyhow::Result<bool> {
         let connection = self.open()?;
         let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        Ok(version < 4)
+        Ok(version < 5)
     }
 
     pub fn profile_count(&self) -> anyhow::Result<i64> {
@@ -906,10 +907,39 @@ mod tests {
         storage
             .open()
             .unwrap()
-            .pragma_update(None, "user_version", 5)
+            .pragma_update(None, "user_version", 6)
             .unwrap();
         let before = std::fs::read(storage.database_path()).unwrap();
         assert!(storage.initialize().is_err());
         assert_eq!(std::fs::read(storage.database_path()).unwrap(), before);
+    }
+
+    #[test]
+    fn schema_four_migrates_without_rewriting_rules_or_settings() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage::new(temp.path().join("v4.db"));
+        storage.initialize().unwrap();
+        storage.set_setting("unrelated", "keep").unwrap();
+        storage
+            .open()
+            .unwrap()
+            .pragma_update(None, "user_version", 4)
+            .unwrap();
+        let rules = storage.load_default_rules().unwrap();
+        assert!(storage.schema_needs_migration().unwrap());
+        storage.initialize().unwrap();
+        assert_eq!(
+            storage.get_setting("unrelated").unwrap().as_deref(),
+            Some("keep")
+        );
+        assert_eq!(storage.load_default_rules().unwrap(), rules);
+        assert_eq!(
+            storage
+                .open()
+                .unwrap()
+                .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+                .unwrap(),
+            5
+        );
     }
 }
