@@ -464,7 +464,7 @@ fn resolve_profile(
                     && http_selector::association::StoredRule::decode(&rule.pattern)
                         .ok()
                         .flatten()
-                        .is_some_and(|rule| rule.maps_teams_account(url))
+                        .is_some_and(|rule| rule.matches_teams_target(url))
             })
             .filter_map(|rule| {
                 profiles.iter().find(|profile| {
@@ -641,6 +641,72 @@ mod tests {
                 .id,
             2
         );
+    }
+
+    #[test]
+    fn teams_routes_stable_path_without_cid_and_keeps_conflicts_manual() {
+        use http_selector::association::{StoredRule, UrlParts};
+        let wrapper = |person: &str, query: &str| {
+            let mut url = url::Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
+            url.query_pairs_mut().append_pair(
+                "url",
+                &format!(
+                    "https://tenant-my.sharepoint.com/:f:/g/personal/{person}/document{query}"
+                ),
+            );
+            ValidatedUrl::parse(url.to_string()).unwrap()
+        };
+        let initial = wrapper("person_example_com", "?TeamsCID=first");
+        let parts = UrlParts::new(&initial);
+        let mut selection = parts.defaults();
+        selection.nested[0].paths[3] = true; // 画像と同じ、内側のパスだけを固定。
+        let route = DefaultRule {
+            id: 1,
+            profile_id: 2,
+            pattern: StoredRule::new(parts.condition(&selection).unwrap(), false)
+                .encode()
+                .unwrap(),
+            enabled: true,
+            sort_order: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        let profiles = [profile(1, true, true), profile(2, false, true)];
+        for query in ["?TeamsCID=second", "", "?TeamsCID=a&TeamsCID=b"] {
+            let changed = wrapper("person_example_com", query);
+            for interruption in [false, true] {
+                assert_eq!(
+                    resolve_profile(
+                        &profiles,
+                        std::slice::from_ref(&route),
+                        &changed,
+                        interruption
+                    )
+                    .unwrap()
+                    .id,
+                    2
+                );
+            }
+        }
+        let conflict = DefaultRule {
+            profile_id: 1,
+            ..route.clone()
+        };
+        assert!(resolve_profile(&profiles, &[route.clone(), conflict], &initial, false).is_none());
+        assert!(
+            resolve_profile(
+                &profiles,
+                std::slice::from_ref(&route),
+                &wrapper("other_person", ""),
+                false
+            )
+            .is_none()
+        );
+        let disabled = DefaultRule {
+            enabled: false,
+            ..route
+        };
+        assert!(resolve_profile(&profiles, &[disabled], &initial, false).is_none());
     }
 
     #[test]

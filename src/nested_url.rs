@@ -56,35 +56,6 @@ pub fn teams_target(url: &ValidatedUrl) -> Option<ValidatedUrl> {
     child(&Url::parse(url.original()).ok()?, "url")
 }
 
-pub fn teams_account(url: &ValidatedUrl) -> Option<(String, String)> {
-    let target = teams_target(url)?;
-    let target = Url::parse(target.original()).ok()?;
-    let host = target.host_str()?;
-    if target.scheme() != "https"
-        || target.port_or_known_default() != Some(443)
-        || !host.ends_with(".sharepoint.com")
-    {
-        return None;
-    }
-    let mut values = target.query_pairs().filter(|(key, _)| key == "TeamsCID");
-    let (_, value) = values.next()?;
-    if values.next().is_some() || !valid_guid(&value) {
-        return None;
-    }
-    Some((host.into(), value.into_owned()))
-}
-
-fn valid_guid(value: &str) -> bool {
-    value.len() == 36
-        && value.bytes().enumerate().all(|(i, b)| {
-            if matches!(i, 8 | 13 | 18 | 23) {
-                b == b'-'
-            } else {
-                b.is_ascii_hexdigit()
-            }
-        })
-}
-
 /// 表示だけを短縮する。元の条件値を変更しない。
 pub fn preview(value: &str) -> String {
     let mut chars = value.chars();
@@ -115,7 +86,6 @@ mod tests {
             teams_target(&url).unwrap().original(),
             "https://tenant.sharepoint.com/a%20b?TeamsCID=11111111-2222-3333-4444-555555555555"
         );
-        assert!(teams_account(&url).is_some());
         assert!(
             teams_target(
                 &ValidatedUrl::parse(format!("{}&url=https%3A%2F%2Fevil.example", url.original()))
@@ -123,9 +93,6 @@ mod tests {
             )
             .is_none()
         );
-        assert!(teams_account(&wrapper("https://tenant.sharepoint.com/a?TeamsCID=x")).is_none());
-        assert!(teams_account(&wrapper("https://tenant.sharepoint.com.evil.example/a?TeamsCID=11111111-2222-3333-4444-555555555555")).is_none());
-        assert!(teams_account(&wrapper("https://tenant.sharepoint.com/a?TeamsCID=11111111-2222-3333-4444-555555555555&TeamsCID=11111111-2222-3333-4444-555555555555")).is_none());
         assert!(
             teams_target(
                 &ValidatedUrl::parse(
@@ -140,7 +107,7 @@ mod tests {
     }
 
     #[test]
-    fn double_encoding_credentials_and_insecure_wrapper_do_not_map_accounts() {
+    fn double_encoding_credentials_and_insecure_wrapper_do_not_expand_targets() {
         let double = wrapper("https%3A%2F%2Ftenant.sharepoint.com%2Fa");
         assert!(teams_target(&double).is_none());
         assert!(teams_target(&wrapper("https://user:secret@tenant.sharepoint.com/a")).is_none());
@@ -152,7 +119,7 @@ mod tests {
         .unwrap();
         assert!(is_teams_link(&insecure));
         assert!(!is_teams_wrapper(&insecure));
-        assert!(teams_account(&insecure).is_none());
+        assert!(teams_target(&insecure).is_none());
         assert!(preview(&"x".repeat(1000)).chars().count() <= 111);
     }
 }

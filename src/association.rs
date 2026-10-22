@@ -150,6 +150,13 @@ pub struct Condition {
 }
 
 impl Condition {
+    fn has_fixed_parts(&self) -> bool {
+        self.host.is_some()
+            || self.paths.iter().any(Option::is_some)
+            || !self.queries.is_empty()
+            || self.nested.iter().any(|n| n.condition.has_fixed_parts())
+    }
+
     pub fn regexes(&self) -> Vec<String> {
         let mut body = format!(
             "\\Ahttps?://{}",
@@ -319,19 +326,19 @@ impl StoredRule {
         output.join("\r\n\r\n")
     }
 
-    pub fn maps_teams_account(&self, value: &ValidatedUrl) -> bool {
-        let Some((host, cid)) = crate::nested_url::teams_account(value) else {
+    /// サインイン情報ではなく、利用者が固定した内側URLの条件で振り分ける。
+    pub fn matches_teams_target(&self, value: &ValidatedUrl) -> bool {
+        let Some(target) = crate::nested_url::teams_target(value) else {
             return false;
         };
+        let target = Url::parse(target.original()).expect("validated target URL");
         self.condition.nested.iter().any(|nested| {
-            nested.key == "url"
-                && nested.condition.host.as_deref() == Some(&host)
-                && nested
-                    .condition
-                    .queries
-                    .iter()
-                    .any(|q| q == &format!("TeamsCID={cid}"))
-        }) && self.matches(value.original())
+                nested.key == "url" && nested.condition.has_fixed_parts()
+                    // CIDを明示固定した旧ルールだけは、重複した識別値を従来どおり拒否する。
+                    && (!nested.condition.queries.iter().any(|q| q.split('=').next() == Some("TeamsCID"))
+                        || target.query_pairs().filter(|(key, _)| key == "TeamsCID").count() == 1)
+            })
+            && self.matches(value.original())
     }
 }
 
@@ -393,7 +400,11 @@ mod tests {
         let mut tampered = restored.clone();
         tampered.condition.nested[0].regexes = vec![".*".into()];
         assert!(tampered.encode().is_err());
-        assert!(restored.maps_teams_account(&url));
+        assert!(restored.matches_teams_target(&url));
+        let duplicated = wrapped(
+            "https://tenant.sharepoint.com/a?TeamsCID=11111111-2222-3333-4444-555555555555&TeamsCID=other",
+        );
+        assert!(!restored.matches_teams_target(&duplicated));
         assert!(restored.matches(wrapped("https://tenant.sharepoint.com/another.pdf?x=1&TeamsCID=11111111-2222-3333-4444-555555555555").original()));
         for inner in [
             "https://tenant.sharepoint.com/a?TeamsCID=aaaaaaaa-2222-3333-4444-555555555555",
@@ -403,6 +414,57 @@ mod tests {
             assert!(!restored.matches(wrapped(inner).original()));
         }
         assert!(restored.display_regexes().contains("url 内"));
+    }
+
+    #[test]
+    fn teams_target_uses_only_selected_parts_not_a_required_cid() {
+        let url = wrapped(
+            "https://tenant-my.sharepoint.com/:f:/g/personal/person_example_com/file-a?TeamsCID=first&secret=private",
+        );
+        let parts = UrlParts::new(&url);
+        for host_only in [false, true] {
+            let mut selected = parts.defaults();
+            selected.nested[0].host = host_only;
+            selected.nested[0].paths[3] = !host_only;
+            let rule = StoredRule::new(parts.condition(&selected).unwrap(), false);
+            let encoded = rule.encode().unwrap();
+            assert!(!encoded.contains("TeamsCID") && !encoded.contains("private"));
+            let restored = StoredRule::decode(&encoded).unwrap().unwrap();
+            for query in ["?TeamsCID=changed", "", "?TeamsCID=a&TeamsCID=b"] {
+                let changed = wrapped(&format!(
+                    "https://tenant-my.sharepoint.com/:f:/g/personal/person_example_com/file-b{query}"
+                ));
+                assert!(restored.matches_teams_target(&changed));
+            }
+            let wrong = if host_only {
+                wrapped("https://other.sharepoint.com/:f:/g/personal/person_example_com/file-a")
+            } else {
+                wrapped("https://tenant-my.sharepoint.com/:f:/g/personal/other_person/file-a")
+            };
+            assert!(!restored.matches_teams_target(&wrong));
+            let duplicate = ValidatedUrl::parse(format!(
+                "{}&url=https%3A%2F%2Fother.example",
+                url.original()
+            ))
+            .unwrap();
+            assert!(!restored.matches_teams_target(&duplicate));
+            let insecure =
+                ValidatedUrl::parse(url.original().replacen("https:", "http:", 1)).unwrap();
+            assert!(!restored.matches_teams_target(&insecure));
+        }
+        let outer = StoredRule::new(parts.condition(&parts.defaults()).unwrap(), false);
+        assert!(!outer.matches_teams_target(&url));
+        let mut empty = parts.condition(&parts.defaults()).unwrap();
+        let inner_parts = &parts.nested[0].1;
+        let mut inner = inner_parts.defaults();
+        inner.host = false;
+        let condition = inner_parts.condition(&inner).unwrap();
+        empty.nested.push(NestedCondition {
+            key: "url".into(),
+            regexes: condition.regexes(),
+            condition: Box::new(condition),
+        });
+        assert!(!StoredRule::new(empty, false).matches_teams_target(&url));
     }
 
     #[test]

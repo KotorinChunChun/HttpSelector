@@ -722,7 +722,7 @@ fn command(window: HWND, state: &mut State<'_>, id: i32) {
         SAVE => {
             let result = state.rule().and_then(|rule| {
                 let url = ValidatedUrl::parse(state.original_url.clone())?;
-                ensure!(!crate::nested_url::is_teams_link(&url) || rule.suppress_prompt || rule.maps_teams_account(&url), "Teamsの自動振り分けには、url内のSharePointドメインとTeamsCIDをONにしてください。識別値がない場合は今回だけ開いてください。");
+                ensure!(!crate::nested_url::is_teams_link(&url) || rule.suppress_prompt || rule.matches_teams_target(&url), "自動振り分けの条件をurl内で1つ以上ONにしてください（ドメイン・パスなど）。TeamsCIDは必須ではありません。");
                 (state.save)(&rule)
             });
             match result {
@@ -1112,6 +1112,49 @@ mod tests {
     use super::*;
 
     #[test]
+    fn teams_saves_host_or_personal_path_without_selecting_cid() {
+        for host_only in [false, true] {
+            let mut url = url::Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
+            url.query_pairs_mut().append_pair("url", "https://tenant-my.sharepoint.com/:f:/g/personal/person_example_com/document?TeamsCID=changing&secret=private");
+            let input = ValidatedUrl::parse(url.to_string()).unwrap();
+            let mut saved = vec![];
+            let mut save = |rule: &StoredRule| {
+                saved.push(rule.clone());
+                Ok(())
+            };
+            let mut state = Box::new(State::new(&input, "Edge / 仕事".into(), &mut save));
+            let window = common::HiddenTestWindow::new(
+                Some(window_proc),
+                (&mut *state as *mut State<'_>).cast(),
+            );
+            command(window.0, &mut state, EXPAND);
+            command(window.0, &mut state, NESTED_GROUP_BASE);
+            let part = if host_only { 0 } else { 4 };
+            unsafe {
+                SendMessageW(state.nested[0].chips[part], BM_CLICK, 0, 0);
+            }
+            assert!(if host_only {
+                state.selection.nested[0].host
+            } else {
+                state.selection.nested[0].paths[3]
+            });
+            assert!(state.selection.nested[0].queries.iter().all(|on| !on));
+            assert!(common::window_text(state.regex).contains("url 内"));
+            command(window.0, &mut state, SAVE);
+            assert!(!state.expanded);
+            assert_eq!(state.action, Action::Back);
+            assert!(common::window_text(state.status).contains("保存しました"));
+            assert_ne!(unsafe { IsWindow(window.0) }, 0); // 保存は起動・終了しない。
+            drop(state);
+            drop(save);
+            assert_eq!(saved.len(), 1);
+            assert!(saved[0].matches_teams_target(&input));
+            let encoded = saved[0].encode().unwrap();
+            assert!(!encoded.contains("TeamsCID") && !encoded.contains("private"));
+        }
+    }
+
+    #[test]
     fn nested_chips_save_only_selected_account_and_collapse_without_opening() {
         let mut url = url::Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
         url.query_pairs_mut().append_pair("url", "https://tenant.sharepoint.com/a.pdf?TeamsCID=11111111-2222-3333-4444-555555555555&other=private")
@@ -1131,7 +1174,7 @@ mod tests {
         command(window.0, &mut state, EXPAND);
         command(window.0, &mut state, SAVE);
         assert!(state.expanded); // 外側ホストだけの自動振り分けは保存しない。
-        assert!(common::window_text(state.status).contains("TeamsCID"));
+        assert!(common::window_text(state.status).contains("url内で1つ以上"));
         command(window.0, &mut state, NESTED_GROUP_BASE);
         assert!(state.nested[0].expanded);
         let child = &state.parts.nested[0].1;
@@ -1171,7 +1214,7 @@ mod tests {
         drop(state);
         drop(save);
         assert_eq!(saved.len(), 1);
-        assert!(saved[0].maps_teams_account(&input));
+        assert!(saved[0].matches_teams_target(&input));
         let encoded = saved[0].encode().unwrap();
         assert!(!encoded.contains("synthetic-only") && !encoded.contains("private"));
     }
