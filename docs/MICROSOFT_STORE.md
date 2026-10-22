@@ -1,14 +1,16 @@
 # Microsoft Store公開準備
 
-2026-10-23追記: 開発ソースは0.0.3.5（Cargo 0.0.3+5）です。TeamsCID必須制限を修正しましたが、MSIXは未生成・未公開です。以下の公開結果は0.0.3.4です。
+2026-10-23: TeamsCID必須制限を修正した0.0.3.5（Cargo 0.0.3+5）を署名付きMSIXとしてGitHubと公開サイトへ公開しました。
 
-公開Beta版はv0.0.3.4（2026-10-21）です。表示版・実MSIX・App Installerはすべて0.0.3.4です。通常利用は署名付きMSIXが必須です。
+公開Beta版はv0.0.3.5（2026-10-23）です。表示版・実MSIX・App Installerはすべて0.0.3.5です。通常利用は署名付きMSIXが必須です。
 
-現行手順の更新日: 2026-10-21。署名付きBeta MSIXをGitHubと公開サイトへ公開済み。下記の日付付き結果は当時の版の記録として区別する。今回、インストール・証明書の信頼登録は行っていない。
+現行手順の更新日: 2026-10-23。署名付きBeta MSIXをGitHubと公開サイトへ公開済み。下記の日付付き結果は当時の版の記録として区別する。今回、インストール・証明書の信頼登録は行っていない。
 
 HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。正式版とは別に、GitHub Releasesと既存公開サイトで自己署名MSIXを配布するbetaチャネルを用意する。v0.0.3.4の二拠点公開依頼により、公開サイトは維持する。App Installerは適切なMIMEを提供できる公開サイトを参照し、GitHubでも同一MSIXを直接取得できる。手順は[二拠点配布](GITHUB_RELEASE.md)を正本とする。開発用MSIXとStore提出用MSIXを分離する。
 
 ## 現在の構成
+
+2026-10-23にBeta 0.0.3.5を両拠点へ公開した。MSIXは2,551,843バイト、SHA-256は `5B7DCF830B306577E559CB6EF450EC29DBD36BCED09DEA2C3D5B1461BD2328BA`。既存証明書による署名・内容・改ざん拒否と、両配布先からの匿名再取得一致を確認。実機導入・更新は未実施。[本版報告](../dev/history/v0.0.3.5/v0.0.3.5-imp.md)を参照。
 
 2026-10-21にBeta 0.0.3.4を両拠点へ公開した。MSIXは2,552,234バイト、SHA-256は `C9DD9F33453AC1F5B2DBCE20D5CEAA2127F8196ACCC2738DE30416AEE8C8A2E4`。既存共通証明書による署名と改ざん拒否、両拠点の匿名取得内容一致、Web配信MIMEとXML参照版を検証済み。実機導入・更新は未実施。[本版報告](../dev/history/v0.0.3.4/v0.0.3.4-imp.md)を参照。
 
@@ -25,7 +27,7 @@ HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。正式版�
 
 betaは自己署名証明書を利用者が明示的に信頼して導入する公開ベータ配布チャネル。[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest)からApp Installer・MSIX・公開CER・SHA-256を配布する。独自アップデーターは作らず、App Installerの標準更新機構を使用する。開発用SubjectはPC共通の`CN=KotorinChunChun`を使う。Storeの公開情報は実際のPartner Center画面で確認する。匿名性を保証するものではない。
 
-MSIXの版は `packaging/release-config.json` の `packageVersion` で管理する。画面表示・実MSIX・公開App Installerはすべて **0.0.3.4**、CargoのSemVerは **0.0.3+4**。入れ子条件、TeamsCID別振り分け、限定した名称警告の承認、高リスクURL警告とKotorinToys管理連携を公開済みBetaに含む。
+MSIXの版は `packaging/release-config.json` の `packageVersion` で管理する。画面表示・実MSIX・公開App Installerはすべて **0.0.3.5**、CargoのSemVerは **0.0.3+5**。入れ子条件、TeamsCID別振り分け、限定した名称警告の承認、高リスクURL警告とKotorinToys管理連携を公開済みBetaに含む。
 
 ユーザー指定により過去に公開済み1.0.3.0から番号をリセットしたため、旧1.x版は自動更新できず、アンインストール後の新規導入が必要になる。誤って公開した0.0.4.0からも自動更新できず、アンインストール後の新規導入が必要。旧パッケージは変更・削除しない。Betaの0始まりは、この移行範囲と再インストール必須を設定した場合だけ許可する。Store版は先頭1以上・4桁目0、全チャネルで各部65535以下を維持する。Betaの4部版をStore提出規則に合わせて無断で変更せず、表示・配布版の一致とStore提出版の設計を別に確認する。
 
@@ -61,7 +63,7 @@ pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Full -Channel b
 pwsh -NoProfile -File dev/scripts/publish-msix-release.ps1 -Mode Verify -Channel beta
 ```
 
-公開先は `HttpSelector.html`、`httpselector-certificate/`、`assets/httpselector-icon.png`、`beta/HttpSelector.appinstaller`、版付きMSIX、公開CER。App Installerは起動時に毎回更新を確認し、現在の起動をブロックしない設定とする。旧1.x版や誤公開0.0.4.0から0.0.3.4への更新には使えないため、必要な設定を退避し、対象の旧Betaをアンインストールしてから新規導入する。同一Familyの0.0.3.3以前は更新対象となるが、実機更新は未検証。stableはこのFTPS経路に載せずMicrosoft Storeを使用する。
+公開先は `HttpSelector.html`、`httpselector-certificate/`、`assets/httpselector-icon.png`、`beta/HttpSelector.appinstaller`、版付きMSIX、公開CER。App Installerは起動時に毎回更新を確認し、現在の起動をブロックしない設定とする。旧1.x版や誤公開0.0.4.0から0.0.3.5への更新には使えないため、必要な設定を退避し、対象の旧Betaをアンインストールしてから新規導入する。同一Familyの0.0.3.4以前は更新対象となるが、実機更新は未検証。stableはこのFTPS経路に載せずMicrosoft Storeを使用する。
 
 2026-09-01に1.0.3.0を公開し、ダウンロードメニュー・製品ページ・証明書案内・アイコン・App Installer・MSIX・CERのHTTPS応答を確認した。MSIXとCERの公開ハッシュはステージ済み成果物と一致した。公開ページは `https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html`。
 

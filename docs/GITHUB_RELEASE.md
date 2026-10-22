@@ -1,6 +1,6 @@
 # GitHub・公開サイトでの配布と更新
 
-更新日: 2026-10-21。署名付きBeta MSIX **v0.0.3.4**を[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/tag/v0.0.3.4)と[公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)へ公開しました。表示・MSIX・App Installerの数値はすべて0.0.3.4です。通常利用には署名付きMSIXが必須です。
+更新日: 2026-10-23。署名付きBeta MSIX **v0.0.3.5**を[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/tag/v0.0.3.5)と[公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)へ公開しました。表示・MSIX・App Installerの数値はすべて0.0.3.5です。通常利用には署名付きMSIXが必須です。
 
 ## 配布先の役割
 
@@ -28,7 +28,11 @@
 - 公開後は両拠点から認証なしで再取得してローカルの長さとSHA-256に照合し、XML参照版・参照URL・署名・タグを記録します。
 - Web側は独立したdownloadリポジトリで対象ファイルだけコミットし、親・他製品の変更を混ぜません。
 
-## v0.0.3.4公開結果
+## v0.0.3.5公開結果
+
+MSIX: 2,551,843バイト、SHA-256 `5B7DCF830B306577E559CB6EF450EC29DBD36BCED09DEA2C3D5B1461BD2328BA`。ビルド元・タグは `1b1548eddd17e166cf21aef9d86018d61e8ca95a`。署名・内容・改ざん拒否、両拠点の匿名取得内容一致を検証しました。GitHubの実配信MIMEは引き続きapplication/octet-streamなのでApp Installer更新先はWebです。[本版報告](../dev/history/v0.0.3.5/v0.0.3.5-imp.md)。実機導入・更新は未実施です。
+
+## v0.0.3.4公開結果（履歴）
 
 MSIX: 2,552,234バイト、SHA-256 `C9DD9F33453AC1F5B2DBCE20D5CEAA2127F8196ACCC2738DE30416AEE8C8A2E4`。
 署名元コミットは `82168282fc18f02bf1a5e31b75080b46aa5f2b0e`（タグv0.0.3.4）。署名・ペイロード・BlockMap・改ざん拒否を検証し、両配布先の匿名取得内容が一致しました。

@@ -1,10 +1,10 @@
 # HttpSelector FAQ
 
-開発版v0.0.3.5ではTeamsCIDの必須制限を修正しました。url内の安定したパスだけ、またはドメインだけで保存できます。TeamsCIDは通常OFFにし、ONならその値を固定します。旧CID固定ルールは自動変更しません。この版のMSIXは未生成・未公開で、以下の公開版0.0.3.4にはまだ反映されていません。[操作手順](USERS_GUIDE.md)を参照してください。
+公開Beta版v0.0.3.5ではTeamsCIDの必須制限を修正しました。url内の安定したパスだけ、またはドメインだけで保存できます。TeamsCIDは通常OFFにし、ONならその値を固定します。旧CID固定ルールは自動変更しません。この修正を含む署名付きMSIX 0.0.3.5をGitHubと公開サイトへ公開済みです。[操作手順](USERS_GUIDE.md)を参照してください。
 
-公開Beta版v0.0.3.4（2026-10-21）では、Teamsのurl内を展開してSharePointホストとTeamsCIDを個別に選択できます。名称警告を明示承認して記憶する機能も追加しています。これらは署名付きMSIX v0.0.3.4に収録されています。[操作手順](USERS_GUIDE.md)を参照してください。
+v0.0.3.4（2026-10-21）で追加した機能として、Teamsのurl内を展開してSharePointホストとTeamsCIDを個別に選択できます。名称警告を明示承認して記憶する機能も追加しています。これらも最新版に収録されています。[操作手順](USERS_GUIDE.md)を参照してください。
 
-更新日: 2026-10-21。[公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)のApp Installerで導入・更新できます。[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest)から同じMSIXを直接取得することもできます。実機導入・更新の検証は別途必要です。
+更新日: 2026-10-23。[公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)のApp Installerで導入・更新できます。[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest)から同じMSIXを直接取得することもできます。実機導入・更新の検証は別途必要です。
 
 ## 連携確認を毎回出したくありません
 
