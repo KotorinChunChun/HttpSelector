@@ -4,6 +4,8 @@ HttpSelectorの通常利用には、署名付きMSIXのインストールが必�
 
 署名付きBeta 0.0.3.4をGitHubと公開サイトで配布しています。初回起動時にDBをschema 5へ移行するため、移行後DBを0.0.3.3以前では開けません。今回は実ユーザーDBの移行・実機導入は行っていません。
 
+2026-10-23: 開発ソースは0.0.3.5です。TeamsCID必須制限の修正は実装済みですが、この版のMSIXは未生成・未公開です。以下は公開済み0.0.3.4の案内です。
+
 ## 1. 配布物を取得する
 
 配布元のMSIX、公開証明書、SHA-256と署名者の案内を確認します。署名付きBeta **0.0.3.4** は [GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/latest) のAssetsから取得してください。`SHA256SUMS.txt` のハッシュを `Get-FileHash -Algorithm SHA256` の結果と照合します。新しい連携フォームと高リスクURL警告を含みます。通常利用には本版の署名付きMSIXが必要です。今回の公開作業では実機へのインストール・更新は行っていません。
@@ -17,7 +19,7 @@ cd C:\develop\KotorinToys\tools\HttpSelector
 pwsh -NoProfile -File dev/scripts/release-msix.ps1 -Mode Build -Channel beta -ReleaseIntentConfirmed
 ```
 
-現在のソースからの出力先設定は `release/msix/beta/0.0.3.4/` です。MSIX、CER、SHA256SUMS.txt、verification.jsonを生成します。公開入口ではApp Installerも生成します。生成はインストールや公開を行いません。
+現在のソースからの出力先設定は `release/msix/beta/0.0.3.5/` です。MSIX、CER、SHA256SUMS.txt、verification.jsonを生成します。公開入口ではApp Installerも生成します。生成はインストールや公開を行いません。
 
 ## 2. 署名を確認する
 

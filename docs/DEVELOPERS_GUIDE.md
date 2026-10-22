@@ -1,6 +1,6 @@
 # HttpSelector 開発ガイド
 
-更新日: 2026-10-21。公開Beta版v0.0.3.4。正本の配置は `C:\develop\KotorinToys\tools\HttpSelector` で、独立Gitリポジトリを維持します。管理連携の契約と運用は[KotorinToys連携](kotorintoys-integration.md)を参照してください。
+更新日: 2026-10-23。開発版v0.0.3.5、公開Beta MSIXはv0.0.3.4。正本の配置は `C:\develop\KotorinToys\tools\HttpSelector` で、独立Gitリポジトリを維持します。管理連携の契約と運用は[KotorinToys連携](kotorintoys-integration.md)を参照してください。
 
 ## 必要環境
 
@@ -121,7 +121,7 @@ v0.0.3.4はschema 5です。入れ子条件を知らない旧版が外側ホス�
 
 入れ子はCondition.nestedへ親クエリ名・内側条件・生成済み式を保存します。各段の選択された条件だけを保存し、最大3段・子候補16件・URL長32 KiBに制限します。同名の親クエリは曖昧性のため拒否し、各段のクエリ値を1回ずつ復号します。実行時には各段の式と保存条件の整合性を検証し、原文を起動します。
 
-Teamsの特定ホスト・パスではurl内のSharePointホストと一意のGUID形式TeamsCIDを条件とするルールだけを自動起動に使います。未知・欠落・重複・登録競合ではお気に入りへの自動転送も行いません。TeamsCIDはURL由来の振り分けヒントで、認証やアカウントの本人確認ではありません。
+Teamsの特定ホスト・パスでは、matches_teams_targetにより厳密なHTTPS wrapperのurl展開・内側の固定条件・全条件一致を検査します。ドメイン・パス・クエリの選択は任意で、TeamsCIDの存在やGUID形式を要求しません。外側だけ/固定部分のない入れ子は拒否。保存ガードとresolve_profileで同じ判定を使います。未選択CIDは変化・欠落・重複を無視し、選択CIDでは重複を従来どおり拒否します。既存JSON/DB schema 5とCID固定条件は変更しません。未一致・重複url・別プロファイルへの登録競合ではお気に入りへ転送しません。サインイン済みの本人認証ではなく、同じURL条件のアカウントは区別できません。
 
 Settings.risk_approved_domainsへ完全一致のASCIIホスト名をJSON配列で保持します。明示承認は名称偽装の理由だけを抑制し、他の検査と内側検査は維持します。署名更新が失敗した場合は既存バックアップへ戻します。
 
@@ -137,7 +137,7 @@ MSIX版は `packaging/AppxManifest.xml.template` の `uap3:Protocol` 宣言で�
 
 Beta配布は[GitHub Releases](https://github.com/KotorinChunChun/HttpSelector/releases/latest)と既存公開サイトの二拠点です。手順は[二拠点配布](GITHUB_RELEASE.md)を正本とします。distribution.mode=dualでWeb向けStage/Publish/Verify/Fullを使用します。App Installerの参照先は公開サイトです。
 
-開発ソースの表示版・MSIX生成設定は `0.0.3.4`、Cargo版は `0.0.3+4` です。署名付きBeta MSIX 0.0.3.4を生成・公開済みです。実機への導入・更新操作は未実施です。KotorinToys向けの `distributionStatus: unpublished` は本体対応インストーラーの台帳とは未連携であることを示し、Beta MSIXの公開状況とは別です。
+開発ソースの表示版・MSIX生成設定は `0.0.3.5`、Cargo版は `0.0.3+5` です。0.0.3.5は未生成・未公開で、公開済みの署名付きBeta MSIXは0.0.3.4です。実機への導入・更新操作は未実施です。KotorinToys向けの `distributionStatus: unpublished` は本体対応インストーラーの台帳とは未連携であることを示し、Beta MSIXの公開状況とは別です。
 
 [Microsoft Store公開準備](MICROSOFT_STORE.md)に、Plan/Build/Verifyのコマンド、自己署名証明書の再利用、正式Identityへの切り替え、ローカル導入と残課題を記載しています。StoreチャネルはStoreの更新管理を使い、BetaチャネルのApp Installerとは分けます。独自アップデーターは実装しません。
 

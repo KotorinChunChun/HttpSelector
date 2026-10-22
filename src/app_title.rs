@@ -1,5 +1,5 @@
 // CargoはSemVerの3桁に限定されるため、4桁の製品版を別に表示する。
-pub const VERSION: &str = "0.0.3.4";
+pub const VERSION: &str = "0.0.3.5";
 
 pub struct WindowTitle;
 
@@ -40,7 +40,7 @@ mod tests {
     #[test]
     fn titles_use_the_four_part_product_version() {
         assert_eq!(VERSION, env!("CARGO_PKG_VERSION").replace('+', "."));
-        assert_eq!(main(), "HttpSelector - ver 0.0.3.4");
+        assert_eq!(main(), "HttpSelector - ver 0.0.3.5");
         assert_eq!(settings(), format!("設定 - {}", main()));
         assert_eq!(default_rules(), format!("既定ルール - {}", main()));
         assert_eq!(risk_warning(), format!("URLの安全性の確認 - {}", main()));

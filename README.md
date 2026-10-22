@@ -23,6 +23,8 @@ Windowsでリンクを開く前に、Edge・Chrome・Firefoxのブラウザプ�
 
 ## 開発状況
 
+開発ソースは **v0.0.3.5**（Cargo `0.0.3+5`）です。TeamsCIDの必須制限をやめ、url内でONにしたドメイン・パス・クエリで振り分けます。安定したパスだけの固定も可能です。CIDがOFFなら変動・欠落を無視します。[修正記録](dev/history/v0.0.3.5/v0.0.3.5-imp.md)。この修正のMSIXは未生成・未公開のため、以下の公開版にはまだ反映されていません。
+
 公開Beta版は **v0.0.3.4**（Cargo `0.0.3+4`）です。Teams Safe Linksの入れ子条件・TeamsCID別の振り分けと、承認済み名称警告の抑制を追加しました。表示版・署名付きMSIX版・App Installer版はすべて `0.0.3.4` です。[今回の実装記録](dev/history/v0.0.3.4/v0.0.3.4-imp.md)を参照してください。
 
 公開済み自己署名Beta MSIX **v0.0.3.4** は [GitHub Releases](https://github.com/KotorinChunChun/HttpSelector/releases/latest) から取得できます。[公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)でも同じ署名済みバイト列を配布しています。Microsoft StoreおよびKotorinToys用Innoインストーラーは未公開です。

@@ -332,13 +332,22 @@ impl StoredRule {
             return false;
         };
         let target = Url::parse(target.original()).expect("validated target URL");
+        let unique_cid = target
+            .query_pairs()
+            .filter(|(key, _)| key == "TeamsCID")
+            .count()
+            == 1;
         self.condition.nested.iter().any(|nested| {
-                nested.key == "url" && nested.condition.has_fixed_parts()
-                    // CIDを明示固定した旧ルールだけは、重複した識別値を従来どおり拒否する。
-                    && (!nested.condition.queries.iter().any(|q| q.split('=').next() == Some("TeamsCID"))
-                        || target.query_pairs().filter(|(key, _)| key == "TeamsCID").count() == 1)
-            })
-            && self.matches(value.original())
+            let fixes_cid = nested
+                .condition
+                .queries
+                .iter()
+                .any(|q| q.split('=').next() == Some("TeamsCID"));
+            nested.key == "url"
+                && nested.condition.has_fixed_parts()
+                // CIDを明示固定した旧ルールだけは、重複した識別値を従来どおり拒否する。
+                && (!fixes_cid || unique_cid)
+        }) && self.matches(value.original())
     }
 }
 
@@ -442,6 +451,12 @@ mod tests {
                 wrapped("https://tenant-my.sharepoint.com/:f:/g/personal/other_person/file-a")
             };
             assert!(!restored.matches_teams_target(&wrong));
+            if !host_only {
+                // 内側ホストOFFという利用者の指定も維持する。
+                assert!(restored.matches_teams_target(&wrapped(
+                    "https://other.sharepoint.com/:f:/g/personal/person_example_com/file-c"
+                )));
+            }
             let duplicate = ValidatedUrl::parse(format!(
                 "{}&url=https%3A%2F%2Fother.example",
                 url.original()
