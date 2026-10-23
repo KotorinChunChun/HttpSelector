@@ -1427,7 +1427,9 @@ mod tests {
 
     #[test]
     fn click_mode_requires_the_configured_activation_and_keeps_original_url() {
-        let url = ValidatedUrl::parse("https://example.com/a?x=%20").unwrap();
+        let url = ValidatedUrl::parse("https://example.com/a?x=%20")
+            .unwrap()
+            .with_forced_confirmation(true);
         for double_click in [true, false] {
             let mut state = Box::new(UiState::new(
                 Some(url.clone()),

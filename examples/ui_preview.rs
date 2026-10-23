@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     };
     if args
         .iter()
-        .any(|arg| arg == "--association" || arg == "--teams")
+        .any(|arg| arg == "--association" || arg == "--teams" || arg == "--replace")
     {
         let profile = Profile {
             browser_type: BrowserType::Chrome,
@@ -64,10 +64,35 @@ fn main() -> anyhow::Result<()> {
                 "https://apps.powerapps.com/play/e/default-11111111-2222-3333-4444-555555555555/a/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?tenantId=11111111-2222-3333-4444-555555555555&hint=66666666-7777-8888-9999-000000000000&source=portal&screen=Requests&itemId=12345&locale=ja-JP&theme=light&mode=edit&hideNavBar=true&debug=false",
             )?
         };
-        let result = http_selector::association_ui::run(&url, &profile, |rule| {
-            println!("保存プレビュー: {}（保存先なし）", rule.condition.summary());
-            Ok(())
-        })?;
+        let existing = if args.iter().any(|arg| arg == "--replace") {
+            let parts = http_selector::association::UrlParts::new(&url);
+            let mut selection = parts.defaults();
+            selection.queries[0] = true;
+            Some(http_selector::model::DefaultRule {
+                id: 1,
+                profile_id: 1,
+                pattern: http_selector::association::StoredRule::new(
+                    parts.condition(&selection)?,
+                    false,
+                )
+                .encode()?,
+                enabled: true,
+                sort_order: 0,
+                created_at: 0,
+                updated_at: 0,
+            })
+        } else {
+            None
+        };
+        let result = http_selector::association_ui::run_with_existing(
+            &url,
+            &profile,
+            existing.as_ref(),
+            |rule| {
+                println!("保存プレビュー: {}（保存先なし）", rule.condition.summary());
+                Ok(())
+            },
+        )?;
         println!("連携プレビュー: {:?}（ブラウザ起動なし）", result.action);
     } else if args.iter().any(|arg| arg == "--settings") {
         let result = run_settings(

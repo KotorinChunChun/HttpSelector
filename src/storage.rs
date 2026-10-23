@@ -962,6 +962,28 @@ mod tests {
             storage.load_default_rules().unwrap()[0].pattern,
             before.pattern
         );
+        let current = storage.load_default_rules().unwrap()[0].clone();
+        assert!(
+            storage
+                .replace_association_target(&current, i64::MAX, false)
+                .is_err()
+        );
+        assert_eq!(storage.load_default_rules().unwrap()[0], current);
+        let mut legacy = current.clone();
+        legacy.pattern = "https://example.com/*".into();
+        storage.replace_default_rules(&[legacy]).unwrap();
+        let legacy = storage.load_default_rules().unwrap()[0].clone();
+        storage
+            .replace_association_target(&legacy, profiles[1].id, false)
+            .unwrap();
+        let updated = storage.load_default_rules().unwrap()[0].clone();
+        assert_eq!(updated.pattern, legacy.pattern);
+        assert_eq!(updated.id, legacy.id);
+        assert!(
+            storage
+                .replace_association_target(&updated, profiles[0].id, true)
+                .is_err()
+        );
     }
 
     #[test]

@@ -18,7 +18,7 @@ use windows_sys::Win32::{
     UI::{
         Controls::*,
         HiDpi::GetDpiForWindow,
-        Input::KeyboardAndMouse::{GetFocus, SetFocus, VK_ESCAPE, VK_RETURN},
+        Input::KeyboardAndMouse::{EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN},
         Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
         WindowsAndMessaging::*,
     },
@@ -89,6 +89,8 @@ struct State<'a> {
     original_url: String,
     expanded: bool,
     suppress_prompt: bool,
+    preset: Option<StoredRule>,
+    legacy_pattern: Option<String>,
     action: Action,
     pending_url: Option<ValidatedUrl>,
     save: &'a mut dyn FnMut(&StoredRule) -> anyhow::Result<()>,
@@ -117,6 +119,53 @@ struct State<'a> {
 }
 
 impl<'a> State<'a> {
+    fn locked(&self) -> bool {
+        self.preset.is_some() || self.legacy_pattern.is_some()
+    }
+
+    fn set_existing(&mut self, pattern: &str) -> anyhow::Result<()> {
+        fn select(
+            parts: &UrlParts,
+            condition: Option<&crate::association::Condition>,
+        ) -> Selection {
+            Selection {
+                host: condition.is_some_and(|c| c.host.is_some()),
+                paths: (0..parts.paths.len())
+                    .map(|i| condition.is_some_and(|c| c.paths.get(i).is_some_and(Option::is_some)))
+                    .collect(),
+                queries: parts
+                    .queries
+                    .iter()
+                    .map(|q| condition.is_some_and(|c| c.queries.contains(q)))
+                    .collect(),
+                nested: parts
+                    .nested
+                    .iter()
+                    .map(|(key, child)| {
+                        select(
+                            child,
+                            condition.and_then(|c| {
+                                c.nested
+                                    .iter()
+                                    .find(|n| &n.key == key)
+                                    .map(|n| &*n.condition)
+                            }),
+                        )
+                    })
+                    .collect(),
+            }
+        }
+        self.preset = StoredRule::decode(pattern)?;
+        if let Some(rule) = &self.preset {
+            self.selection = select(&self.parts, Some(&rule.condition));
+            self.suppress_prompt = rule.suppress_prompt;
+        } else {
+            self.selection = select(&self.parts, None);
+            self.legacy_pattern = Some(pattern.into());
+        }
+        Ok(())
+    }
+
     fn new(
         url: &ValidatedUrl,
         profile_name: String,
@@ -131,6 +180,8 @@ impl<'a> State<'a> {
             original_url: url.original().into(),
             expanded: false,
             suppress_prompt: false,
+            preset: None,
+            legacy_pattern: None,
             action: Action::Back,
             pending_url: None,
             save,
@@ -159,6 +210,11 @@ impl<'a> State<'a> {
         }
     }
     fn rule(&self) -> anyhow::Result<StoredRule> {
+        if let Some(preset) = &self.preset {
+            let mut rule = preset.clone();
+            rule.suppress_prompt = self.suppress_prompt;
+            return Ok(rule);
+        }
         Ok(StoredRule::new(
             self.parts.condition(&self.selection)?,
             self.suppress_prompt,
@@ -207,6 +263,15 @@ pub fn profile_label(profile: &Profile) -> String {
 pub fn run(
     url: &ValidatedUrl,
     profile: &Profile,
+    save: impl FnMut(&StoredRule) -> anyhow::Result<()>,
+) -> anyhow::Result<Outcome> {
+    run_with_existing(url, profile, None, save)
+}
+
+pub fn run_with_existing(
+    url: &ValidatedUrl,
+    profile: &Profile,
+    existing: Option<&crate::model::DefaultRule>,
     mut save: impl FnMut(&StoredRule) -> anyhow::Result<()>,
 ) -> anyhow::Result<Outcome> {
     let _busy = crate::management::busy_guard();
@@ -227,6 +292,9 @@ pub fn run(
         );
     }
     let mut state = Box::new(State::new(url, profile_label(profile), &mut save));
+    if let Some(existing) = existing {
+        state.set_existing(&existing.pattern)?;
+    }
     let style =
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN | WS_VSCROLL;
     let bounds = common::initial_bounds(740, 310, style, WS_EX_CONTROLPARENT);
@@ -598,6 +666,7 @@ fn update(state: &State<'_>) {
         .chain(state.selection.paths.iter().copied())
         .chain(state.selection.queries.iter().copied());
     for (control, on) in state.chips.iter().zip(flags) {
+        unsafe { EnableWindow(*control, (!state.locked()) as i32) };
         unsafe {
             SendMessageW(
                 *control,
@@ -630,6 +699,7 @@ fn update(state: &State<'_>) {
             0,
         );
     }
+    unsafe { EnableWindow(state.skip, state.legacy_pattern.is_none() as i32) };
     match state.rule() {
         Ok(rule) => {
             common::set_text(state.regex, &rule.display_regexes());
@@ -643,6 +713,12 @@ fn update(state: &State<'_>) {
             );
         }
         Err(error) => common::set_text(state.status, &format!("{error:#}")),
+    }
+    if state.locked() {
+        common::set_text(state.regex_label, "既存条件（維持して登録先を置き換え）");
+        if let Some(pattern) = &state.legacy_pattern {
+            common::set_text(state.regex, pattern);
+        }
     }
     common::set_text(
         state.expand,
@@ -679,6 +755,7 @@ fn update(state: &State<'_>) {
             .iter()
             .zip(part_flags(selection_at(&state.selection, &group.path)))
         {
+            unsafe { EnableWindow(*chip, (!state.locked()) as i32) };
             unsafe {
                 SendMessageW(
                     *chip,
@@ -701,6 +778,12 @@ fn update(state: &State<'_>) {
 }
 
 fn command(window: HWND, state: &mut State<'_>, id: i32) {
+    if state.locked() && (id >= NESTED_CHIP_BASE || (CHIP_BASE..NESTED_GROUP_BASE).contains(&id)) {
+        return;
+    }
+    if state.legacy_pattern.is_some() && id == SKIP {
+        return;
+    }
     match id {
         OPEN => {
             state.action = Action::Open;
@@ -722,7 +805,7 @@ fn command(window: HWND, state: &mut State<'_>, id: i32) {
         SAVE => {
             let result = state.rule().and_then(|rule| {
                 let url = ValidatedUrl::parse(state.original_url.clone())?;
-                ensure!(!crate::nested_url::is_teams_link(&url) || rule.suppress_prompt || rule.matches_teams_target(&url), "自動振り分けの条件をurl内で1つ以上ONにしてください（ドメイン・パスなど）。TeamsCIDは必須ではありません。");
+                ensure!(state.locked() || !crate::nested_url::is_teams_link(&url) || rule.suppress_prompt || rule.matches_teams_target(&url), "自動振り分けの条件をurl内で1つ以上ONにしてください（ドメイン・パスなど）。TeamsCIDは必須ではありません。");
                 (state.save)(&rule)
             });
             match result {
@@ -1110,6 +1193,68 @@ fn fit_height(window: HWND, state: &State<'_>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_replacement_preserves_pattern_and_back_never_saves() {
+        let url = ValidatedUrl::parse("https://example.com/a").unwrap();
+        let mut calls = 0;
+        let mut save = |_: &StoredRule| {
+            calls += 1;
+            Ok(())
+        };
+        let mut state = Box::new(State::new(&url, "Edge / 変更先".into(), &mut save));
+        state.set_existing("https://example.com/*").unwrap();
+        let window = common::HiddenTestWindow::new(
+            Some(window_proc),
+            (&mut *state as *mut State<'_>).cast(),
+        );
+        command(window.0, &mut state, EXPAND);
+        assert_eq!(common::window_text(state.regex), "https://example.com/*");
+        command(window.0, &mut state, SKIP);
+        assert!(!state.suppress_prompt);
+        command(window.0, &mut state, BACK);
+        assert_eq!(state.action, Action::Back);
+        drop(state);
+        drop(save);
+        assert_eq!(calls, 0);
+    }
+
+    #[test]
+    fn existing_rule_keeps_conditions_and_save_does_not_open_or_close() {
+        let url =
+            ValidatedUrl::parse("https://example.com/a?tenant=chosen&token=not-saved").unwrap();
+        let parts = UrlParts::new(&url);
+        let mut selected = parts.defaults();
+        selected.queries[0] = true;
+        let original = StoredRule::new(parts.condition(&selected).unwrap(), true);
+        let mut saved = vec![];
+        let mut save = |rule: &StoredRule| {
+            saved.push(rule.clone());
+            Ok(())
+        };
+        let mut state = Box::new(State::new(&url, "Edge / 別の登録先".into(), &mut save));
+        state.set_existing(&original.encode().unwrap()).unwrap();
+        let window = common::HiddenTestWindow::new(
+            Some(window_proc),
+            (&mut *state as *mut State<'_>).cast(),
+        );
+        command(window.0, &mut state, EXPAND);
+        assert!(common::window_text(state.regex).contains("chosen"));
+        assert!(!common::window_text(state.regex).contains("not-saved"));
+        command(window.0, &mut state, CHIP_BASE);
+        assert_eq!(state.rule().unwrap(), original);
+        command(window.0, &mut state, AUTO);
+        command(window.0, &mut state, SAVE);
+        assert!(!state.expanded);
+        assert_eq!(state.action, Action::Back);
+        assert_ne!(unsafe { IsWindow(window.0) }, 0);
+        command(window.0, &mut state, BACK);
+        drop(state);
+        drop(save);
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].condition, original.condition);
+        assert!(!saved[0].suppress_prompt);
+    }
 
     #[test]
     fn teams_saves_host_or_personal_path_without_selecting_cid() {

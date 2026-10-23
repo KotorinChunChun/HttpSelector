@@ -1,5 +1,7 @@
 # Microsoft Store公開準備
 
+2026-10-23追記: 開発ソースは0.0.3.6（Cargo 0.0.3+6）で、Shiftによる確認強制を追加。MSIXは未生成・未公開です。以下の公開結果は0.0.3.5です。
+
 2026-10-23: TeamsCID必須制限を修正した0.0.3.5（Cargo 0.0.3+5）を署名付きMSIXとしてGitHubと公開サイトへ公開しました。
 
 公開Beta版はv0.0.3.5（2026-10-23）です。表示版・実MSIX・App Installerはすべて0.0.3.5です。通常利用は署名付きMSIXが必須です。
@@ -53,7 +55,7 @@ pwsh -NoProfile -File dev/scripts/release-msix.ps1 -Mode Verify -Channel beta
 
 Buildはfmt、Rustテスト、Clippy、static CRTのreleaseビルド、画像生成、MakeAppxのManifest検証、署名、内容検証を順に行う。途中の外部コマンドが失敗したら停止し、前回のrelease成果物は検証成功まで変更しない。ビルド元commit、作業ツリーの変更有無、Cargo.lockと成果物のSHA-256を検証JSONへ記録する。
 
-現在の設定での出力先は `release/msix/beta/0.0.3.5/`。MSIX、公開CER、SHA256SUMS.txt、verification.jsonを出力する。MSIXの中身は実行ファイル、3枚の画像、ManifestとMSIXメタデータだけ。ソース、PDB、PFX、証明書の秘密鍵、開発用文書は含めない。コンパイル時にローカルパスを置換し、配布物内の代表的な個人パスも検出する。
+現在の設定での出力先は `release/msix/beta/0.0.3.6/`。MSIX、公開CER、SHA256SUMS.txt、verification.jsonを出力する。MSIXの中身は実行ファイル、3枚の画像、ManifestとMSIXメタデータだけ。ソース、PDB、PFX、証明書の秘密鍵、開発用文書は含めない。コンパイル時にローカルパスを置換し、配布物内の代表的な個人パスも検出する。
 
 Web公開ではガード付きエントリポイント `dev/scripts/publish-msix-release.ps1` を使う。Buildは既存MSIXを再検証してApp Installerを生成でき、Stageは検証済み成果物とHttpSelector用ページだけを `C:\develop\excel-chunchun\www\download` へ配置する。Publishは `-ReleaseIntentConfirmed -PublishConfirmed` が揃った場合だけFTPSのdry-run、公開前バックアップ、対象6ファイル限定アップロード、公開HTTPS検証を行う。秘密鍵や他製品・共有メニューは公開対象に含めない。
 

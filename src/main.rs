@@ -26,10 +26,14 @@ fn main() {
 }
 
 fn run() -> anyhow::Result<()> {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_SHIFT};
+    let force_confirmation = unsafe { GetAsyncKeyState(VK_SHIFT as i32) } < 0;
     let arguments: Vec<_> = std::env::args().skip(1).collect();
     let options = parse_arguments(&arguments)?;
     let startup = options.startup;
-    let mut url = options.url;
+    let mut url = options
+        .url
+        .map(|url| url.with_forced_confirmation(force_confirmation));
     let _instance_guard = match acquire(url.as_ref())? {
         InstanceStatus::Primary(guard) => guard,
         InstanceStatus::Forwarded => return Ok(()),
@@ -179,22 +183,63 @@ fn run_session(
                     .as_ref()
                     .context("開くURLが指定されていません")?;
                 let mut pending_url = None;
+                let mut replacements: Vec<_> = if current_url.force_confirmation() {
+                    storage
+                        .load_default_rules()?
+                        .into_iter()
+                        .filter(|rule| {
+                            rule.enabled
+                                && http_selector::rules::matches(
+                                    &rule.pattern,
+                                    current_url.original(),
+                                )
+                        })
+                        .collect()
+                } else {
+                    vec![]
+                };
+                let preset = (replacements.len() == 1).then(|| replacements[0].clone());
                 let launched = open_profile(&profile, current_url, storage, integrity, || {
-                    if storage.association_prompt_suppressed(current_url)? {
+                    if !current_url.force_confirmation()
+                        && storage.association_prompt_suppressed(current_url)?
+                    {
                         return Ok(true);
                     }
-                    let outcome =
-                        http_selector::association_ui::run(current_url, &profile, |rule| {
+                    let outcome = http_selector::association_ui::run_with_existing(
+                        current_url,
+                        &profile,
+                        preset.as_ref(),
+                        |rule| {
+                            anyhow::ensure!(
+                                replacements.len() <= 1,
+                                "複数の登録ルールが一致します。誤置換を防ぐため既定ルール一覧で対象を確認してください"
+                            );
                             integrity.backup_current()?;
-                            storage.save_association(profile.id, rule)?;
+                            if let Some(existing) = replacements.first() {
+                                storage.replace_association_target(
+                                    existing,
+                                    profile.id,
+                                    rule.suppress_prompt,
+                                )?;
+                            } else {
+                                storage.save_association(profile.id, rule)?;
+                            }
                             if let Err(error) = integrity.sign_current() {
                                 integrity
                                     .restore_backup()
                                     .context("署名失敗後の設定復元に失敗しました")?;
                                 return Err(error);
                             }
+                            if let Some(existing) = replacements.first_mut() {
+                                *existing = storage
+                                    .load_default_rules()?
+                                    .into_iter()
+                                    .find(|entry| entry.id == existing.id)
+                                    .context("保存後のルールを取得できません")?;
+                            }
                             Ok(())
-                        })?;
+                        },
+                    )?;
                     pending_url = outcome.pending_url;
                     Ok(outcome.action == http_selector::association_ui::Action::Open)
                 });
@@ -454,6 +499,9 @@ fn resolve_profile(
     url: &ValidatedUrl,
     interruption_enabled: bool,
 ) -> Option<Profile> {
+    if url.force_confirmation() {
+        return None;
+    }
     let teams = http_selector::nested_url::is_teams_link(url);
     if teams {
         let mut matches = rules
@@ -641,6 +689,30 @@ mod tests {
                 .id,
             2
         );
+    }
+
+    #[test]
+    fn forced_confirmation_bypasses_rules_and_favorites_without_changing_url() {
+        let profiles = [profile(1, true, true)];
+        let original = ValidatedUrl::parse("https://example.com/a").unwrap();
+        let rule = DefaultRule {
+            id: 1,
+            profile_id: 1,
+            pattern: "https://example.com/*".into(),
+            enabled: true,
+            sort_order: 0,
+            created_at: 0,
+            updated_at: 0,
+        };
+        let forced = original.clone().with_forced_confirmation(true);
+        for enabled in [true, false] {
+            assert!(
+                resolve_profile(&profiles, std::slice::from_ref(&rule), &forced, enabled).is_none()
+            );
+            assert!(resolve_profile(&profiles, &[], &forced, enabled).is_none());
+        }
+        assert_eq!(forced.original(), original.original());
+        assert!(resolve_profile(&profiles, &[rule], &original, true).is_some());
     }
 
     #[test]
