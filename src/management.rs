@@ -171,7 +171,7 @@ impl Shared {
         {
             let mut encoded = wide(url.original());
             let data = COPYDATASTRUCT {
-                dwData: 1,
+                dwData: url.copy_data_kind(),
                 cbData: (encoded.len() * size_of::<u16>()) as u32,
                 lpData: encoded.as_mut_ptr().cast(),
             };
@@ -708,7 +708,9 @@ mod tests {
     #[test]
     fn url_queue_preserves_fifo_and_discards_expired_show() {
         let shared = Shared::new();
-        let first = ValidatedUrl::parse("https://example.com/one").unwrap();
+        let first = ValidatedUrl::parse("https://example.com/one")
+            .unwrap()
+            .with_forced_confirmation(true);
         let second = ValidatedUrl::parse("https://example.com/two").unwrap();
         shared.enqueue(Event::Show, Some(Instant::now() - Duration::from_millis(1)));
         assert!(shared.receive_url(first.clone()));

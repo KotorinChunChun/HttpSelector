@@ -8,6 +8,7 @@ pub const MAX_URL_BYTES: usize = 32 * 1024;
 pub struct ValidatedUrl {
     original: String,
     decoded_preview: String,
+    force_confirmation: bool,
 }
 
 impl ValidatedUrl {
@@ -47,11 +48,25 @@ impl ValidatedUrl {
         Ok(Self {
             original,
             decoded_preview,
+            force_confirmation: false,
         })
     }
 
     pub fn original(&self) -> &str {
         &self.original
+    }
+
+    pub fn with_forced_confirmation(mut self, enabled: bool) -> Self {
+        self.force_confirmation = enabled;
+        self
+    }
+
+    pub fn force_confirmation(&self) -> bool {
+        self.force_confirmation
+    }
+
+    pub(crate) fn copy_data_kind(&self) -> usize {
+        if self.force_confirmation { 3 } else { 1 }
     }
 
     pub fn decoded_preview(&self) -> &str {

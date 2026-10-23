@@ -1,5 +1,5 @@
 use crate::model::{BrowserType, DefaultRule, DetectedProfile, Profile};
-use anyhow::Context;
+use anyhow::{Context, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -454,6 +454,56 @@ impl Storage {
         self.replace_default_rules(&rules)
     }
 
+    /// Shiftで確認したスナップショットだけを更新し、別行への追加を行わない。
+    pub fn replace_association_target(
+        &self,
+        expected: &DefaultRule,
+        profile_id: i64,
+        suppress_prompt: bool,
+    ) -> anyhow::Result<()> {
+        let pattern =
+            if let Some(mut stored) = crate::association::StoredRule::decode(&expected.pattern)? {
+                stored.suppress_prompt = suppress_prompt;
+                stored.encode()?
+            } else {
+                ensure!(
+                    !suppress_prompt,
+                    "従来形式のルールでは登録先だけを変更できます"
+                );
+                expected.pattern.clone()
+            };
+        let affected = self.open()?.execute(
+            "UPDATE DefaultRules SET ProfileId=?1, Pattern=?2, UpdatedAt=?3
+             WHERE Id=?4 AND Pattern=?5 AND ProfileId IS ?6 AND Enabled=?7
+             AND SortOrder=?8 AND CreatedAt=?9 AND UpdatedAt=?10",
+            params![
+                if suppress_prompt {
+                    None
+                } else {
+                    Some(profile_id)
+                },
+                pattern,
+                unix_timestamp(),
+                expected.id,
+                expected.pattern,
+                if expected.profile_id == 0 {
+                    None
+                } else {
+                    Some(expected.profile_id)
+                },
+                expected.enabled,
+                expected.sort_order,
+                expected.created_at,
+                expected.updated_at
+            ],
+        )?;
+        ensure!(
+            affected == 1,
+            "置換対象のルールが変更または削除されています。開き直してください"
+        );
+        Ok(())
+    }
+
     pub fn association_prompt_suppressed(
         &self,
         url: &crate::url_input::ValidatedUrl,
@@ -861,6 +911,56 @@ mod tests {
         assert!(
             !String::from_utf8_lossy(&std::fs::read(storage.database_path()).unwrap())
                 .contains("secret")
+        );
+    }
+
+    #[test]
+    fn replacement_preserves_condition_identity_and_rejects_stale_snapshot() {
+        use crate::association::{StoredRule, UrlParts};
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage::new(temp.path().join("replace.db"));
+        storage.initialize().unwrap();
+        storage
+            .sync_detected(&["First", "Second"].map(|name| DetectedProfile {
+                browser_type: BrowserType::Edge,
+                profile_id: name.into(),
+                detected_name: name.into(),
+                icon_path: None,
+            }))
+            .unwrap();
+        let profiles = storage.load_all_profiles().unwrap();
+        let url = crate::url_input::ValidatedUrl::parse("https://example.com/a").unwrap();
+        let parts = UrlParts::new(&url);
+        let rule = StoredRule::new(parts.condition(&parts.defaults()).unwrap(), false);
+        storage.save_association(profiles[0].id, &rule).unwrap();
+        let before = storage.load_default_rules().unwrap()[0].clone();
+        storage
+            .replace_association_target(&before, profiles[1].id, false)
+            .unwrap();
+        let after = storage.load_default_rules().unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(
+            (after[0].id, after[0].sort_order, &after[0].pattern),
+            (before.id, before.sort_order, &before.pattern)
+        );
+        assert_eq!(after[0].profile_id, profiles[1].id);
+        assert!(
+            storage
+                .replace_association_target(&before, profiles[0].id, false)
+                .is_err()
+        );
+        storage
+            .replace_association_target(&after[0], profiles[1].id, true)
+            .unwrap();
+        let skipped = storage.load_default_rules().unwrap();
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].profile_id, 0);
+        storage
+            .replace_association_target(&skipped[0], profiles[0].id, false)
+            .unwrap();
+        assert_eq!(
+            storage.load_default_rules().unwrap()[0].pattern,
+            before.pattern
         );
     }
 

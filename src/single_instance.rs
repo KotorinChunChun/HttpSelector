@@ -35,7 +35,7 @@ pub(crate) unsafe fn received_url(lparam: isize) -> Option<ValidatedUrl> {
         return None;
     }
     let data = unsafe { &*(lparam as *const COPYDATASTRUCT) };
-    if data.dwData != 1
+    if !matches!(data.dwData, 1 | 3)
         || data.lpData.is_null()
         || data.cbData < 2
         || data.cbData % 2 != 0
@@ -46,7 +46,11 @@ pub(crate) unsafe fn received_url(lparam: isize) -> Option<ValidatedUrl> {
     let encoded =
         unsafe { std::slice::from_raw_parts(data.lpData as *const u16, data.cbData as usize / 2) };
     let encoded = encoded.strip_suffix(&[0])?;
-    ValidatedUrl::parse(String::from_utf16(encoded).ok()?).ok()
+    Some(
+        ValidatedUrl::parse(String::from_utf16(encoded).ok()?)
+            .ok()?
+            .with_forced_confirmation(data.dwData == 3),
+    )
 }
 
 impl Drop for SingleInstanceGuard {
@@ -140,7 +144,7 @@ fn forward_to_existing(url: Option<&ValidatedUrl>) -> anyhow::Result<()> {
     if let Some(url) = url {
         let mut encoded = wide(url.original());
         let copy_data = COPYDATASTRUCT {
-            dwData: 1,
+            dwData: url.copy_data_kind(),
             cbData: (encoded.len() * size_of::<u16>()) as u32,
             lpData: encoded.as_mut_ptr().cast(),
         };
@@ -232,6 +236,16 @@ mod tests {
         );
         data.dwData = 2;
         assert!(decode(&data).is_none());
+        data.dwData = 3;
+        let forced = decode(&data).unwrap();
+        assert!(forced.force_confirmation());
+        assert_eq!(forced.original(), "https://example.com/a?x=%20");
+        assert_eq!(forced.copy_data_kind(), 3);
+        assert!(
+            !ValidatedUrl::parse(forced.original())
+                .unwrap()
+                .force_confirmation()
+        );
         data.dwData = 1;
         data.cbData -= 1;
         assert!(decode(&data).is_none());
