@@ -37,6 +37,7 @@ const ID_FAVORITE_DOWN: i32 = 106;
 const ID_REFRESH: i32 = 107;
 const ID_FAVORITE_PIN: i32 = 108;
 const ID_INTERRUPTION: i32 = 109;
+const ID_RULE_LIST: i32 = 110;
 const ID_PROFILE_BASE: i32 = 1000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -47,6 +48,9 @@ pub enum SelectorResult {
         url: Option<ValidatedUrl>,
     },
     Settings {
+        url: Option<ValidatedUrl>,
+    },
+    RuleList {
         url: Option<ValidatedUrl>,
     },
     InterruptionChanged {
@@ -498,6 +502,14 @@ unsafe extern "system" fn window_proc(
                 unsafe {
                     DestroyWindow(window);
                 }
+            } else if id == ID_RULE_LIST && notification == BN_CLICKED as u16 {
+                common::release_topmost(window);
+                state.result = SelectorResult::RuleList {
+                    url: state.url.clone(),
+                };
+                unsafe {
+                    DestroyWindow(window);
+                }
             } else if id == ID_WINDOWS_SETTINGS && notification == BN_CLICKED as u16 {
                 open_windows_default_apps(window);
             } else if id == ID_INTERRUPTION && notification == BN_CLICKED as u16 {
@@ -728,6 +740,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
     let preview_label = common::label(window, "デコード表示（確認専用）", state.theme.bold);
     state.preview_edit = common::edit(window, 0, true, true, font);
     let settings = common::button(window, "設定", ID_SETTINGS, font);
+    let rule_list = common::button(window, "既定ルール一覧", ID_RULE_LIST, font);
     state.interruption = common::control(
         window,
         "BUTTON",
@@ -768,6 +781,7 @@ fn create_controls(window: HWND, state: &mut UiState) {
         settings,
         windows_settings,
         state.interruption,
+        rule_list,
     ];
     state.favorites_heading = common::label(window, "", state.theme.bold);
     state.normal_heading = common::label(window, "", state.theme.bold);
@@ -849,7 +863,13 @@ fn open_windows_default_apps(window: HWND) {
 fn layout_controls(window: HWND, state: &mut UiState) {
     let width = Page::width(window, state.theme.dpi).max(360);
     state.page.controls.clear();
-    let layout = SelectorLayout::new(width, &state.filtered_indices);
+    let windows_width = common::button_text_width(
+        window,
+        "既定のアプリ設定を開く",
+        state.theme.font,
+        state.theme.dpi,
+    );
+    let layout = SelectorLayout::with_windows_width(width, &state.filtered_indices, windows_width);
     for (control, rect) in state.fixed.iter().zip(&layout.fixed) {
         state.page.place(*control, *rect);
     }
@@ -944,7 +964,7 @@ fn refresh_tiles(window: HWND, state: &mut UiState) {
                 *button,
                 &format!(
                     "{} | {} | {}",
-                    profile.display_name(),
+                    tile_title(profile, slot == 0 && profile.favorite),
                     profile.browser_type.display_name(),
                     profile.comment
                 ),
@@ -996,6 +1016,14 @@ fn refresh_selection_visuals(state: &UiState) {
         for button in &state.profile_buttons {
             InvalidateRect(*button, null(), 1);
         }
+    }
+}
+
+fn tile_title(profile: &Profile, is_default: bool) -> String {
+    if is_default {
+        format!("既定 · {}", profile.display_name())
+    } else {
+        profile.display_name().to_owned()
     }
 }
 
@@ -1062,7 +1090,7 @@ fn draw_tile(state: &UiState, item: &DRAWITEMSTRUCT) {
         };
         common::draw_text(
             dc,
-            profile.display_name(),
+            &tile_title(profile, slot == 0 && profile.favorite),
             text_rect(12, 24),
             state.theme.bold,
             color,
@@ -1573,6 +1601,78 @@ mod tests {
         );
         unsafe { SendMessageW(window.0, WM_URL_RECEIVED, 0, 0) };
         assert_eq!(state.result, SelectorResult::UrlReceived(incoming));
+    }
+
+    #[test]
+    fn rule_list_opens_from_main_without_losing_the_pending_url() {
+        let url = ValidatedUrl::parse("https://example.com/keep?token=test").unwrap();
+        let mut state = Box::new(UiState::new(Some(url.clone()), vec![], 0, true, None, true));
+        let window =
+            common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
+        unsafe {
+            SendMessageW(window.0, WM_COMMAND, ID_RULE_LIST as usize, 0);
+        }
+        assert_eq!(state.result, SelectorResult::RuleList { url: Some(url) });
+    }
+
+    #[test]
+    fn first_available_favorite_is_labeled_as_default() {
+        let mut hidden = profile(1, true);
+        hidden.enabled = false;
+        let mut state = Box::new(UiState::new(
+            None,
+            vec![hidden, profile(2, true), profile(3, false)],
+            0,
+            true,
+            None,
+            true,
+        ));
+        let _window =
+            common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
+        assert_eq!(state.filtered_indices[0], Some(1));
+        assert!(common::window_text(state.profile_buttons[0]).starts_with("既定 · Profile 2"));
+        assert!(!common::window_text(state.profile_buttons[5]).contains("既定"));
+    }
+
+    #[test]
+    fn windows_settings_caption_fits_the_measured_button_at_each_dpi() {
+        for dpi in [96, 120, 144, 192] {
+            let mut state = Box::new(UiState::new(None, vec![], 0, true, None, true));
+            let window = common::HiddenTestWindow::new(
+                Some(window_proc),
+                (&mut *state as *mut UiState).cast(),
+            );
+            let theme = Theme::new(dpi);
+            let width =
+                common::button_text_width(window.0, "既定のアプリ設定を開く", theme.font, dpi);
+            let layout = SelectorLayout::with_windows_width(1120, &state.filtered_indices, width);
+            assert!(layout.fixed[8].width >= width);
+            assert!(layout.fixed[8].width < 210, "幅が縮小されていない: {width}");
+            let dc = unsafe { GetDC(window.0) };
+            let previous = unsafe { SelectObject(dc, theme.font) };
+            let mut text = wide("既定のアプリ設定を開く");
+            let mut rect = RECT {
+                left: 0,
+                top: 0,
+                right: common::scale(layout.fixed[8].width - 20, dpi),
+                bottom: 1000,
+            };
+            unsafe {
+                DrawTextW(
+                    dc,
+                    text.as_mut_ptr(),
+                    text.len() as i32 - 1,
+                    &mut rect,
+                    DT_CALCRECT | DT_WORDBREAK,
+                );
+                SelectObject(dc, previous);
+                ReleaseDC(window.0, dc);
+            }
+            assert!(
+                rect.bottom <= common::scale(26, dpi),
+                "dpi={dpi}で改行される"
+            );
+        }
     }
 
     #[test]

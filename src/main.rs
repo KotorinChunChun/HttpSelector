@@ -377,6 +377,27 @@ fn run_session(
                 selected_profile_id = current_selected_profile_id;
                 apply_detected_profiles(storage, integrity, &detected)?;
             }
+            SelectorResult::RuleList { url: current_url } => {
+                let _busy = management::busy_guard();
+                url = current_url;
+                let outcome = run_rules(
+                    storage.load_all_profiles()?,
+                    storage.load_default_rules()?,
+                    None,
+                )?;
+                if outcome.action == RulesAction::Saved {
+                    integrity.backup_current()?;
+                    storage.replace_default_rules(&outcome.rules)?;
+                    if let Err(error) = integrity.sign_current() {
+                        integrity.restore_backup()?;
+                        return Err(error);
+                    }
+                }
+                if let Some(pending) = outcome.pending_url {
+                    url = Some(pending);
+                    apply_default_rules = true;
+                }
+            }
             SelectorResult::Settings { url: current_url } => {
                 let _busy = management::busy_guard();
                 url = current_url;

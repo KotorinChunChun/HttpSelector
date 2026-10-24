@@ -140,12 +140,45 @@ pub struct SelectorLayout {
 
 impl SelectorLayout {
     pub fn new(width: i32, slots: &[Option<usize>]) -> Self {
+        Self::with_windows_width(width, slots, 180)
+    }
+
+    pub fn with_windows_width(
+        width: i32,
+        slots: &[Option<usize>],
+        windows_button_width: i32,
+    ) -> Self {
         let available = width - MARGIN * 2;
         let columns = ((available + GAP) / (196 + GAP)).clamp(1, 5) as usize;
         let tile_width = (available - GAP * (columns as i32 - 1)) / columns as i32;
         let favorites = slots[..5].iter().flatten().count();
         let normal = slots[5..].iter().flatten().count();
-        let favorites_heading = Bounds::new(MARGIN, 352, (available - 112).max(1), 24);
+        let settings_width = 72;
+        let rule_list_width = 126;
+        let windows_width = windows_button_width.max(160).min(available);
+        let actions_width = settings_width + 8 + rule_list_width + 8 + windows_width;
+        let header_actions = available >= actions_width + 8 + 132 + 178 + 174;
+        let windows_on_new_row = !header_actions && available < actions_width;
+        let settings_x = if header_actions {
+            width - MARGIN - 132 - 8 - actions_width
+        } else {
+            MARGIN
+        };
+        let action_y = if header_actions { 18 } else { 310 };
+        let rule_list_x = settings_x + settings_width + 8;
+        let windows_x = if windows_on_new_row {
+            MARGIN
+        } else {
+            rule_list_x + rule_list_width + 8
+        };
+        let windows_y = action_y + if windows_on_new_row { 44 } else { 0 };
+        let interruption = if header_actions {
+            Bounds::new(settings_x - 178, 18, 170, 32)
+        } else {
+            Bounds::new(MARGIN, 272, 210.min(available), 32)
+        };
+        let favorites_y = if windows_on_new_row { 396 } else { 352 };
+        let favorites_heading = Bounds::new(MARGIN, favorites_y, (available - 112).max(1), 24);
         let favorite_top = favorites_heading.bottom() + 12;
         let section_height = |count: usize| {
             if count == 0 {
@@ -180,22 +213,6 @@ impl SelectorLayout {
             actions_top + 32 + 12
         };
         let action_x = MARGIN + ((available - action_width).max(0) / 2);
-        let settings_width = 100.min((available - 8).max(1) / 2);
-        let windows_width = 210.min((available - settings_width - 8).max(1));
-        let header_actions =
-            available >= settings_width + windows_width + 16 + 132 + 14 + 160 + 178;
-        let settings_x = if header_actions {
-            width - MARGIN - 132 - 8 - windows_width - 8 - settings_width
-        } else {
-            MARGIN
-        };
-        let windows_x = settings_x + settings_width + 8;
-        let action_y = if header_actions { 18 } else { 310 };
-        let interruption = if header_actions {
-            Bounds::new(settings_x - 178, 18, 170, 32)
-        } else {
-            Bounds::new(MARGIN, 272, 210.min(available), 32)
-        };
         let mut tiles = vec![None; slots.len()];
         for (start, end, top) in [(0, 5, favorite_top), (5, slots.len(), normal_top)] {
             for (position, slot) in (start..end)
@@ -229,11 +246,12 @@ impl SelectorLayout {
                 Bounds::new(24, 190, available, 22),
                 Bounds::new(24, 216, available, 42),
                 Bounds::new(settings_x, action_y, settings_width, 32),
-                Bounds::new(windows_x, action_y, windows_width, 32),
+                Bounds::new(windows_x, windows_y, windows_width, 32),
                 interruption,
+                Bounds::new(rule_list_x, action_y, rule_list_width, 32),
             ],
             favorites_heading,
-            favorite_pin: Bounds::new(width - MARGIN - 100, 348, 100, 32),
+            favorite_pin: Bounds::new(width - MARGIN - 100, favorites_y - 4, 100, 32),
             refresh: Bounds::new(action_x, actions_top, refresh_width, 32),
             default_rule: Bounds::new(action_x + refresh_width + 8, actions_top, default_width, 32),
             favorite_up: Bounds::new(
@@ -401,12 +419,19 @@ mod tests {
         let windows = layout.fixed[8];
         assert_eq!(settings.y, close.y);
         assert_eq!(windows.y, close.y);
-        assert!(settings.x + settings.width <= windows.x);
+        let rules = layout.fixed[10];
+        assert_eq!(rules.x, settings.x + settings.width + 8);
+        assert_eq!(rules.y, settings.y);
+        assert!(rules.x + rules.width <= windows.x);
         assert!(windows.x + windows.width <= close.x);
 
         let compact = SelectorLayout::new(400, &vec![None; 25]);
         assert_eq!(compact.fixed[7].y, 310);
-        assert_eq!(compact.fixed[8].y, 310);
+        assert_eq!(compact.fixed[8].y, 354);
+        assert_eq!(
+            compact.fixed[10].x,
+            compact.fixed[7].x + compact.fixed[7].width + 8
+        );
         for width in [360, 400, 540, 600, 640, 700, 710, 800, 1120] {
             let layout = SelectorLayout::new(width, &vec![None; 25]);
             assert!(layout.fixed[0].width >= 160, "幅{width}でタイトルが隠れる");

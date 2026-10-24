@@ -110,6 +110,25 @@ pub fn scale(value: i32, dpi: u32) -> i32 {
     ((value as i64 * dpi as i64 + 48) / 96) as i32
 }
 
+pub fn button_text_width(window: HWND, text: &str, font: HFONT, dpi: u32) -> i32 {
+    let text = wide(text);
+    unsafe {
+        let dc = GetDC(window);
+        if dc.is_null() {
+            return 180;
+        }
+        let previous = SelectObject(dc, font);
+        let mut size = std::mem::zeroed();
+        let measured = GetTextExtentPoint32W(dc, text.as_ptr(), text.len() as i32 - 1, &mut size);
+        SelectObject(dc, previous);
+        ReleaseDC(window, dc);
+        if measured == 0 {
+            return 180;
+        }
+        ((size.cx * 96 + dpi as i32 - 1) / dpi as i32) + 24
+    }
+}
+
 pub fn initial_bounds(width: i32, height: i32, style: u32, ex_style: u32) -> Bounds {
     unsafe {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
