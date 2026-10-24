@@ -1,6 +1,6 @@
 # GitHub・公開サイトでの配布と更新
 
-更新日: 2026-10-24。署名付きBeta MSIX **v0.0.3.7**を[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/tag/v0.0.3.7)と[公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)へ公開しました。表示・MSIX・App Installerの数値はすべて0.0.3.7です。通常利用には署名付きMSIXが必須です。
+更新日: 2026-10-24。署名付きBeta MSIX **v0.0.3.8**を[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/tag/v0.0.3.8)と[公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)で配布します。表示・MSIX・App Installerの数値はすべて0.0.3.8です。通常利用には署名付きMSIXが必須です。
 
 ## 配布先の役割
 
