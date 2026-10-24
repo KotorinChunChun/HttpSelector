@@ -212,6 +212,23 @@ impl Storage {
         escape_hold_duration_tenths: u32,
         open_profile_on_double_click: bool,
     ) -> anyhow::Result<()> {
+        self.save_preferences_with_quad9(
+            profiles,
+            record_url_history,
+            escape_hold_duration_tenths,
+            open_profile_on_double_click,
+            self.quad9_enabled()?,
+        )
+    }
+
+    pub fn save_preferences_with_quad9(
+        &self,
+        profiles: &[Profile],
+        record_url_history: bool,
+        escape_hold_duration_tenths: u32,
+        open_profile_on_double_click: bool,
+        quad9_enabled: bool,
+    ) -> anyhow::Result<()> {
         anyhow::ensure!(
             profiles.iter().filter(|profile| profile.favorite).count() <= 5,
             "お気に入りに登録できるプロファイルは5件までです"
@@ -227,6 +244,7 @@ impl Storage {
             Self::write_profile(&transaction, profile)?;
         }
         for (key, value) in [
+            ("quad9_enabled", u32::from(quad9_enabled)),
             (SETTING_RECORD_URL_HISTORY, u32::from(record_url_history)),
             (
                 SETTING_ESCAPE_HOLD_DURATION_TENTHS,
@@ -279,6 +297,11 @@ impl Storage {
             .transpose()?
             .unwrap_or_default();
         crate::risk::normalize_approved_domains(&domains)
+    }
+
+    /// 設定のない既存DBも、明示した1以外は外部照会しない。
+    pub fn quad9_enabled(&self) -> anyhow::Result<bool> {
+        Ok(self.get_setting("quad9_enabled")?.as_deref() == Some("1"))
     }
 
     pub fn set_approved_domains(&self, domains: &[String]) -> anyhow::Result<()> {
@@ -984,6 +1007,38 @@ mod tests {
                 .replace_association_target(&updated, profiles[0].id, true)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn quad9_is_off_until_explicitly_saved_and_keeps_transaction_boundaries() {
+        let temp = tempfile::tempdir().unwrap();
+        let storage = Storage::new(temp.path().join("quad9.db"));
+        storage.initialize().unwrap();
+        assert!(!storage.quad9_enabled().unwrap());
+        for value in ["true", "yes", "garbage", "0"] {
+            storage.set_setting("quad9_enabled", value).unwrap();
+            assert!(!storage.quad9_enabled().unwrap());
+        }
+        storage
+            .save_preferences_with_quad9(&[], false, 10, true, true)
+            .unwrap();
+        assert!(
+            Storage::new(storage.database_path())
+                .quad9_enabled()
+                .unwrap()
+        );
+        assert!(
+            storage
+                .save_preferences_with_quad9(&[], false, 0, true, false)
+                .is_err()
+        );
+        assert!(storage.quad9_enabled().unwrap());
+        storage.save_preferences(&[], false, 10, true).unwrap();
+        assert!(storage.quad9_enabled().unwrap());
+        storage
+            .save_preferences_with_quad9(&[], false, 10, true, false)
+            .unwrap();
+        assert!(!storage.quad9_enabled().unwrap());
     }
 
     #[test]

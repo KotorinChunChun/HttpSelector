@@ -20,7 +20,15 @@ pub fn inspect(url: &ValidatedUrl) -> RiskReport {
 }
 
 pub fn inspect_approved(url: &ValidatedUrl, approved: &[String]) -> RiskReport {
-    inspect_with_approved(url, approved, &mut quad9::lookup)
+    inspect_approved_with_quad9(url, approved, false)
+}
+
+pub fn inspect_approved_with_quad9(
+    url: &ValidatedUrl,
+    approved: &[String],
+    enabled: bool,
+) -> RiskReport {
+    inspect_with_policy(url, approved, enabled, &mut quad9::lookup)
 }
 
 pub fn inspect_with(
@@ -33,6 +41,7 @@ pub fn inspect_with(
 fn single(
     url: &ValidatedUrl,
     approved: &[String],
+    external_enabled: bool,
     lookup: &mut impl FnMut(&str) -> quad9::Reputation,
 ) -> RiskReport {
     let local = risk_local::assess(url);
@@ -47,7 +56,7 @@ fn single(
     } else {
         vec![]
     };
-    if let Some(domain) = local.external_domain {
+    if external_enabled && let Some(domain) = local.external_domain {
         match lookup(&domain) {
             quad9::Reputation::Clear => {}
             quad9::Reputation::Blocked => {
@@ -71,7 +80,16 @@ pub fn inspect_with_approved(
     approved: &[String],
     lookup: &mut impl FnMut(&str) -> quad9::Reputation,
 ) -> RiskReport {
-    let mut report = single(url, approved, lookup);
+    inspect_with_policy(url, approved, true, lookup)
+}
+
+pub fn inspect_with_policy(
+    url: &ValidatedUrl,
+    approved: &[String],
+    external_enabled: bool,
+    lookup: &mut impl FnMut(&str) -> quad9::Reputation,
+) -> RiskReport {
+    let mut report = single(url, approved, external_enabled, lookup);
     if crate::nested_url::is_teams_link(url) && !crate::nested_url::is_teams_wrapper(url) {
         report
             .reasons
@@ -87,7 +105,7 @@ pub fn inspect_with_approved(
             break;
         }
         if let Some(target) = crate::nested_url::teams_target(&current) {
-            let inner = single(&target, approved, lookup);
+            let inner = single(&target, approved, external_enabled, lookup);
             report.reasons.extend(
                 inner
                     .reasons
@@ -147,6 +165,33 @@ pub fn guarded<T>(
 mod tests {
     use super::*;
     use std::cell::Cell;
+
+    #[test]
+    fn external_lookup_requires_opt_in_for_outer_and_inner_urls() {
+        let safe = ValidatedUrl::parse("https://example.com/a?secret=private").unwrap();
+        let mut wrapper = url::Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
+        wrapper
+            .query_pairs_mut()
+            .append_pair("url", "https://microsfot.com/a?token=private");
+        let wrapped = ValidatedUrl::parse(wrapper.to_string()).unwrap();
+        let mut lookup = |_: &str| -> quad9::Reputation {
+            panic!("OFF時は通信関数を呼んではいけません")
+        };
+        assert!(!inspect_with_policy(&safe, &[], false, &mut lookup).requires_confirmation());
+        assert!(inspect_with_policy(&wrapped, &[], false, &mut lookup).requires_confirmation());
+        assert!(!inspect(&safe).requires_confirmation());
+        let mut hosts = vec![];
+        let report = inspect_with_policy(&wrapped, &[], true, &mut |host| {
+            hosts.push(host.to_owned());
+            quad9::Reputation::Unavailable("offline".into())
+        });
+        assert_eq!(
+            hosts,
+            ["teams.public.onecdn.static.microsoft", "microsfot.com"]
+        );
+        assert!(report.reasons.iter().any(|reason| reason.contains("Quad9")));
+        assert!(!hosts.iter().any(|host| host.contains("private")));
+    }
 
     #[test]
     fn approval_is_exact_and_only_suppresses_name_findings() {
