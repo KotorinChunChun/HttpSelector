@@ -1,0 +1,60 @@
+生成日: 2026-10-24
+生成方式: 組み込み image_gen（新規生成、透過なし）
+画像: httpselector-overview-16x9-20261024-v2.png
+実寸: 1672 x 941 px（16:9構図。厳密な16:9比に対して高さ約0.5pxの丸め差）
+元画像は保持し、旧図版も上書きしていない。
+
+最終プロンプト:
+Use case: infographic-diagram.
+Create a NEW finished Japanese infographic for the Windows application HttpSelector, in a landscape 16:9 composition, ideally 1920 x 1080 pixels. Opaque light background. This is a product-purpose overview at the TOP of a GitHub README, not a development report, not an advertisement and not an exact UI screenshot. Use clear accurate Japanese typography, highly legible with few words, generous whitespace and orderly thin-line illustrations. Visual treatment should be clean white/pale blue with dark navy text and blue routing arrows, reflecting a Windows desktop utility. Reserve amber for a conspicuous usability warning. No invented logo, no mascot, no photographs. DO NOT mention Teams anywhere. No version numbers, changelog, test counts or release history.
+
+Core message: External links from chat, email and other apps need to be opened in the intended browser PROFILE on the FIRST attempt, particularly one-use OAuth authentication links. The problem is needing to reopen the browser profile, not switching accounts after login. Wrong profile login can lead to unintended sharing and unsuitable request submissions. It is a profile router first; security warnings are supplementary.
+
+Composition:
+Top: large product title "HttpSelector" and clear descriptive line "外部リンクを、意図したプロファイルで開く".
+Below it: one dominant left-to-right routing illustration.
+Input group has three simple labeled icons: "チャット", "メール", "その他のアプリ".
+Their links enter a clear box "HttpSelector", with small annotation "URLルールで自動振り分け／手動で選択".
+Three outgoing arrows lead to distinct browser PROFILE cards: "仕事用", "個人用", "別組織用".
+Near the source flow, a concise contextual line: "最後に使ったプロファイル任せにしない".
+Label the browser environment in a small line: "Windows 10 / 11・Edge / Chrome / Firefox".
+
+Middle/lower: three balanced explanation cards, exact text below.
+CARD 1 — One-time key/link icon
+Heading "ワンタイムURLを最初から正しく"
+Body line 1 "OAuth認証など、使い直せないリンクに"
+Body line 2 "狙ったプロファイルで開く"
+Do not imply every OAuth URL is single-use or that the app issues OAuth links.
+
+CARD 2 — profile choice / wrong-target icon
+Heading "誤ったプロファイルでの操作を防ぐ"
+Three short lines:
+"意図しないログイン"
+"意図しない情報共有・リクエスト送信"
+"プロファイルを開き直す手間"
+
+CARD 3 — minimal data chips and OFF switch icon
+Heading "保存・外部送信は最小限"
+Three readable lines:
+"パラメーターには機密情報の可能性"
+"振り分け条件は必要な部分だけ保存"
+"Quad9照会は既定OFF"
+Smaller explanatory line:
+"希望してONにした場合だけドメイン送信"
+Tiny supporting note:
+"端末内のリスク検査は継続"
+
+Conspicuous full-width AMBER notice, not tiny:
+"導入直後は確認が多く、約2クリック増えます"
+Small line under it:
+"ルール登録で確認を減らせます。操作設定により回数は変わります。"
+
+Bottom strip:
+"署名付きMSIXで配布"
+"正式版はMicrosoft Store掲載予定"
+Short explanatory line:
+"HTTP/HTTPSリンクの受付に介在するため、発行元と改ざんの確認を重視"
+Small app behavior footnote:
+"元のURLは変更せずブラウザーへ渡します"
+
+Factual constraints: The app is not an authentication provider and not an absolute safety guarantee. Do not claim all protocols legally require signing; describe signed MSIX as this app's distribution/security policy. Store listing is planned, not currently available. Quad9 is opt-in and default OFF; no domain submission before consent. Do not imply the settings DB is encrypted, or that no selected data can ever contain sensitive information. No real organization names, domains, tokens or private data. Maintain precise Japanese spelling, balanced hierarchy, all text in safe margins. Deliver an attractive infographic explaining PURPOSE, not a feature catalog dominated by security warnings.

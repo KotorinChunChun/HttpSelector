@@ -1,6 +1,6 @@
 # HttpSelector 開発ガイド
 
-更新日: 2026-10-23。公開Beta版v0.0.3.6。正本の配置は `C:\develop\KotorinToys\tools\HttpSelector` で、独立Gitリポジトリを維持します。管理連携の契約と運用は[KotorinToys連携](kotorintoys-integration.md)を参照してください。
+更新日: 2026-10-24。開発ソース・MSIX 0.0.3.7。正本の配置は `C:\develop\KotorinToys\tools\HttpSelector` で、独立Gitリポジトリを維持します。管理連携の契約と運用は[KotorinToys連携](kotorintoys-integration.md)を参照してください。
 
 ## 必要環境
 
@@ -26,7 +26,7 @@ cargo build --release
 pwsh -NoProfile -File .\dev\scripts\run-test.ps1 -Url "https://example.com/path?a=b%20c"
 ```
 
-`run-test.ps1` はルートを解決して `cargo run` を実行するデバッグ起動用の入口です。通常起動では実際の設定を使用し、プロファイル選択後にはQuad9へ照会してから実ブラウザを開きます。URLを指定しない単体起動は `cargo run` です。
+`run-test.ps1` はルートを解決して `cargo run` を実行するデバッグ起動用の入口です。通常起動では実際の設定を使用し、プロファイル選択後には端末内検査を行い、設定で明示ONにして保存している場合だけQuad9へ照会してから実ブラウザを開きます。URLを指定しない単体起動は `cargo run` です。
 
 正式な利用・管理は[署名付きMSIXの導入](INSTALL_MSIX.md)が必須です。次の開発ビルドは隔離連携試験だけに使用し、通常のKotorinToysはこのEXEへ自動フォールバックしません。通常の `target/debug` や `target/release` と出力を分離します。
 
@@ -101,9 +101,11 @@ URLの検査・警告中も独立した受付窓口で後続URLを保持し、�
 
 元authorityのホストだけを調べ、パス・クエリ内のサービス名や全角文字は類似ドメイン判定に使いません。Unicode正規化、Punycode復元、UTS39のskeletonを組み合わせます。Google・Microsoft・Apple・Amazon・PayPal・LINE・Yahoo! JAPAN・楽天を対象とし、公式ドメインはラベル境界で照合します。確認済み公式ドメイン表は網羅的ではありません。LINEの短語や一部一般語は誤検知を抑える条件を設けています。
 
-Quad9の照会先は `https://dns.quad9.net/dns-query` 固定です。WindowsのWinHTTPを使い、HTTP/2使用・TLS検証・応答サイズ・DNS質問との一致を確認し、HTTPリダイレクトを禁止します。DNS本文にはサブドメインを含むASCIIホストのA照会だけを含め、ECSは付けません。パス・クエリ・フラグメント・認証情報・元URLは渡しません。IPリテラル、ローカル・予約名、PSL未知suffixなどは照会前に除外します。組織内でのみ使う公開形式のドメインをすべて識別することはできません。
+Settings.quad9_enabledは文字列1だけをONとして解釈し、欠落・0・不正値はOFFです。main::open_profileがURLごとに読み、risk::inspect_approved_with_quad9で通常URLと内側URLへ同じ方針を適用します。OFFではquad9::lookupを呼ばず、未実施を照会失敗やブロックなしとして扱いません。既定のinspect/inspect_approvedも端末内検査だけです。設定はsave_preferences_with_quad9で他の一般設定・プロファイルと同じトランザクションに保存します。既存のsave_preferencesは現在の同意状態を保持します。schema 5を維持します。
 
-外部照会の結果待ちを約5秒で打ち切り、通信失敗・DNSエラー・不正応答は確認不能の警告にします。Quad9のブロック応答と通常の不存在応答は区別し、「ブロックなし」を安全保証として扱いません。WindowsのDNS設定変更、短縮URL展開、対象ページ取得、リダイレクト追跡、URLを識別する永続検査ログは追加しません。検査前に実行する通常の初期化と、利用者が有効にする既存のURLパターン履歴は別です。
+有効時のQuad9の照会先は `https://dns.quad9.net/dns-query` 固定です。WindowsのWinHTTPを使い、HTTP/2使用・TLS検証・応答サイズ・DNS質問との一致を確認し、HTTPリダイレクトを禁止します。DNS本文にはサブドメインを含むASCIIホストのA照会だけを含め、ECSは付けません。パス・クエリ・フラグメント・認証情報・元URLは渡しません。IPリテラル、ローカル・予約名、PSL未知suffixなどは照会前に除外します。組織内でのみ使う公開形式のドメインをすべて識別することはできません。
+
+利用者が有効にした外部照会の結果待ちを約5秒で打ち切り、通信失敗・DNSエラー・不正応答は確認不能の警告にします。Quad9のブロック応答と通常の不存在応答は区別し、「ブロックなし」を安全保証として扱いません。WindowsのDNS設定変更、短縮URL展開、対象ページ取得、リダイレクト追跡、URLを識別する永続検査ログは追加しません。検査前に実行する通常の初期化と、利用者が有効にする既存のURLパターン履歴は別です。
 
 ローカル判定、外部結果の集約、DNSの正常・不正応答、キャンセル時の副作用抑止はオフライン単体テストで確認できます。実Quad9への照会テストは通常テストから除外されており、必要な場合だけ明示実行します。GUI・実ブラウザ・導入確認の結果は版別報告で区別してください。
 
@@ -141,7 +143,7 @@ Shift指定はrun開始時にGetAsyncKeyState(VK_SHIFT)の上位ビットで採�
 
 Beta配布は[GitHub Releases](https://github.com/KotorinChunChun/HttpSelector/releases/latest)と既存公開サイトの二拠点です。手順は[二拠点配布](GITHUB_RELEASE.md)を正本とします。distribution.mode=dualでWeb向けStage/Publish/Verify/Fullを使用します。App Installerの参照先は公開サイトです。
 
-開発ソースの表示版・MSIX生成設定は `0.0.3.6`、Cargo版は `0.0.3+6` です。署名付きBeta MSIX 0.0.3.6を生成・公開済みです。実機への導入・更新操作は未実施です。KotorinToys向けの `distributionStatus: unpublished` は本体対応インストーラーの台帳とは未連携であることを示し、Beta MSIXの公開状況とは別です。
+開発ソースの表示版・MSIX生成設定は `0.0.3.7`、Cargo版は `0.0.3+7` です。Quad9の既定OFF・任意送信設定を含みます。署名付きBeta MSIXは0.0.3.7です。実機への導入・更新操作は未実施です。KotorinToys向けの `distributionStatus: unpublished` は本体対応インストーラーの台帳とは未連携であることを示し、Beta MSIXの公開状況とは別です。
 
 [Microsoft Store公開準備](MICROSOFT_STORE.md)に、Plan/Build/Verifyのコマンド、自己署名証明書の再利用、正式Identityへの切り替え、ローカル導入と残課題を記載しています。StoreチャネルはStoreの更新管理を使い、BetaチャネルのApp Installerとは分けます。独自アップデーターは実装しません。
 

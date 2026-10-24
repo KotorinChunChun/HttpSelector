@@ -19,17 +19,17 @@
         <div class="hero-copy">
 
           <h1 id="hero-title">HttpSelector</h1>
-          <p class="lead">HTTP/HTTPSリンクを開くブラウザーとプロファイルを選択・連携できます。現在は <strong>v0.0.3.6-beta（表示・MSIXともに0.0.3.6）</strong> を公開しています。</p>
+          <p class="lead">チャット、メール、その他のアプリから開くリンクを、意図したブラウザー・プロファイルへ渡します。現在は <strong>v0.0.3.7-beta（表示・MSIXともに0.0.3.7）</strong> を公開しています。</p>
           <div class="actions"><a class="button primary" href="./beta/HttpSelector.appinstaller" download>インストール・更新</a><a class="button secondary" href="./httpselector-certificate/index.html">証明書の導入手順</a></div>
           <p class="microcopy">関連付け登録のため、署名付きMSIXからのインストールが必須です。初回は公開証明書の発行元と拇印を確認して登録してください。</p>
         </div>
-        <aside class="release-card" aria-label="リリース情報"><div class="release-mark">β</div><dl><div><dt>表示バージョン</dt><dd>v0.0.3.6</dd></div><div><dt>MSIXバージョン</dt><dd>0.0.3.6</dd></div><div><dt>アーキテクチャ</dt><dd>x64</dd></div><div><dt>公開日</dt><dd>2026-10-23</dd></div></dl></aside>
+        <aside class="release-card" aria-label="リリース情報"><div class="release-mark">β</div><dl><div><dt>表示バージョン</dt><dd>v0.0.3.7</dd></div><div><dt>MSIXバージョン</dt><dd>0.0.3.7</dd></div><div><dt>アーキテクチャ</dt><dd>x64</dd></div><div><dt>公開日</dt><dd>2026-10-24</dd></div></dl></aside>
       </section>
       <section class="channel-options" aria-labelledby="channels-title">
         <div class="section-heading"><h2 id="channels-title">配布版</h2><p>App Installerで導入すると、ベータチャネルの更新を起動時に確認します。</p></div>
         <div class="channel-grid">
           <article class="channel-card unavailable"><p class="channel-label">STABLE</p><h3>正式版</h3><p>正式版は準備中です。</p><span class="button disabled" aria-disabled="true">正式版 — 準備中</span></article>
-          <article class="channel-card featured"><p class="channel-label">BETA</p><h3>ベータ版 MSIX 0.0.3.6</h3><p>Shiftを押しながらリンクを開くと登録済みでもプロファイル選択と確認を表示し、既存の条件を維持して登録先を置き換えられます。複数ルールが一致する場合は誤置換防止のため保存を拒否します。URLのドメイン・パス・クエリを個別に選んで自動起動や質問省略を保存できます。「保存」は設定だけを保存し、URLの起動は「開く」で行います。Teams Safe Linksのurl内でONにしたドメイン・パス・クエリだけを条件にできます。TeamsCIDは必須ではなく、安定したパスだけでも登録できます。条件未一致や複数プロファイルの競合時は手動選択に戻ります。Microsoft CDNの誤警告を修正し、明示承認したホストの名称警告だけを抑制できます。元のSafe Linksは維持します。</p><a class="button primary" href="./beta/HttpSelector.appinstaller" download>ベータ版をダウンロード</a></article>
+          <article class="channel-card featured"><p class="channel-label">BETA</p><h3>ベータ版 MSIX 0.0.3.7</h3><p>OAuth認証などのワンタイムURLを、最初から狙ったプロファイルで開くためのツールです。URLのドメイン・パス・クエリや、パラメーター内のURLを個別に選び、自動振り分けの条件を登録できます。「保存」は設定だけを保存し、URLの起動は「開く」で行います。Shiftを押しながらリンクを開くと登録先を選び直せます。Quad9照会は既定OFFで、希望してONにして保存した場合だけドメインを送信します。<strong>導入直後は確認が多く、約2クリック増えます。</strong> 操作設定により回数は変わり、ルール登録で確認を減らせます。</p><a class="button primary" href="./beta/HttpSelector.appinstaller" download>ベータ版をダウンロード</a></article>
         </div>
       </section>
 
@@ -46,14 +46,14 @@
         <div class="section-heading"><h2 id="files-title">ベータ版の個別ダウンロード</h2><p>通常はApp Installerを利用してください。手動で確認する場合は各ファイルを直接取得できます。</p></div>
         <div class="file-list">
           <a href="./beta/HttpSelector.appinstaller" download><span><strong>App Installer</strong><small>初回導入とbeta自動更新</small></span><code>.appinstaller</code></a>
-          <a href="./beta/HttpSelector_0.0.3.6_x64_dev.msix" download><span><strong>MSIX package</strong><small>HttpSelector MSIX 0.0.3.6 本体</small></span><code>.msix</code></a>
+          <a href="./beta/HttpSelector_0.0.3.7_x64_dev.msix" download><span><strong>MSIX package</strong><small>HttpSelector MSIX 0.0.3.7 本体</small></span><code>.msix</code></a>
           <a href="./beta/HttpSelector.Development.cer" download><span><strong>Signing certificate</strong><small>自己署名証明書の公開鍵</small></span><code>.cer</code></a>
         </div>
       </section>
-      <section class="notice warning"><div><h2>URLの検査と保存について</h2><p>TeamsCIDは任意です。通常はOFFにして安定したドメインやパスを選びます。パスだけなら他ホストの同じ位置のパスにも一致するため、必要ならドメインもONにしてください。同じURL条件を共有するTeamsアカウントの識別はできません。既存のCID固定ルールは自動変更しません。ONにした入れ子の条件も設定に保存されます。承認後もUnicode・外部脅威等の警告は維持します。</p><p>開く前に端末内で類似ドメイン等を検査し、Quad9へサブドメインを含むホスト名だけをDNS over HTTPSで照会します。元URL・パス・クエリは送りません。危険性の疑いや照会失敗がある場合は確認し、キャンセルできます。警告がないことは安全を保証しません。</p><p>URL履歴の自動記録は既定でOFFです。連携設定は履歴と別に、ONにしたドメイン・パス・クエリの名前と値を端末内へ保存します。tenantId等を選ぶとその組織識別情報も保存されます。DBの内容自体は暗号化していません。</p></div></section>
-      <section class="notice warning"><div><h2>更新時の注意</h2><p>同じベータチャネルの0.0.3.5以前から更新できます。実際のShiftクリックとMSIX更新操作は未検証です。旧プロセスは新しいShift指定を受け付けないため、作業終了後に正常終了してから更新してください。schema 5は0.0.3.4と共通です。旧形式からの移行後DBは0.0.3.3以前では開けません。</p><p>旧番号系列の1.x版、または誤って公開したMSIX 0.0.4.0からは番号が下がるため自動更新できません。必要な設定を退避してから旧版をアンインストールし、新規導入してください。</p></div></section>
+      <section class="notice warning"><div><h2>URLの検査と保存について</h2><p>パラメーターには機密情報が含まれる可能性があります。条件は必要な部分だけを選んで保存してください。URL履歴の自動記録は既定OFFです。連携設定は履歴と別に、ONにしたドメイン・パス・クエリの名前と値を端末内へ保存します。DBの内容自体は暗号化していません。</p><p>端末内では類似ドメイン等を検査します。Quad9への照会は既定OFFで、設定でONにして保存した場合だけサブドメインを含むホスト名をDNS over HTTPSで送信します。元URL・パス・クエリは送りませんが、送信先には接続元IP等が伝わります。OFFでも端末内検査は継続します。危険性の疑いや、有効にした照会を確認できない場合は警告します。警告がないことは安全保証ではありません。</p><p>HTTP/HTTPSリンクの受付に介在するため、発行元と改ざんの有無を確認できる署名付きMSIXで配布します。正式版はMicrosoft Store掲載予定です。<a href="https://github.com/KotorinChunChun/HttpSelector#readme">概要図と仕様を見る</a></p></div></section>
+      <section class="notice warning"><div><h2>更新時の注意</h2><p>同じベータチャネルの0.0.3.6以前から更新できます。実際のShiftクリックとMSIX更新操作は未検証です。旧プロセスは新しいShift指定を受け付けないため、作業終了後に正常終了してから更新してください。schema 5は0.0.3.4と共通です。旧形式からの移行後DBは0.0.3.3以前では開けません。</p><p>旧番号系列の1.x版、または誤って公開したMSIX 0.0.4.0からは番号が下がるため自動更新できません。必要な設定を退避してから旧版をアンインストールし、新規導入してください。</p></div></section>
       <section class="requirements"><h2>動作要件</h2><ul><li>Windows 10 version 1809以降、またはWindows 11</li><li>x64プロセッサ</li><li>Microsoft App Installer</li><li>Microsoft Edge、Google Chrome、Mozilla Firefoxのいずれか</li></ul></section>
     </main>
-    <footer><p>HttpSelector beta distribution · Publisher: KotorinChunChun</p><p><a href="./index.html">アプリ一覧</a> · <a href="https://github.com/KotorinChunChun/HttpSelector/releases/tag/v0.0.3.6">GitHub Release v0.0.3.6</a></p></footer>
+    <footer><p>HttpSelector beta distribution · Publisher: KotorinChunChun</p><p><a href="./index.html">アプリ一覧</a> · <a href="https://github.com/KotorinChunChun/HttpSelector/releases/tag/v0.0.3.7">GitHub Release v0.0.3.7</a></p></footer>
   </body>
 </html>
