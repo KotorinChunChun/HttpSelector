@@ -87,3 +87,14 @@ cargo test --locked --all-targets -- --list
 ```
 
 業務フローの新ケースは `src/session/scenarios.rs` へ追加し、必要なら `tests/case-map.json` の接頭辞を更新します。試験用ホストの選択・確認キューは予定外の画面要求をエラーにし、未消化の操作も失敗とするため、期待した分岐が実行されず合格することを防ぎます。Win32の詳細なコントロール試験は各画面モジュールのtestsへ追加します。
+
+CLI入口の内部構成は次のとおりです。
+
+| ファイル | 責務 |
+| :--- | :--- |
+| dev/scripts/test-all.ps1 | ランタイム検出と引数・終了コードの受け渡し |
+| dev/scripts/test-all.py | TestCommandによる試験計画、TestRunによる工程実行・状態管理 |
+| dev/scripts/cli_test_report.py | ケース解析・対応表照合・成否判定・JSON/JUnit保存 |
+| dev/scripts/test-all-unit.py | 計画・オプション・欠落/重複・スキップ・失敗・結果形式の検証 |
+
+任意試験の期待件数は固定せず、Rustの試験一覧から対象を取得します。ケース追加時に件数の定数を更新する必要はありません。同名ケースの件数も照合し、ケースの重複や欠落を見逃さないようにしています。
