@@ -33,6 +33,7 @@ const ID_ESCAPE_HOLD_DURATION: i32 = 111;
 const ID_OPEN_PROFILE_ON_DOUBLE_CLICK: i32 = 112;
 const ID_RULE_LIST: i32 = 113;
 const ID_CLEAR_APPROVALS: i32 = 114;
+const ID_QUAD9: i32 = 115;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SettingsAction {
@@ -50,6 +51,7 @@ pub struct SettingsOutcome {
     pub record_url_history: bool,
     pub escape_hold_duration_tenths: u32,
     pub open_profile_on_double_click: bool,
+    pub quad9_enabled: bool,
 }
 
 struct SettingsState {
@@ -71,6 +73,8 @@ struct SettingsState {
     open_profile_on_double_click: HWND,
     rule_list: HWND,
     clear_approvals: HWND,
+    quad9: HWND,
+    quad9_enabled: bool,
     record_url_history_enabled: bool,
     escape_hold_duration_tenths: u32,
     open_profile_on_double_click_enabled: bool,
@@ -110,6 +114,8 @@ impl SettingsState {
             open_profile_on_double_click: null_mut(),
             rule_list: null_mut(),
             clear_approvals: null_mut(),
+            quad9: null_mut(),
+            quad9_enabled: false,
             record_url_history_enabled,
             escape_hold_duration_tenths,
             open_profile_on_double_click_enabled,
@@ -126,17 +132,35 @@ pub fn run_settings(
     escape_hold_duration_tenths: u32,
     open_profile_on_double_click_enabled: bool,
 ) -> anyhow::Result<SettingsOutcome> {
+    run_settings_with_quad9(
+        profiles,
+        record_url_history_enabled,
+        escape_hold_duration_tenths,
+        open_profile_on_double_click_enabled,
+        false,
+    )
+}
+
+pub fn run_settings_with_quad9(
+    profiles: Vec<Profile>,
+    record_url_history_enabled: bool,
+    escape_hold_duration_tenths: u32,
+    open_profile_on_double_click_enabled: bool,
+    quad9_enabled: bool,
+) -> anyhow::Result<SettingsOutcome> {
     let style =
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN | WS_VSCROLL;
     let ex_style = WS_EX_CONTROLPARENT;
     let bounds = common::initial_bounds(940, 800, style, ex_style);
     register_window_class()?;
-    let pointer = Box::into_raw(Box::new(SettingsState::new(
+    let mut state = Box::new(SettingsState::new(
         profiles,
         record_url_history_enabled,
         escape_hold_duration_tenths,
         open_profile_on_double_click_enabled,
-    )));
+    ));
+    state.quad9_enabled = quad9_enabled;
+    let pointer = Box::into_raw(state);
     let window = unsafe {
         CreateWindowExW(
             ex_style,
@@ -212,6 +236,7 @@ pub fn run_settings(
         record_url_history: state.record_url_history_enabled,
         escape_hold_duration_tenths: state.escape_hold_duration_tenths,
         open_profile_on_double_click: state.open_profile_on_double_click_enabled,
+        quad9_enabled: state.quad9_enabled,
     })
 }
 
@@ -512,6 +537,20 @@ fn create_controls(window: HWND, state: &mut SettingsState) {
         "再検出する場合も、編集中の内容を先に保存します。",
         font,
     );
+    state.quad9 = common::control(
+        window,
+        "BUTTON",
+        "Quad9へドメインを照会する（既定OFF）",
+        ID_QUAD9,
+        WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+        font,
+    );
+    set_check(state.quad9, state.quad9_enabled);
+    let quad9_help = common::label(
+        window,
+        "ONで保存した場合だけ、ドメイン名を外部へ送信します。URLのパスやパラメーターは送りません。接続元IPは送信先に伝わります。端末内の検査はOFFでも行います。",
+        font,
+    );
     state.rule_list = common::button(window, "既定ルール一覧", ID_RULE_LIST, font);
     state.clear_approvals = common::button(
         window,
@@ -545,6 +584,8 @@ fn create_controls(window: HWND, state: &mut SettingsState) {
         state.record_url_history,
         state.open_profile_on_double_click,
         history_help,
+        state.quad9,
+        quad9_help,
         save_help,
         cancel,
         save,
@@ -620,6 +661,8 @@ fn capture_general_settings(window: HWND, state: &mut SettingsState) -> bool {
         return false;
     };
     state.escape_hold_duration_tenths = escape_hold_duration_tenths;
+    state.quad9_enabled =
+        unsafe { SendMessageW(state.quad9, BM_GETCHECK, 0, 0) } == BST_CHECKED as isize;
     state.record_url_history_enabled =
         unsafe { SendMessageW(state.record_url_history, BM_GETCHECK, 0, 0) }
             == BST_CHECKED as isize;
@@ -797,6 +840,102 @@ fn parse_escape_hold_duration(value: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quad9_opt_in_is_unchecked_until_selected_and_captured_on_save_only() {
+        for cancel in [false, true] {
+            let mut state = Box::new(SettingsState::new(vec![], false, 10, true));
+            let window = common::HiddenTestWindow::new(
+                Some(window_proc),
+                (&mut *state as *mut SettingsState).cast(),
+            );
+            assert_eq!(
+                unsafe { SendMessageW(state.quad9, BM_GETCHECK, 0, 0) },
+                BST_UNCHECKED as isize
+            );
+            assert!(window_text(state.quad9).contains("既定OFF"));
+            unsafe {
+                SendMessageW(state.quad9, BM_CLICK, 0, 0);
+            }
+            assert!(!state.quad9_enabled); // チェック操作だけでは同意を確定しない。
+            unsafe {
+                SendMessageW(
+                    window.0,
+                    WM_COMMAND,
+                    if cancel { ID_CANCEL } else { ID_SAVE } as usize,
+                    0,
+                );
+            }
+            assert_eq!(state.quad9_enabled, !cancel);
+            assert_eq!(
+                state.action,
+                if cancel {
+                    SettingsAction::Cancelled
+                } else {
+                    SettingsAction::Saved
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn quad9_disclosure_fits_in_compact_and_wide_layouts() {
+        let mut state = Box::new(SettingsState::new(vec![], false, 10, true));
+        let window = common::HiddenTestWindow::new(
+            Some(window_proc),
+            (&mut *state as *mut SettingsState).cast(),
+        );
+        for width in [360, 400, 540, 760, 940] {
+            let layout = SettingsLayout::new(width);
+            assert_eq!(state.fixed.len(), layout.fixed.len());
+            let control = state.fixed[23];
+            let bounds = layout.fixed[23];
+            let dc = unsafe { GetDC(window.0) };
+            let previous = unsafe { SelectObject(dc, state.theme.font) };
+            let text = wide(&window_text(control));
+            let mut rect = RECT {
+                left: 0,
+                top: 0,
+                right: common::scale(bounds.width, state.theme.dpi),
+                bottom: 0,
+            };
+            unsafe {
+                DrawTextW(
+                    dc,
+                    text.as_ptr(),
+                    (text.len() - 1) as i32,
+                    &mut rect,
+                    DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX,
+                );
+                SelectObject(dc, previous);
+                ReleaseDC(window.0, dc);
+            }
+            assert!(
+                rect.bottom <= common::scale(bounds.height, state.theme.dpi),
+                "幅{width}で送信説明が欠けます: {}px",
+                rect.bottom
+            );
+        }
+    }
+
+    #[test]
+    fn existing_quad9_opt_in_can_be_disabled() {
+        let mut state = Box::new(SettingsState::new(vec![], false, 10, true));
+        state.quad9_enabled = true;
+        let window = common::HiddenTestWindow::new(
+            Some(window_proc),
+            (&mut *state as *mut SettingsState).cast(),
+        );
+        assert_eq!(
+            unsafe { SendMessageW(state.quad9, BM_GETCHECK, 0, 0) },
+            BST_CHECKED as isize
+        );
+        unsafe {
+            SendMessageW(state.quad9, BM_CLICK, 0, 0);
+            SendMessageW(window.0, WM_COMMAND, ID_SAVE as usize, 0);
+        }
+        assert!(!state.quad9_enabled);
+    }
 
     #[test]
     fn escape_hold_duration_uses_one_decimal_place() {

@@ -78,7 +78,7 @@ impl SettingsLayout {
         };
         let editor_top = if split { 112 } else { 142 + list_height + 80 };
         let general_top = (editor_top + 380).max(142 + list_height + 44) + 28;
-        let actions_top = general_top + 282;
+        let actions_top = general_top + 410;
         let half = (content - 12) / 2;
         let fixed = vec![
             Bounds::new(24, 18, content, 34),
@@ -108,6 +108,8 @@ impl SettingsLayout {
             Bounds::new(24, general_top + 128, content, 28),
             Bounds::new(24, general_top + 164, content, 28),
             Bounds::new(24, general_top + 200, content, 68),
+            Bounds::new(24, general_top + 282, content, 28),
+            Bounds::new(24, general_top + 318, content, 80),
             Bounds::new(24, actions_top, content, 32),
             Bounds::new(24, actions_top + 44, half, 36),
             Bounds::new(24 + half + 12, actions_top + 44, half, 36),

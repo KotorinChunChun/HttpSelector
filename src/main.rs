@@ -9,7 +9,7 @@ use http_selector::integrity::{IntegrityManager, IntegrityStatus};
 use http_selector::management::{self, Event};
 use http_selector::model::{DefaultRule, DetectedProfile, Profile};
 use http_selector::profile_scan;
-use http_selector::settings_ui::{SettingsAction, run_settings};
+use http_selector::settings_ui::{SettingsAction, run_settings_with_quad9 as run_settings};
 use http_selector::single_instance::{InstanceStatus, acquire};
 use http_selector::storage::Storage;
 use http_selector::ui::{
@@ -385,6 +385,7 @@ fn run_session(
                     storage.record_url_history_enabled()?,
                     escape_hold_duration_tenths,
                     open_profile_on_double_click,
+                    storage.quad9_enabled()?,
                 )?;
                 if outcome.pending_url.is_some() {
                     url = outcome.pending_url;
@@ -396,11 +397,12 @@ fn run_session(
                     SettingsAction::Saved | SettingsAction::Rescan | SettingsAction::RuleList
                 ) {
                     integrity.backup_current()?;
-                    storage.save_preferences(
+                    storage.save_preferences_with_quad9(
                         &outcome.profiles,
                         outcome.record_url_history,
                         outcome.escape_hold_duration_tenths,
                         outcome.open_profile_on_double_click,
+                        outcome.quad9_enabled,
                     )?;
                     escape_hold_duration_tenths = outcome.escape_hold_duration_tenths;
                     open_profile_on_double_click = outcome.open_profile_on_double_click;
@@ -461,7 +463,11 @@ fn open_profile(
 ) -> anyhow::Result<Option<bool>> {
     let _busy = management::busy_guard();
     http_selector::browser::ensure_profile_is_launchable(profile)?;
-    let report = http_selector::risk::inspect_approved(url, &storage.approved_domains()?);
+    let report = http_selector::risk::inspect_approved_with_quad9(
+        url,
+        &storage.approved_domains()?,
+        storage.quad9_enabled()?,
+    );
     let decision = if report.requires_confirmation() {
         http_selector::risk_ui::confirm_with_approval(url, &report)
     } else {
