@@ -3,17 +3,13 @@ use crate::model::{MAX_FAVORITE_PROFILES, Profile};
 use crate::storage::{MAX_ESCAPE_HOLD_DURATION_TENTHS, MIN_ESCAPE_HOLD_DURATION_TENTHS};
 use crate::ui_layout::SettingsLayout;
 use crate::ui_support::{self as common, Page, Theme, wide, window_text};
-use anyhow::ensure;
-use std::mem::size_of;
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{GetLastError, HWND, LPARAM, LRESULT, RECT, SIZE, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED, DRAWITEMSTRUCT};
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN,
-};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, GetFocus, SetFocus};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const WINDOW_CLASS: &str = "HttpSelector.SettingsWindow";
@@ -205,7 +201,12 @@ pub fn run_settings_live<'a>(
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN | WS_VSCROLL;
     let ex_style = WS_EX_CONTROLPARENT;
     let bounds = common::initial_bounds(940, 620, style, ex_style);
-    register_window_class()?;
+    let class = common::register_window_class(
+        WINDOW_CLASS,
+        Some(window_proc),
+        CS_HREDRAW | CS_VREDRAW,
+        "設定画面",
+    )?;
     let mut state = Box::new(SettingsState::new(
         profiles,
         record_url_history_enabled,
@@ -220,7 +221,7 @@ pub fn run_settings_live<'a>(
     let window = unsafe {
         CreateWindowExW(
             ex_style,
-            wide(&crate::app_identity::AppIdentity::current()?.window_class(WINDOW_CLASS)).as_ptr(),
+            class.as_ptr(),
             wide(&app_title::settings()).as_ptr(),
             style,
             bounds.x,
@@ -246,44 +247,17 @@ pub fn run_settings_live<'a>(
         SetForegroundWindow(window);
     }
     crate::management::set_active_window(window);
-    let mut message: MSG = unsafe { std::mem::zeroed() };
-    loop {
-        let status = unsafe { GetMessageW(&mut message, null_mut(), 0, 0) };
-        ensure!(status != -1, "設定画面のメッセージを取得できません");
-        if status == 0 {
-            break;
-        }
-        if common::handle_edit_shortcut(&message) {
-            continue;
-        }
-        if message.message == WM_KEYDOWN {
-            let focus = unsafe { GetFocus() };
-            if message.wParam == VK_ESCAPE as usize {
-                unsafe {
-                    SendMessageW(window, WM_CLOSE, 0, 0);
-                }
-                continue;
-            }
-            if message.wParam == VK_RETURN as usize && common::is_button(focus) {
-                unsafe {
-                    SendMessageW(focus, BM_CLICK, 0, 0);
-                }
-                continue;
-            }
-        }
-        if unsafe { IsDialogMessageW(window, &message) } == 0 {
-            unsafe {
-                TranslateMessage(&message);
-                DispatchMessageW(&message);
-            }
-        }
-        if message.message == WM_KEYDOWN && unsafe { IsWindow(window) } != 0 {
+    common::run_message_loop(
+        window,
+        "設定画面のメッセージを取得できません",
+        |message| common::handle_dialog_key(window, message),
+        || {
             let state = unsafe { &mut *pointer };
             state
                 .page
                 .reveal(window, unsafe { GetFocus() }, state.theme.dpi);
-        }
-    }
+        },
+    )?;
     let state = unsafe { Box::from_raw(pointer) };
     Ok(SettingsOutcome {
         action: state.action,
@@ -294,22 +268,6 @@ pub fn run_settings_live<'a>(
         open_profile_on_double_click: state.open_profile_on_double_click_enabled,
         quad9_enabled: state.quad9_enabled,
     })
-}
-
-fn register_window_class() -> anyhow::Result<()> {
-    let class = wide(&crate::app_identity::AppIdentity::current()?.window_class(WINDOW_CLASS));
-    let mut window_class: WNDCLASSEXW = unsafe { std::mem::zeroed() };
-    window_class.cbSize = size_of::<WNDCLASSEXW>() as u32;
-    window_class.style = CS_HREDRAW | CS_VREDRAW;
-    window_class.lpfnWndProc = Some(window_proc);
-    window_class.hInstance = unsafe { GetModuleHandleW(null()) };
-    window_class.hCursor = unsafe { LoadCursorW(null_mut(), IDC_ARROW) };
-    window_class.lpszClassName = class.as_ptr();
-    if unsafe { RegisterClassExW(&window_class) } == 0 {
-        let error = unsafe { GetLastError() };
-        ensure!(error == 1410, "設定画面クラスを登録できません: {error}");
-    }
-    Ok(())
 }
 
 unsafe extern "system" fn window_proc(
@@ -323,13 +281,7 @@ unsafe extern "system" fn window_proc(
     {
         return result;
     }
-    if message == WM_NCCREATE {
-        let create = unsafe { &*(lparam as *const CREATESTRUCTW) };
-        unsafe {
-            SetWindowLongPtrW(window, GWLP_USERDATA, create.lpCreateParams as isize);
-        }
-    }
-    let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut SettingsState<'_> };
+    let pointer = unsafe { common::window_state::<SettingsState<'_>>(window, message, lparam) };
     match message {
         WM_SYSCOMMAND if common::is_maximize_command(wparam) => 0,
         WM_CREATE if !pointer.is_null() => {

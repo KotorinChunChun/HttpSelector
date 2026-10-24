@@ -18,7 +18,7 @@ use windows_sys::Win32::{
     UI::{
         Controls::*,
         HiDpi::GetDpiForWindow,
-        Input::KeyboardAndMouse::{EnableWindow, GetFocus, SetFocus, VK_ESCAPE, VK_RETURN},
+        Input::KeyboardAndMouse::{EnableWindow, GetFocus, SetFocus},
         Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
         WindowsAndMessaging::*,
     },
@@ -278,22 +278,12 @@ pub fn run_with_existing(
     mut save: impl FnMut(&StoredRule) -> anyhow::Result<()>,
 ) -> anyhow::Result<Outcome> {
     let _busy = crate::management::busy_guard();
-    let class = common::wide(
-        &crate::app_identity::AppIdentity::current()?
-            .window_class("HttpSelector.AssociationWindow"),
-    );
-    let mut wc: WNDCLASSEXW = unsafe { std::mem::zeroed() };
-    wc.cbSize = size_of::<WNDCLASSEXW>() as u32;
-    wc.lpfnWndProc = Some(window_proc);
-    wc.hInstance = unsafe { GetModuleHandleW(null()) };
-    wc.hCursor = unsafe { LoadCursorW(null_mut(), IDC_ARROW) };
-    wc.lpszClassName = class.as_ptr();
-    if unsafe { RegisterClassExW(&wc) } == 0 {
-        ensure!(
-            unsafe { GetLastError() } == 1410,
-            "連携画面クラスを登録できません"
-        );
-    }
+    let class = common::register_window_class(
+        "HttpSelector.AssociationWindow",
+        Some(window_proc),
+        0,
+        "連携画面",
+    )?;
     let mut state = Box::new(State::new(url, profile_label(profile), &mut save));
     if let Some(existing) = existing {
         state.set_existing(&existing.pattern)?;
@@ -313,7 +303,7 @@ pub fn run_with_existing(
             bounds.height,
             null_mut(),
             null_mut(),
-            wc.hInstance,
+            GetModuleHandleW(null()),
             (&mut *state as *mut State<'_>).cast(),
         )
     };
@@ -324,38 +314,19 @@ pub fn run_with_existing(
         SetFocus(state.open);
     }
     crate::management::set_active_window(window);
-    let mut message: MSG = unsafe { std::mem::zeroed() };
-    loop {
-        let result = unsafe { GetMessageW(&mut message, null_mut(), 0, 0) };
-        if result <= 0 {
-            ensure!(result == 0, "連携画面のメッセージを取得できません");
-            break;
-        }
-        if common::handle_edit_shortcut(&message) {
-            continue;
-        }
-        if message.message == WM_KEYDOWN {
-            if message.wParam == VK_ESCAPE as usize {
-                unsafe { SendMessageW(window, WM_CLOSE, 0, 0) };
-                continue;
-            }
-            if message.wParam == VK_RETURN as usize && common::is_button(unsafe { GetFocus() }) {
-                unsafe { SendMessageW(GetFocus(), BM_CLICK, 0, 0) };
-                continue;
-            }
-        }
-        if unsafe { IsDialogMessageW(window, &message) } == 0 {
-            unsafe {
-                TranslateMessage(&message);
-                DispatchMessageW(&message);
-            }
-        }
-        if message.message == WM_KEYDOWN && unsafe { IsWindow(window) } != 0 {
+    let pointer: *mut State<'_> = &mut *state;
+    common::run_message_loop(
+        window,
+        "連携画面のメッセージを取得できません",
+        |message| common::handle_dialog_key(window, message),
+        || {
+            // 画面処理も同じ状態を更新するため、呼出しごとに借用する。
+            let state = unsafe { &mut *pointer };
             state
                 .page
                 .reveal(window, unsafe { GetFocus() }, state.theme.dpi);
-        }
-    }
+        },
+    )?;
     Ok(Outcome {
         action: state.action,
         pending_url: state.pending_url.take(),
@@ -373,11 +344,7 @@ unsafe extern "system" fn window_proc(
     {
         return result;
     }
-    if message == WM_NCCREATE {
-        let create = unsafe { &*(lparam as *const CREATESTRUCTW) };
-        unsafe { SetWindowLongPtrW(window, GWLP_USERDATA, create.lpCreateParams as isize) };
-    }
-    let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut State<'_> };
+    let pointer = unsafe { common::window_state::<State<'_>>(window, message, lparam) };
     if pointer.is_null() {
         return unsafe { DefWindowProcW(window, message, wparam, lparam) };
     }

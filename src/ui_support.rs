@@ -1,16 +1,18 @@
 //! Win32画面共通の配色、DPI変換、スクロール配置。
 use std::mem::size_of;
 use std::ptr::{null, null_mut};
-use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
+use windows_sys::Win32::Foundation::{ERROR_CLASS_ALREADY_EXISTS, GetLastError, HWND, POINT, RECT};
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::SystemServices::{SS_LEFT, SS_NOPREFIX};
 use windows_sys::Win32::UI::Controls::{
     DRAWITEMSTRUCT, EM_SETCUEBANNER, EM_SETMARGINS, EM_SETSEL, ODS_DISABLED, ODS_FOCUS,
-    ODS_SELECTED, SetScrollInfo, WC_BUTTONW,
+    ODS_SELECTED, SetScrollInfo,
 };
 use windows_sys::Win32::UI::HiDpi::*;
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetFocus, GetKeyState, VK_CONTROL};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetFocus, GetKeyState, VK_CONTROL, VK_ESCAPE, VK_RETURN,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 pub const BACKGROUND: u32 = 0x00FAF7F4;
@@ -19,10 +21,85 @@ pub const MUTED: u32 = 0x0076695B;
 pub const ACCENT: u32 = 0x00A66620;
 pub const BORDER: u32 = 0x00DFD8CF;
 
-pub use crate::win32::wide;
+pub use crate::win32::{wide, window_state};
 
 pub fn is_maximize_command(wparam: usize) -> bool {
     (wparam & 0xfff0) == SC_MAXIMIZE as usize
+}
+
+/// 画面クラスを登録し、MSIXのPackage Familyで分離したクラス名を返す。
+/// 同じクラスの再登録（2回目以降の表示）は成功として扱う。
+pub fn register_window_class(
+    base_name: &str,
+    procedure: WNDPROC,
+    style: WNDCLASS_STYLES,
+    screen: &str,
+) -> anyhow::Result<Vec<u16>> {
+    let class = wide(&crate::app_identity::AppIdentity::current()?.window_class(base_name));
+    let mut window_class: WNDCLASSEXW = unsafe { std::mem::zeroed() };
+    window_class.cbSize = size_of::<WNDCLASSEXW>() as u32;
+    window_class.style = style;
+    window_class.lpfnWndProc = procedure;
+    window_class.hInstance = unsafe { GetModuleHandleW(null()) };
+    window_class.hCursor = unsafe { LoadCursorW(null_mut(), IDC_ARROW) };
+    window_class.lpszClassName = class.as_ptr();
+    if unsafe { RegisterClassExW(&window_class) } == 0 {
+        let error = unsafe { GetLastError() };
+        anyhow::ensure!(
+            error == ERROR_CLASS_ALREADY_EXISTS,
+            "{screen}クラスを登録できません: Win32 error {error}"
+        );
+    }
+    Ok(class)
+}
+
+/// 画面が閉じるまでメッセージを処理する。
+///
+/// Ctrl+Aを共通で処理した後、`filter`が`true`を返したメッセージは配送しない。
+/// キー入力の後には、フォーカスが移った行を表示するために`after_key`を呼ぶ。
+pub fn run_message_loop(
+    window: HWND,
+    error_message: &str,
+    mut filter: impl FnMut(&MSG) -> bool,
+    mut after_key: impl FnMut(),
+) -> anyhow::Result<()> {
+    let mut message: MSG = unsafe { std::mem::zeroed() };
+    loop {
+        let status = unsafe { GetMessageW(&mut message, null_mut(), 0, 0) };
+        anyhow::ensure!(status != -1, "{error_message}");
+        if status == 0 {
+            return Ok(());
+        }
+        if handle_edit_shortcut(&message) || filter(&message) {
+            continue;
+        }
+        if unsafe { IsDialogMessageW(window, &message) } == 0 {
+            unsafe {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+        }
+        if message.message == WM_KEYDOWN && unsafe { IsWindow(window) } != 0 {
+            after_key();
+        }
+    }
+}
+
+/// 設定・ルール・連携画面の共通キー操作。ESCで閉じ、Enterはフォーカス中のボタンを押す。
+pub fn handle_dialog_key(window: HWND, message: &MSG) -> bool {
+    if message.message != WM_KEYDOWN {
+        return false;
+    }
+    if message.wParam == VK_ESCAPE as usize {
+        unsafe { SendMessageW(window, WM_CLOSE, 0, 0) };
+        return true;
+    }
+    let focus = unsafe { GetFocus() };
+    if message.wParam == VK_RETURN as usize && is_button(focus) {
+        unsafe { SendMessageW(focus, BM_CLICK, 0, 0) };
+        return true;
+    }
+    false
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -462,9 +539,7 @@ impl Page {
             let mut top = scale(bounds.y, dpi);
             let mut bottom = scale(bounds.bottom(), dpi);
             // 一覧全体が画面より高い場合も、キーボードで選択中の行を見せる。
-            let mut class = [0_u16; 32];
-            let length = unsafe { GetClassNameW(focus, class.as_mut_ptr(), class.len() as i32) };
-            let class = String::from_utf16_lossy(&class[..length as usize]);
+            let class = class_name(focus);
             if class.eq_ignore_ascii_case("ComboBox") {
                 // 配置用の高さには展開一覧を含むが、スクロールで見せるのは閉じた入力欄。
                 let mut rect: RECT = unsafe { std::mem::zeroed() };
@@ -628,12 +703,15 @@ pub fn draw_button_state(item: &DRAWITEMSTRUCT, checked: bool, multiline: bool) 
     }
 }
 
-pub fn is_button(window: HWND) -> bool {
+/// 標準コントロールの判定用。取得できない場合は空文字列。
+fn class_name(window: HWND) -> String {
     let mut class = [0_u16; 32];
-    unsafe {
-        GetClassNameW(window, class.as_mut_ptr(), class.len() as i32);
-    }
-    &class[..6] == unsafe { std::slice::from_raw_parts(WC_BUTTONW, 6) }
+    let length = unsafe { GetClassNameW(window, class.as_mut_ptr(), class.len() as i32) };
+    String::from_utf16_lossy(&class[..length.max(0) as usize])
+}
+
+pub fn is_button(window: HWND) -> bool {
+    class_name(window).eq_ignore_ascii_case("Button")
 }
 
 /// 標準EDITでは自動提供されないCtrl+Aを、URL・設定入力欄へ共通で提供する。
@@ -645,9 +723,7 @@ pub fn handle_edit_shortcut(message: &MSG) -> bool {
         return false;
     }
     let focus = unsafe { GetFocus() };
-    let mut class = [0_u16; 32];
-    let length = unsafe { GetClassNameW(focus, class.as_mut_ptr(), class.len() as i32) };
-    if !String::from_utf16_lossy(&class[..length as usize]).eq_ignore_ascii_case("Edit") {
+    if !class_name(focus).eq_ignore_ascii_case("Edit") {
         return false;
     }
     unsafe {
@@ -709,6 +785,27 @@ impl Drop for HiddenTestWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn standard_controls_are_identified_by_class_name() {
+        let parent = HiddenTestWindow::new(Some(DefWindowProcW), null_mut());
+        let theme = Theme::new(96);
+        let ok = button(parent.0, "OK", 1, theme.font);
+        let check = control(
+            parent.0,
+            "BUTTON",
+            "check",
+            2,
+            BS_AUTOCHECKBOX as u32,
+            theme.font,
+        );
+        let input = edit(parent.0, 3, false, false, theme.font);
+        assert!(is_button(ok));
+        assert!(is_button(check));
+        assert!(!is_button(input));
+        assert!(class_name(input).eq_ignore_ascii_case("Edit"));
+        assert!(!is_button(null_mut()));
+    }
 
     #[test]
     fn only_the_maximize_system_command_is_rejected() {
