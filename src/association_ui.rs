@@ -31,6 +31,7 @@ const AUTO: i32 = 103;
 const SKIP: i32 = 104;
 const COPY: i32 = 105;
 const SAVE: i32 = 106;
+const SAVE_DOMAIN: i32 = 107;
 const CHIP_BASE: i32 = 1000;
 const NESTED_GROUP_BASE: i32 = 20000;
 const NESTED_CHIP_BASE: i32 = 30000;
@@ -115,6 +116,7 @@ struct State<'a> {
     regex: HWND,
     copy: HWND,
     save_button: HWND,
+    save_domain: HWND,
     status: HWND,
 }
 
@@ -206,6 +208,7 @@ impl<'a> State<'a> {
             regex: null_mut(),
             copy: null_mut(),
             save_button: null_mut(),
+            save_domain: null_mut(),
             status: null_mut(),
         }
     }
@@ -547,6 +550,7 @@ fn create_controls(window: HWND, state: &mut State<'_>) {
     common::set_text(state.url, &state.original_url);
     state.open = common::button(window, "開く", OPEN, state.theme.bold);
     state.back = common::button(window, "戻る", BACK, font);
+    state.save_domain = common::button(window, "ドメインを保存", SAVE_DOMAIN, font);
     state.expand = common::button(window, "▶ 今後の動作を設定", EXPAND, font);
     state.scheme = common::label(window, "http(s)://", font);
     let labels = part_labels(&state.parts);
@@ -656,12 +660,27 @@ fn create_controls(window: HWND, state: &mut State<'_>) {
         state.copy,
         state.save_button,
         state.status,
+        state.save_domain,
     ];
     update(state);
     layout(window, state);
 }
 
 fn update(state: &State<'_>) {
+    common::set_text(
+        state.save_domain,
+        if state.locked() {
+            "登録先を保存"
+        } else {
+            "ドメインを保存"
+        },
+    );
+    unsafe {
+        ShowWindow(
+            state.save_domain,
+            if state.expanded { SW_HIDE } else { SW_SHOW },
+        );
+    }
     let flags = std::iter::once(state.selection.host)
         .chain(state.selection.paths.iter().copied())
         .chain(state.selection.queries.iter().copied());
@@ -802,14 +821,39 @@ fn command(window: HWND, state: &mut State<'_>, id: i32) {
             state.suppress_prompt = id == SKIP;
             update(state);
         }
-        SAVE => {
-            let result = state.rule().and_then(|rule| {
+        SAVE | SAVE_DOMAIN => {
+            let mut quick_selection = None;
+            let rule = if id == SAVE_DOMAIN && !state.locked() {
+                let mut selection = state.parts.defaults();
+                if ValidatedUrl::parse(state.original_url.clone())
+                    .is_ok_and(|url| crate::nested_url::is_teams_link(&url))
+                {
+                    for (index, (key, _)) in state.parts.nested.iter().enumerate() {
+                        if key == "url" {
+                            selection.nested[index].host = true;
+                        }
+                    }
+                }
+                let rule = state
+                    .parts
+                    .condition(&selection)
+                    .map(|condition| StoredRule::new(condition, false));
+                quick_selection = Some(selection);
+                rule
+            } else {
+                state.rule()
+            };
+            let result = rule.and_then(|rule| {
                 let url = ValidatedUrl::parse(state.original_url.clone())?;
                 ensure!(state.locked() || !crate::nested_url::is_teams_link(&url) || rule.suppress_prompt || rule.matches_teams_target(&url), "自動振り分けの条件をurl内で1つ以上ONにしてください（ドメイン・パスなど）。TeamsCIDは必須ではありません。");
                 (state.save)(&rule)
             });
             match result {
                 Ok(()) => {
+                    if let Some(selection) = quick_selection {
+                        state.selection = selection;
+                        state.suppress_prompt = false;
+                    }
                     state.expanded = false;
                     common::set_text(state.status, "保存しました。");
                     update(state);
@@ -957,6 +1001,19 @@ fn layout(window: HWND, state: &mut State<'_>) {
     state
         .page
         .place(state.back, Bounds::new(margin + 110, y, 90, 36));
+    if !state.expanded {
+        if content >= 380 {
+            state
+                .page
+                .place(state.save_domain, Bounds::new(margin + 210, y, 170, 36));
+        } else {
+            y += 46;
+            state.page.place(
+                state.save_domain,
+                Bounds::new(margin, y, 170.min(content), 36),
+            );
+        }
+    }
     y += 52;
     state
         .page
@@ -1193,6 +1250,79 @@ fn fit_height(window: HWND, state: &State<'_>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn collapsed_domain_save_does_not_save_parameters_or_open_the_url() {
+        let url =
+            ValidatedUrl::parse("https://example.com/private/document?token=not-saved#private")
+                .unwrap();
+        let mut saved = vec![];
+        let mut save = |rule: &StoredRule| {
+            saved.push(rule.clone());
+            Ok(())
+        };
+        let mut state = Box::new(State::new(&url, "Edge / テスト".into(), &mut save));
+        let window = common::HiddenTestWindow::new(
+            Some(window_proc),
+            (&mut *state as *mut State<'_>).cast(),
+        );
+        assert!(!state.expanded);
+        command(window.0, &mut state, SAVE_DOMAIN);
+        assert!(!state.expanded);
+        assert_eq!(state.action, Action::Back);
+        assert_ne!(unsafe { IsWindow(window.0) }, 0);
+        drop(state);
+        drop(save);
+        assert_eq!(saved.len(), 1);
+        let encoded = saved[0].encode().unwrap();
+        assert!(
+            !encoded.contains("not-saved")
+                && !encoded.contains("document")
+                && !encoded.contains("private")
+        );
+        assert!(saved[0].matches("https://example.com/another?different=value"));
+        assert!(!saved[0].matches("https://other.example.com/"));
+    }
+
+    #[test]
+    fn collapsed_save_preserves_existing_conditions_and_nested_target_guard() {
+        let url = ValidatedUrl::parse("https://example.com/a?tenant=chosen&token=secret").unwrap();
+        let parts = UrlParts::new(&url);
+        let mut selection = parts.defaults();
+        selection.queries[0] = true;
+        let original = StoredRule::new(parts.condition(&selection).unwrap(), false);
+        let mut saved = vec![];
+        let mut save = |rule: &StoredRule| {
+            saved.push(rule.clone());
+            Ok(())
+        };
+        let mut state = Box::new(State::new(&url, "Edge / 別".into(), &mut save));
+        state.set_existing(&original.encode().unwrap()).unwrap();
+        let window = common::HiddenTestWindow::new(
+            Some(window_proc),
+            (&mut *state as *mut State<'_>).cast(),
+        );
+        assert_eq!(common::window_text(state.save_domain), "登録先を保存");
+        command(window.0, &mut state, SAVE_DOMAIN);
+        drop(state);
+        drop(save);
+        assert_eq!(saved[0], original);
+
+        let wrapper = ValidatedUrl::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html?url=https%3A%2F%2Fexample.sharepoint.com%2Fsite%3FTeamsCID%3Dnot-stable&pc=secret").unwrap();
+        let mut save = |rule: &StoredRule| {
+            assert!(rule.matches_teams_target(&wrapper));
+            assert!(!rule.encode().unwrap().contains("not-stable"));
+            Ok(())
+        };
+        let mut state = Box::new(State::new(&wrapper, "Edge / テスト".into(), &mut save));
+        let window = common::HiddenTestWindow::new(
+            Some(window_proc),
+            (&mut *state as *mut State<'_>).cast(),
+        );
+        command(window.0, &mut state, SAVE_DOMAIN);
+        assert!(common::window_text(state.status).contains("保存しました"));
+        assert!(!state.expanded);
+    }
 
     #[test]
     fn legacy_replacement_preserves_pattern_and_back_never_saves() {
