@@ -1,0 +1,45 @@
+生成日: 2026-10-24
+生成方式: 組み込み image_gen（新規生成、透過なし）
+画像: httpselector-purpose-16x9-20261024-v3.png
+実寸: 1672 x 941 px（16:9構図。厳密な16:9比に対し高さ約0.5pxの丸め差）
+対象: 「利用時の注意」を「機能補足」の後へ移したREADMEで、「基本機能」より前にある導入文・「解決する課題」だけ。
+除外: 基本機能一覧、機能補足、利用時の注意、保存・外部送信・配布・動作環境の説明。旧画像と生成元は保持。
+検査: 日本語の表記と図版の範囲を目視確認。約2クリック、Quad9、MSIX等の対象外説明を含まない。
+
+最終プロンプト:
+Use case: infographic-diagram.
+Asset type: Japanese product infographic at the beginning of HttpSelector's GitHub README.
+Primary request: Create a NEW, attractive landscape 16:9 infographic (ideally 1920x1080) that communicates ONLY the tool's role and the problems it solves. Audience: people using multiple browser profiles.
+Style: clean polished editorial infographic, white/pale blue background, dark navy Japanese type, simple intuitive thin-line pictograms, blue connection arrows. Strong visual hierarchy, generous whitespace, large readable text. Opaque background. Do not reuse earlier image layouts or earlier extra content.
+Composition: product heading at top, a prominent simple routing flow in the middle, three concise problem/benefit cards below, and one readable one-time-link use case strip. Every text item below must be rendered accurately in Japanese; add NO other copy.
+
+Text verbatim:
+Title: "HttpSelector"
+Subtitle: "外部リンクを、意図したブラウザープロファイルで開く"
+
+Middle flow:
+Three source icons labeled "チャット", "メール", "その他のアプリ".
+Arrows from these sources converge into a central application box labeled "HttpSelector".
+Within that box: "URLの条件で自動振り分け" and "その場で選択も可能".
+Outgoing arrows lead to three browser-profile cards labeled "仕事用", "個人用", "別組織用".
+Use generic browser-window and user-profile illustrations so these are clearly browser profiles, not separate authentication services.
+
+Lower cards (exact heading and body):
+Card 1 heading: "誤ったプロファイルでのログインを防ぐ"
+Body: "最初から狙ったプロファイルで開く"
+Card 2 heading: "プロファイルを開き直す手間を減らす"
+Body: "リンクのコピー・起動・貼り直しを減らす"
+Card 3 heading: "意図しない共有・送信のリスクを減らす"
+Body: "ログイン状態の取り違えによる操作を防ぐ"
+
+Use-case strip with a link/key pictogram:
+"OAuth認証などのワンタイムURLも、最初から狙ったプロファイルで。"
+
+Constraints:
+All information must come only from the README introduction and its "解決する課題" section, BEFORE the "基本機能" heading after "利用時の注意" has been moved below "機能補足".
+Do not include the "基本機能" list, "機能補足" list, or anything after them as source material.
+Never mention two extra clicks, early-setup inconvenience, user cautions, Quad9, security scanning, signatures, MSIX, Microsoft Store, storage, encryption, DB, privacy implementation, parameters, regular expressions, Shift, favorites, KotorinToys, Windows versions, tests or release numbers.
+Do not mention Teams or any specific chat product.
+No additional slogans, technical notes, disclaimers, watermarks, mascots or decorative seals.
+Do not claim to authenticate accounts, guarantee safety, or imply all OAuth URLs are single-use. The purpose is selecting the correct browser profile at the first opening, reducing wrong-profile logins and reopening work.
+Keep all text within safe margins. Make the flow and benefit statements easy to grasp at a glance.
