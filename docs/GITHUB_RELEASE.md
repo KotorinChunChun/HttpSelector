@@ -1,6 +1,6 @@
 # GitHub・公開サイトでの配布と更新
 
-更新日: 2026-10-24。署名付きBeta MSIX **v0.0.3.7**を[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/tag/v0.0.3.7)と[公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)で配布します。表示・MSIX・App Installerの数値はすべて0.0.3.7です。通常利用には署名付きMSIXが必須です。
+更新日: 2026-10-24。署名付きBeta MSIX **v0.0.3.7**を[GitHub Release](https://github.com/KotorinChunChun/HttpSelector/releases/tag/v0.0.3.7)と[公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)へ公開しました。表示・MSIX・App Installerの数値はすべて0.0.3.7です。通常利用には署名付きMSIXが必須です。
 
 ## 配布先の役割
 
@@ -27,6 +27,10 @@
 - ベータ品質であることを名称・本文へ明記します。最新Releaseから入手できるようprereleaseではなくlatestを指定しますが、Store正式版を意味しません。
 - 公開後は両拠点から認証なしで再取得してローカルの長さとSHA-256に照合し、XML参照版・参照URL・署名・タグを記録します。
 - Web側は独立したdownloadリポジトリで対象ファイルだけコミットし、親・他製品の変更を混ぜません。
+
+## v0.0.3.7公開結果
+
+MSIXは2,561,127バイト、SHA-256 `AA1F9FEA7D6DFEB9D469FF84CCA7963E2E26763CDFCE949B5424E7C13A291243`。ビルド元・タグは `5aec42a6d236ffa96511b0c9e2f4beefc8f09770`。署名方針13件・スクリプト32件・Rust125件を確認し、GitHubの4資産と公開サイトのMSIX/CER/App Installerを匿名取得して一致を確認しました。READMEの冒頭画像も公開・再取得一致を確認。実機導入/更新は未実施。[本版報告](../dev/history/v0.0.3.7/v0.0.3.7-imp.md)。
 
 ## v0.0.3.6公開結果
 
