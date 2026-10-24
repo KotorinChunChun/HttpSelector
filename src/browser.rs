@@ -4,6 +4,7 @@ use crate::url_input::ValidatedUrl;
 use anyhow::{Context, bail};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::ptr::null_mut;
 use std::thread;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{CloseHandle, HWND, LPARAM};
@@ -12,7 +13,7 @@ use windows_sys::Win32::Graphics::Gdi::{
     DeleteDC, DeleteObject, SelectObject,
 };
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW,
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegGetValueW,
 };
 use windows_sys::Win32::System::Threading::{
     OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
@@ -42,12 +43,7 @@ pub struct BrowserCommand {
 }
 
 pub fn build_command(executable: PathBuf, profile: &Profile, url: &ValidatedUrl) -> BrowserCommand {
-    let mut arguments = match profile.browser_type {
-        BrowserType::Edge | BrowserType::Chrome => {
-            vec![format!("--profile-directory={}", profile.profile_id)]
-        }
-        BrowserType::Firefox => vec!["-P".to_owned(), profile.profile_id.clone()],
-    };
+    let mut arguments = profile_arguments(profile);
     arguments.push(url.original().to_owned());
     BrowserCommand {
         executable,
@@ -55,9 +51,46 @@ pub fn build_command(executable: PathBuf, profile: &Profile, url: &ValidatedUrl)
     }
 }
 
+fn profile_arguments(profile: &Profile) -> Vec<String> {
+    if profile.is_guest()
+        && matches!(
+            profile.browser_type,
+            BrowserType::Edge | BrowserType::Chrome
+        )
+    {
+        return vec!["--guest".to_owned()];
+    }
+    match profile.browser_type {
+        BrowserType::Edge | BrowserType::Chrome => {
+            vec![format!("--profile-directory={}", profile.profile_id)]
+        }
+        BrowserType::Firefox => vec!["-P".to_owned(), profile.profile_id.clone()],
+    }
+}
+
+pub fn build_test_command(executable: PathBuf, profile: &Profile) -> BrowserCommand {
+    let mut arguments = profile_arguments(profile);
+    arguments.push("about:blank".to_owned());
+    BrowserCommand {
+        executable,
+        arguments,
+    }
+}
+
+pub fn launch_test(profile: &Profile) -> anyhow::Result<()> {
+    ensure_profile_is_launchable(profile)?;
+    let executable = resolve_executable(profile.browser_type)?;
+    launch_command(profile, build_test_command(executable, profile))
+}
+
 pub fn launch(profile: &Profile, url: &ValidatedUrl) -> anyhow::Result<()> {
+    ensure_profile_is_launchable(profile)?;
     let executable = resolve_executable(profile.browser_type)?;
     let command = build_command(executable, profile, url);
+    launch_command(profile, command)
+}
+
+fn launch_command(profile: &Profile, command: BrowserCommand) -> anyhow::Result<()> {
     let before = browser_windows(&command.executable);
     grant_foreground_permission(&before);
     let child = Command::new(&command.executable)
@@ -478,6 +511,11 @@ fn join_portable(root: &Path, relative: &str) -> PathBuf {
 }
 
 pub fn ensure_profile_is_launchable(profile: &Profile) -> anyhow::Result<()> {
+    if profile.is_guest() && !guest_mode_allowed(profile.browser_type) {
+        bail!(
+            "このブラウザのゲストモードは対応していないか、組織ポリシー等により許可されていません"
+        );
+    }
     if profile.profile_id.is_empty()
         || profile
             .profile_id
@@ -487,6 +525,38 @@ pub fn ensure_profile_is_launchable(profile: &Profile) -> anyhow::Result<()> {
         bail!("プロファイル識別子が不正です");
     }
     Ok(())
+}
+
+pub fn guest_mode_allowed(browser_type: BrowserType) -> bool {
+    let policy = match browser_type {
+        BrowserType::Edge => r"Software\Policies\Microsoft\Edge",
+        BrowserType::Chrome => r"Software\Policies\Google\Chrome",
+        BrowserType::Firefox => return false,
+    };
+    let key = wide(policy);
+    let name = wide("BrowserGuestModeEnabled");
+    [HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER]
+        .into_iter()
+        .all(|root| {
+            let mut value = 0_u32;
+            let mut size = size_of::<u32>() as u32;
+            let result = unsafe {
+                RegGetValueW(
+                    root,
+                    key.as_ptr(),
+                    name.as_ptr(),
+                    RRF_RT_REG_DWORD,
+                    null_mut(),
+                    (&mut value as *mut u32).cast(),
+                    &mut size,
+                )
+            };
+            match result {
+                0 => value != 0,
+                2 | 3 => true,
+                _ => false,
+            }
+        })
 }
 
 #[cfg(test)]
@@ -509,6 +579,26 @@ mod tests {
             created_at: 0,
             updated_at: 0,
         }
+    }
+
+    #[test]
+    fn guest_and_test_launch_do_not_reuse_a_signed_in_profile() {
+        for browser_type in [BrowserType::Edge, BrowserType::Chrome] {
+            let guest = profile(browser_type, crate::model::GUEST_PROFILE_ID);
+            let url = ValidatedUrl::parse("https://example.com/path?token=unchanged").unwrap();
+            let command = build_command(PathBuf::from("browser.exe"), &guest, &url);
+            assert_eq!(command.arguments, ["--guest", url.original()]);
+            assert_eq!(
+                build_test_command(PathBuf::from("browser.exe"), &guest).arguments,
+                ["--guest", "about:blank"]
+            );
+        }
+        let normal = profile(BrowserType::Chrome, "Profile 2");
+        assert_eq!(
+            build_test_command(PathBuf::from("chrome.exe"), &normal).arguments,
+            ["--profile-directory=Profile 2", "about:blank"]
+        );
+        assert!(!guest_mode_allowed(BrowserType::Firefox));
     }
 
     #[test]

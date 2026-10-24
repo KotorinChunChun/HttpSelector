@@ -1,6 +1,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+pub const GUEST_PROFILE_ID: &str = "__httpselector_guest__";
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(i64)]
 pub enum BrowserType {
@@ -75,6 +77,10 @@ pub struct Profile {
 }
 
 impl Profile {
+    pub fn is_guest(&self) -> bool {
+        self.profile_id == GUEST_PROFILE_ID
+    }
+
     pub fn display_name(&self) -> &str {
         if self.alias_name.trim().is_empty() {
             &self.detected_name

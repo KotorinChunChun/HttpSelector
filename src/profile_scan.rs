@@ -137,7 +137,37 @@ pub fn scan_all() -> anyhow::Result<Vec<DetectedProfile>> {
     if let Some(roaming) = std::env::var_os("APPDATA").map(PathBuf::from) {
         scan_firefox(&roaming.join("Mozilla").join("Firefox"), &mut profiles)?;
     }
+    for browser_type in [BrowserType::Edge, BrowserType::Chrome] {
+        append_guest_profile(
+            &mut profiles,
+            browser_type,
+            crate::browser::resolve_executable(browser_type).is_ok(),
+            crate::browser::guest_mode_allowed(browser_type),
+        );
+    }
     Ok(profiles)
+}
+
+fn append_guest_profile(
+    profiles: &mut Vec<DetectedProfile>,
+    browser_type: BrowserType,
+    installed: bool,
+    allowed: bool,
+) {
+    if installed
+        && allowed
+        && matches!(browser_type, BrowserType::Edge | BrowserType::Chrome)
+        && !profiles.iter().any(|p| {
+            p.browser_type == browser_type && p.profile_id == crate::model::GUEST_PROFILE_ID
+        })
+    {
+        profiles.push(DetectedProfile {
+            browser_type,
+            profile_id: crate::model::GUEST_PROFILE_ID.to_owned(),
+            detected_name: "ゲスト".to_owned(),
+            icon_path: None,
+        });
+    }
 }
 
 pub fn scan_chromium(
@@ -256,6 +286,33 @@ pub fn scan_firefox(firefox_root: &Path, output: &mut Vec<DetectedProfile>) -> a
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guest_is_stable_unique_and_only_added_for_available_allowed_browsers() {
+        let mut profiles = vec![];
+        for _ in 0..2 {
+            append_guest_profile(&mut profiles, BrowserType::Chrome, true, true);
+        }
+        append_guest_profile(&mut profiles, BrowserType::Edge, false, true);
+        append_guest_profile(&mut profiles, BrowserType::Edge, true, false);
+        append_guest_profile(&mut profiles, BrowserType::Firefox, true, true);
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].profile_id, crate::model::GUEST_PROFILE_ID);
+        assert_eq!(profiles[0].detected_name, "ゲスト");
+        append_guest_profile(&mut profiles, BrowserType::Edge, true, true);
+        let temp = tempfile::tempdir().unwrap();
+        let storage = crate::storage::Storage::new(temp.path().join("guest.db"));
+        storage.initialize().unwrap();
+        storage.sync_detected(&profiles).unwrap();
+        let before = storage.load_all_profiles().unwrap();
+        storage.sync_detected(&profiles).unwrap();
+        let after = storage.load_all_profiles().unwrap();
+        assert_eq!(
+            before.iter().map(|p| p.id).collect::<Vec<_>>(),
+            after.iter().map(|p| p.id).collect::<Vec<_>>()
+        );
+        assert!(after.iter().all(Profile::is_guest));
+    }
 
     fn stored(browser_type: BrowserType, id: &str, name: &str, available: bool) -> Profile {
         Profile {
