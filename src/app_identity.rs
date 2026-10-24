@@ -22,6 +22,17 @@ impl AppIdentity {
     }
 
     fn detect() -> anyhow::Result<Self> {
+        // debugの隔離試験だけ、データに加えてmutex・窓クラス・管理パイプも分離する。
+        // release/MSIX版はこの環境変数を参照しない。
+        #[cfg(debug_assertions)]
+        if crate::app_options::test_scan_disabled()
+            && let Some(namespace) = std::env::var_os("HTTPSELECTOR_TEST_NAMESPACE")
+        {
+            let namespace = namespace
+                .to_str()
+                .context("試験用IDがUTF-8ではありません")?;
+            return Self::packaged(format!("HttpSelector.Test.{namespace}"));
+        }
         let mut length = 0;
         let result = unsafe { GetCurrentPackageFamilyName(&mut length, std::ptr::null_mut()) };
         if result == APPMODEL_ERROR_NO_PACKAGE {

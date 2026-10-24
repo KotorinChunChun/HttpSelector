@@ -576,9 +576,7 @@ mod tests {
     #[test]
     #[ignore = "対話デスクトップの前面を一時変更するためCLIの明示オプションで実行"]
     fn interactive_desktop_restores_and_foregrounds_window() {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{
-            DefWindowProcW, SW_SHOWMINIMIZED, ShowWindow,
-        };
+        use windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW;
         struct RestoreFocus(HWND);
         impl Drop for RestoreFocus {
             fn drop(&mut self) {
@@ -590,14 +588,65 @@ mod tests {
             }
         }
         let _focus = RestoreFocus(unsafe { GetForegroundWindow() });
+        // 本物のブラウザーと同じく、復帰対象は別スレッドのメッセージループで動かす。
+        // 呼出元と同じスレッドではShowWindowAsyncの要求を処理できない。
+        unsafe extern "system" fn probe(
+            window: HWND,
+            message: u32,
+            wparam: usize,
+            lparam: isize,
+        ) -> isize {
+            if message == windows_sys::Win32::UI::WindowsAndMessaging::WM_DESTROY {
+                unsafe {
+                    windows_sys::Win32::UI::WindowsAndMessaging::PostQuitMessage(0);
+                }
+            }
+            unsafe { DefWindowProcW(window, message, wparam, lparam) }
+        }
         let executable = std::env::current_exe().unwrap();
         let before = browser_windows(&executable);
-        let window = crate::ui_support::HiddenTestWindow::new(Some(DefWindowProcW), null_mut());
-        unsafe {
-            ShowWindow(window.0, SW_SHOWMINIMIZED);
+        let (ready, receive) = std::sync::mpsc::sync_channel(1);
+        let thread = std::thread::spawn(move || {
+            use windows_sys::Win32::UI::WindowsAndMessaging::*;
+            let window = crate::ui_support::HiddenTestWindow::new(Some(probe), null_mut());
+            unsafe {
+                ShowWindow(window.0, SW_SHOWMINNOACTIVE);
+            }
+            ready.send(window.0 as usize).unwrap();
+            let mut message: MSG = unsafe { std::mem::zeroed() };
+            while unsafe { GetMessageW(&mut message, null_mut(), 0, 0) } > 0 {
+                unsafe {
+                    TranslateMessage(&message);
+                    DispatchMessageW(&message);
+                }
+            }
+        });
+        struct CloseProbe(HWND, Option<std::thread::JoinHandle<()>>);
+        impl Drop for CloseProbe {
+            fn drop(&mut self) {
+                unsafe {
+                    windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
+                        self.0,
+                        windows_sys::Win32::UI::WindowsAndMessaging::WM_CLOSE,
+                        0,
+                        0,
+                    );
+                }
+                if let Some(thread) = self.1.take() {
+                    thread.join().unwrap();
+                }
+            }
         }
+        let window = CloseProbe(
+            receive.recv_timeout(Duration::from_secs(3)).unwrap() as HWND,
+            Some(thread),
+        );
         assert_ne!(unsafe { IsIconic(window.0) }, 0);
         activate_browser_window(&executable, &before);
+        let deadline = Instant::now() + Duration::from_millis(500);
+        while unsafe { IsIconic(window.0) } != 0 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
         assert_eq!(unsafe { IsIconic(window.0) }, 0);
         assert_eq!(unsafe { GetForegroundWindow() }, window.0);
     }

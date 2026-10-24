@@ -1,0 +1,20 @@
+[
+  {"id":"F01","feature":"URL受付・デコード・引数・元URL保持","test_prefixes":["url_input::tests::","session::tests::arguments_","session::scenarios::auto_rule_"]},
+  {"id":"F02","feature":"ブラウザープロファイル検出・ゲスト・ポリシー","test_prefixes":["profile_scan::tests::","browser::tests::guest_","session::scenarios::guest_selection_"]},
+  {"id":"F03","feature":"お気に入り・既定表示・表示名・コメント・並べ替え","test_prefixes":["session::scenarios::favorite_changes_","settings_ui::tests::profile_edits_","ui::tests::first_available_favorite_"]},
+  {"id":"F04","feature":"保存ルール優先・割り込みOFF・未一致時の先頭お気に入り","test_prefixes":["session::tests::route_prioritizes_","session::scenarios::interruption_"]},
+  {"id":"F05","feature":"ドメイン・パス・クエリ・入れ子URLの保存・正規表現","test_prefixes":["association::tests::","association_ui::tests::","rules::tests::"]},
+  {"id":"F06","feature":"Shiftで登録先変更・条件保持・競合拒否","test_prefixes":["session::scenarios::shift_","session::tests::forced_confirmation_"]},
+  {"id":"F07","feature":"保存後は開かない・戻る・質問省略","test_prefixes":["session::scenarios::saving_then_back_","session::scenarios::suppression_","association_ui::tests::only_open_button_"]},
+  {"id":"F08","feature":"ローカル危険性検査・承認・キャンセル・承認解除","test_prefixes":["risk_local::tests::","session::scenarios::warning_cancel_","session::scenarios::explicit_domain_","session::scenarios::clearing_approvals_"]},
+  {"id":"F09","feature":"Quad9既定OFF・明示ON・ドメインのみ送信・通信失敗","test_prefixes":["risk::tests::","quad9::tests::","session::scenarios::quad9_opt_in_"],"external":"実通信は-LiveQuad9で別実行"},
+  {"id":"F10","feature":"履歴の任意保存・伏せ字・失敗時非保存","test_prefixes":["url_pattern::tests::","session::scenarios::enabled_history_","session::scenarios::launch_failure_"]},
+  {"id":"F11","feature":"署名付き保存・失敗復元・DB復旧・初回検出・移行","test_prefixes":["integrity::tests::","storage::tests::","session::scenarios::failed_write_","session::scenarios::first_start_","session::scenarios::corrupt_database_"]},
+  {"id":"F12","feature":"設定自動保存・試し起動・再検出・後着URL","test_prefixes":["settings_ui::tests::","session::scenarios::settings_save_","session::scenarios::pending_settings_","session::scenarios::unchanged_refresh_","session::scenarios::background_detection_","session::scenarios::later_url_"]},
+  {"id":"F13","feature":"既定ルール一覧・追加・削除・登録先変更","test_prefixes":["default_rule_ui::tests::","session::scenarios::rule_list_"]},
+  {"id":"F14","feature":"KotorinToys管理・無表示起動・パイプ・URL転送・キュー","test_prefixes":["management::tests::","single_instance::tests::","startup_status_pid_rejection_","interactive_desktop_show_"],"external":"実debug EXEの起動/停止を通常実行し、画面表示とESCは-InteractiveDesktopで実行。実MSIX登録からの管理連携は配布環境でも別確認"},
+  {"id":"F15","feature":"ESC・キー操作・配置・DPI・最大化禁止・ツールチップ","test_prefixes":["ui::tests::","ui_layout::tests::","ui_support::tests::","win32::tests::"]},
+  {"id":"F16","feature":"ブラウザー起動引数・前面化・最小化復帰","test_prefixes":["browser::tests::","session::scenarios::auto_rule_"],"external":"前面化は-InteractiveDesktopで実Win32窓を使用。実ブラウザー表示・ログイン状態は対象製品依存"},
+  {"id":"F17","feature":"表示版・データ/IPC分離・MSIX・署名・公開対象制限","test_prefixes":["app_title::tests::","app_identity::tests::"],"commands":["signing-policy","msix-scripts","ftps-plan"],"external":"署名済みMSIXは-SignedPackagePathで検証。実導入/更新は既存install-msix.ps1で明示実行"},
+  {"id":"F18","feature":"一括試験の失敗判定・一覧・レポート・タイムアウト","test_prefixes":[],"commands":["runner-unit"]}
+]
