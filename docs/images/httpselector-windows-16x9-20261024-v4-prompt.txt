@@ -1,0 +1,60 @@
+生成日: 2026-10-24
+方式: 組み込みimage_genによる新規生成と、同ツールによる小ウィンドウのタイトルバー修正
+採用画像: httpselector-windows-16x9-20261024-v4.png
+実寸: 1672 x 941 px（16:9構図、厳密な比に対する高さ約0.5pxの丸め差）
+内容: ユーザーが更新したREADMEの「基本機能」より前だけを使用。Windows専用、仕事用・個人用・開発用、開き直す手間・考える手間・意図しない共有や送信、OAuth認証。
+意匠: 大小すべてのウィンドウを右上の最小化・最大化・閉じるボタンがあるWindows形式へ統一。対象外の機能詳細・注意事項は載せない。
+保存: 旧画像と生成元は保持。README本文のユーザー編集は変更せず、冒頭の画像参照のみ差し替える。
+
+初回生成プロンプト:
+Use case: infographic-diagram.
+Asset type: Japanese README hero infographic for HttpSelector.
+Primary request: Create a NEW landscape 16:9 infographic, ideally 1920x1080, based on the CURRENT user-edited README introduction and "解決する課題" section only. This is a WINDOWS-ONLY desktop application. It must visibly use Windows application windows, not macOS windows. The three output browser profiles are 仕事用, 個人用, 開発用.
+
+Style: clean, polished, readable product diagram. Opaque white/pale blue background, dark navy Japanese typography, blue routing arrows, restrained flat Windows desktop pictograms. Generous whitespace and large text. Use Windows 10/11 titlebars: application icon and title on the LEFT, monochrome minimize (—), maximize (□), and close (×) controls at the TOP RIGHT. All illustrated application and browser windows must follow this Windows titlebar convention. NO macOS traffic-light dots or colored circular controls at top left, no Apple icons, no macOS dock, no Mac imagery.
+
+Composition: large product heading and short subtitle at top; dominant left-to-right link flow across the middle; three concise benefit cards below; one compact OAuth-use-case footer. Central HttpSelector must be an illustrated Windows desktop application window. The three output profile cards must also be Windows browser windows with clearly distinct profile avatars. Keep browser and OS chrome diagrammatic, not a screenshot of a fictional implemented UI.
+
+Text verbatim (no additional copy):
+Title: "HttpSelector"
+Small label: "Windows専用ツール"
+Subtitle: "外部リンクを、意図したブラウザープロファイルで開く"
+
+Source icons labeled "チャット", "メール", "その他のアプリ".
+Arrows from all three converge into central Windows application titled "HttpSelector".
+Inside central application: "開きたいプロファイルへ".
+Outgoing arrows lead to three Windows browser-profile windows labeled, in this exact order:
+"仕事用"
+"個人用"
+"開発用"
+The third profile must be 開発用. Do not put 別組織用 anywhere.
+
+Three lower benefit cards:
+1. Heading: "プロファイルを開き直す手間を減らす"
+Body: "リンクのコピー・起動・貼り直しを減らす"
+Icon: browser window and return/open arrow.
+2. Heading: "プロファイルを考える手間を減らす"
+Body, two lines: "初回に条件を保存" / "次回からは迷わず開く"
+Icon: saved choice / checklist, not an account switch.
+3. Heading: "意図しない情報共有・送信のリスクを減らす"
+Body: "誤ったログイン状態での操作を減らす"
+Icon: document sharing with routing/profile selection cue.
+
+Footer, with a small authentication-link pictogram:
+"OAuth認証なども、最初から狙ったプロファイルで。"
+
+Content source constraints:
+CURRENT README states that chat, mail and other application links open in the intended browser profile; Windows can otherwise open external links in a last-active profile; using work, personal and development profiles can require reopening the desired profile; initial saved conditions reduce the effort of deciding which profile to use; wrong profile login state risks unintended sharing and requests; OAuth browser authentication can be hard to reopen correctly.
+Use ONLY these points, all from before the 基本機能 heading. Do not revive earlier deleted copy about a separate organization profile.
+Avoid ALL details from the 基本機能 list or any later README sections: no feature catalog, parameters, regular expressions, Shift, favorites, KotorinToys, two extra clicks, caveats about first-time use, Quad9, risk scanning, signing, MSIX, Store, database, privacy implementation, supported-browser lists, version numbers, test/release data or disclaimers.
+Do not mention Teams, any other named chat app, or unrelated promotional claims. Do not imply that HttpSelector authenticates accounts or guarantees safety. Focus on first opening in the intended Windows browser profile, saved choices reducing mental effort, reopening work and wrong-context actions.
+All Japanese must be correct, legible and within safe margins. No other slogans, watermarks, mascots or seals.
+
+追加修正プロンプト:
+Use case: precise-object-edit.
+Edit the provided HttpSelector infographic. Keep the entire composition, all Japanese text, profile labels 仕事用・個人用・開発用, source icons, big Windows windows, arrows, typography, colors, canvas size and 16:9 layout unchanged.
+
+Change ONLY the miniature window titlebars in the illustrations: the small browser icon inside the lower-left benefit card, the small foreground window in the lower-middle benefit card, and the tiny browser window in the bottom OAuth strip.
+These small illustrations still have three circular traffic-light-style dots at their top LEFT. Remove ALL such left-side dots from these three tiny windows. Replace them with a simple neutral Windows titlebar having monochrome minimize (—), maximize (□), and close (×) symbols aligned at the TOP RIGHT. A tiny application icon at the top left is allowed, but NO row of circles or colored dots. Apply the same Windows titlebar convention to any other miniature window if needed.
+Do NOT remove Chrome's actual multicolor product logo from the three large output browser windows: it is an app icon, not window controls.
+No other changes. No new words or extra information. Every visible application/browser window in this Windows-only product infographic should follow Windows window chrome, including tiny supporting illustrations.

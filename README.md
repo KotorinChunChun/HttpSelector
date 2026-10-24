@@ -1,6 +1,6 @@
 # HttpSelector
 
-![HttpSelector：外部リンクを意図したブラウザープロファイルで開き、誤ったログインや開き直しを防ぐ](docs/images/httpselector-purpose-16x9-20261024-v3.png)
+![HttpSelector：Windowsで外部リンクを仕事用・個人用・開発用のプロファイルへ開く](docs/images/httpselector-windows-16x9-20261024-v4.png)
 
 チャット、メール、その他のアプリから開いたHTTP/HTTPSリンクを、意図したブラウザー・プロファイルへ渡すWindows用ツールです。URLのルールで自動振り分けするか、その場でプロファイルを選択できます。
 
