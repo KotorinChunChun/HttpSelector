@@ -23,7 +23,7 @@ impl UrlParts {
     }
 
     fn at_depth(url: &ValidatedUrl, depth: usize) -> Self {
-        let parsed = Url::parse(url.original()).expect("validated URL");
+        let parsed = url.parsed();
         Self {
             host: parsed[Position::BeforeHost..Position::AfterPort].to_owned(),
             paths: parsed
@@ -331,8 +331,8 @@ impl StoredRule {
         let Some(target) = crate::nested_url::teams_target(value) else {
             return false;
         };
-        let target = Url::parse(target.original()).expect("validated target URL");
         let unique_cid = target
+            .parsed()
             .query_pairs()
             .filter(|(key, _)| key == "TeamsCID")
             .count()
@@ -382,7 +382,7 @@ mod tests {
     use super::*;
 
     fn wrapped(inner: &str) -> ValidatedUrl {
-        let mut wrapper = Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
+        let mut wrapper = Url::parse(crate::nested_url::TEAMS_WRAPPER_URL).unwrap();
         wrapper
             .query_pairs_mut()
             .append_pair("url", inner)

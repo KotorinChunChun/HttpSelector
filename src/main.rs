@@ -738,7 +738,7 @@ mod tests {
     fn teams_routes_stable_path_without_cid_and_keeps_conflicts_manual() {
         use http_selector::association::{StoredRule, UrlParts};
         let wrapper = |person: &str, query: &str| {
-            let mut url = url::Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
+            let mut url = url::Url::parse(http_selector::nested_url::TEAMS_WRAPPER_URL).unwrap();
             url.query_pairs_mut().append_pair(
                 "url",
                 &format!(
@@ -804,7 +804,7 @@ mod tests {
     fn teams_routes_only_registered_account_and_never_falls_back_to_favorite() {
         use http_selector::association::{StoredRule, UrlParts};
         let wrapper = |cid: &str| {
-            let mut url = url::Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
+            let mut url = url::Url::parse(http_selector::nested_url::TEAMS_WRAPPER_URL).unwrap();
             url.query_pairs_mut().append_pair(
                 "url",
                 &format!("https://tenant.sharepoint.com/a.pdf?TeamsCID={cid}"),

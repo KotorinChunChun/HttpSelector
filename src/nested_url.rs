@@ -6,6 +6,12 @@ pub const MAX_DEPTH: usize = 3;
 pub const MAX_CHILDREN: usize = 16;
 pub const MAX_LENGTH: usize = 32 * 1024;
 
+pub const TEAMS_WRAPPER_HOST: &str = "teams.public.onecdn.static.microsoft";
+pub const TEAMS_WRAPPER_PATH: &str = "/evergreen-assets/safelinks/2/atp-safelinks.html";
+/// テストやプレビューで中継URLを組み立てるときの基底URL。
+pub const TEAMS_WRAPPER_URL: &str =
+    "https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html";
+
 pub fn child(url: &Url, key: &str) -> Option<ValidatedUrl> {
     let mut values = url.query_pairs().filter(|(name, _)| name == key);
     let (_, value) = values.next()?;
@@ -13,7 +19,7 @@ pub fn child(url: &Url, key: &str) -> Option<ValidatedUrl> {
         return None;
     }
     let input = ValidatedUrl::parse(value.into_owned()).ok()?;
-    let parsed = Url::parse(input.original()).ok()?;
+    let parsed = input.parsed();
     (parsed.username().is_empty() && parsed.password().is_none()).then_some(input)
 }
 
@@ -27,33 +33,31 @@ pub fn children(url: &Url) -> Vec<(String, ValidatedUrl)> {
         .collect()
 }
 
+fn is_teams_location(url: &Url) -> bool {
+    url.host_str()
+        .is_some_and(|host| host.trim_end_matches('.') == TEAMS_WRAPPER_HOST)
+        && url.path() == TEAMS_WRAPPER_PATH
+}
+
 pub fn is_teams_wrapper(url: &ValidatedUrl) -> bool {
-    Url::parse(url.original()).is_ok_and(|url| {
-        url.scheme() == "https"
-            && url.username().is_empty()
-            && url.password().is_none()
-            && url.port_or_known_default() == Some(443)
-            && url.host_str().is_some_and(|host| {
-                host.trim_end_matches('.') == "teams.public.onecdn.static.microsoft"
-            })
-            && url.path() == "/evergreen-assets/safelinks/2/atp-safelinks.html"
-    })
+    let url = url.parsed();
+    url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.port_or_known_default() == Some(443)
+        && is_teams_location(&url)
 }
 
 /// 非HTTPS・認証情報つきも振り分けの保護対象にするが、展開・自動起動は許可しない。
 pub fn is_teams_link(url: &ValidatedUrl) -> bool {
-    Url::parse(url.original()).is_ok_and(|url| {
-        url.host_str().is_some_and(|host| {
-            host.trim_end_matches('.') == "teams.public.onecdn.static.microsoft"
-        }) && url.path() == "/evergreen-assets/safelinks/2/atp-safelinks.html"
-    })
+    is_teams_location(&url.parsed())
 }
 
 pub fn teams_target(url: &ValidatedUrl) -> Option<ValidatedUrl> {
     if !is_teams_wrapper(url) {
         return None;
     }
-    child(&Url::parse(url.original()).ok()?, "url")
+    child(&url.parsed(), "url")
 }
 
 /// 表示だけを短縮する。元の条件値を変更しない。
@@ -71,7 +75,7 @@ pub fn preview(value: &str) -> String {
 mod tests {
     use super::*;
     pub fn wrapper(inner: &str) -> ValidatedUrl {
-        let mut url = Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
+        let mut url = Url::parse(TEAMS_WRAPPER_URL).unwrap();
         url.query_pairs_mut()
             .append_pair("url", inner)
             .append_pair("pc", "synthetic-only");
@@ -121,5 +125,12 @@ mod tests {
         assert!(!is_teams_wrapper(&insecure));
         assert!(teams_target(&insecure).is_none());
         assert!(preview(&"x".repeat(1000)).chars().count() <= 111);
+    }
+
+    #[test]
+    fn wrapper_base_url_matches_the_recognized_host_and_path() {
+        let base = ValidatedUrl::parse(TEAMS_WRAPPER_URL).unwrap();
+        assert!(is_teams_wrapper(&base));
+        assert!(is_teams_link(&base));
     }
 }

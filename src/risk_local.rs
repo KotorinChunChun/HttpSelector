@@ -1,7 +1,7 @@
 use crate::url_input::ValidatedUrl;
 use percent_encoding::percent_decode_str;
 use unicode_normalization::UnicodeNormalization;
-use url::{Host, Url};
+use url::Host;
 
 /// 元のURLを変更せずに行う判定。照会可能な場合も、外部へ渡すのはASCIIホストだけ。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -123,7 +123,7 @@ const BAIT_WORDS: &[&str] = &[
 ];
 
 pub fn assess(url: &ValidatedUrl) -> LocalAssessment {
-    let parsed = Url::parse(url.original()).expect("ValidatedUrlには検証済みのURLが必要です");
+    let parsed = url.parsed();
     let host = parsed
         .host_str()
         .expect("ValidatedUrlにはホストが必要です")

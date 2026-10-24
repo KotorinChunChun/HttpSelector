@@ -56,6 +56,11 @@ impl ValidatedUrl {
         &self.original
     }
 
+    /// 検証済みの元URLを解析し直す。照合・表示用で、元の文字列は変更しない。
+    pub fn parsed(&self) -> Url {
+        Url::parse(&self.original).expect("ValidatedUrl must contain a valid URL")
+    }
+
     pub fn with_forced_confirmation(mut self, enabled: bool) -> Self {
         self.force_confirmation = enabled;
         self

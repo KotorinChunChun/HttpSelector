@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn external_lookup_requires_opt_in_for_outer_and_inner_urls() {
         let safe = ValidatedUrl::parse("https://example.com/a?secret=private").unwrap();
-        let mut wrapper = url::Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
+        let mut wrapper = url::Url::parse(crate::nested_url::TEAMS_WRAPPER_URL).unwrap();
         wrapper
             .query_pairs_mut()
             .append_pair("url", "https://microsfot.com/a?token=private");
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn official_wrapper_does_not_trust_its_target_or_skip_block_checks() {
-        let mut url = url::Url::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html").unwrap();
+        let mut url = url::Url::parse(crate::nested_url::TEAMS_WRAPPER_URL).unwrap();
         url.query_pairs_mut()
             .append_pair("url", "https://microsfot.com/a?private=not-sent");
         let url = ValidatedUrl::parse(url.to_string()).unwrap();
