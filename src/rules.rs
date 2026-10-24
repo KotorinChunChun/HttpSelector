@@ -2,18 +2,17 @@ use crate::url_input::ValidatedUrl;
 use url::{Position, Url};
 
 pub fn site_pattern(url: &ValidatedUrl) -> String {
-    let parsed = Url::parse(url.original()).expect("ValidatedUrl must contain a valid URL");
+    let parsed = url.parsed();
     format!("{}://{}/*", parsed.scheme(), host_with_port(&parsed))
 }
 
 pub fn domain_patterns(url: &ValidatedUrl) -> [String; 2] {
-    let parsed = Url::parse(url.original()).expect("ValidatedUrl must contain a valid URL");
-    let host = host_with_port(&parsed);
+    let host = host_with_port(&url.parsed());
     [format!("http://{host}/*"), format!("https://{host}/*")]
 }
 
 pub fn leading_path_pattern(url: &ValidatedUrl) -> String {
-    let parsed = Url::parse(url.original()).expect("ValidatedUrl must contain a valid URL");
+    let parsed = url.parsed();
     let first_segment = parsed
         .path_segments()
         .and_then(|mut segments| segments.find(|segment| !segment.is_empty()));
@@ -29,7 +28,7 @@ pub fn leading_path_pattern(url: &ValidatedUrl) -> String {
 }
 
 pub fn wildcard_pattern(url: &ValidatedUrl) -> String {
-    let parsed = Url::parse(url.original()).expect("ValidatedUrl must contain a valid URL");
+    let parsed = url.parsed();
     // 認証情報は全体を伏せ、同じホストの元URLに一致する区切りだけを残す。
     let user_info = if !parsed.username().is_empty() || parsed.password().is_some() {
         "*@"
@@ -138,7 +137,7 @@ fn wildcard_matches(pattern: &str, value: &str) -> bool {
     pattern_index == pattern.len()
 }
 
-fn host_with_port(url: &Url) -> String {
+pub(crate) fn host_with_port(url: &Url) -> String {
     let host = url.host_str().unwrap_or_default();
     match url.port() {
         Some(port) => format!("{host}:{port}"),

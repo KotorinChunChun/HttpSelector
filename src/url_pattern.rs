@@ -1,28 +1,23 @@
+use crate::rules::host_with_port;
 use crate::url_input::ValidatedUrl;
-use url::Url;
 
 /// Builds a privacy-preserving, human-readable pattern for optional local URL history.
 /// Folder context is retained while the final path component, parameter values, and
 /// fragment are replaced with `*`.
 pub fn from_url(url: &ValidatedUrl) -> String {
-    let parsed = Url::parse(url.original()).expect("ValidatedUrl must contain a valid URL");
-    let host = parsed.host_str().unwrap_or_default();
-    let mut value = format!("{}://{}", parsed.scheme(), host);
-    if let Some(port) = parsed.port() {
-        value.push(':');
-        value.push_str(&port.to_string());
-    }
+    let parsed = url.parsed();
+    let mut value = format!("{}://{}", parsed.scheme(), host_with_port(&parsed));
 
     let segments = parsed
         .path_segments()
         .map(|parts| parts.filter(|part| !part.is_empty()).collect::<Vec<_>>())
         .unwrap_or_default();
-    if segments.len() > 1 {
-        for segment in &segments[..segments.len() - 1] {
-            value.push('/');
-            value.push_str(segment);
-        }
-    } else if let Some(segment) = segments.first() {
+    // 1要素だけのパスはフォルダーの手掛かりとして残し、2要素以上は末尾を伏せる。
+    let folders = match segments.len() {
+        0 | 1 => &segments[..],
+        length => &segments[..length - 1],
+    };
+    for segment in folders {
         value.push('/');
         value.push_str(segment);
     }

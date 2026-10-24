@@ -63,9 +63,7 @@ fn main() -> anyhow::Result<()> {
             ..profiles[0].clone()
         };
         let url = if args.iter().any(|arg| arg == "--teams") {
-            let mut url = url::Url::parse(
-                "https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html",
-            )?;
+            let mut url = url::Url::parse(http_selector::nested_url::TEAMS_WRAPPER_URL)?;
             url.query_pairs_mut().append_pair("url", "https://tenant-my.sharepoint.com/:f:/g/personal/person_example_com/sample-token?TeamsCID=11111111-2222-3333-4444-555555555555&view=preview")
                 .append_pair("locale", "ja-jp").append_pair("pc", &"synthetic-token-not-real-".repeat(60)).append_pair("dest", "https://teams.microsoft.com/api/reputation");
             ValidatedUrl::parse(url.to_string())?

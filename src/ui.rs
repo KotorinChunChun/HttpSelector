@@ -1,13 +1,11 @@
 use crate::app_title;
-use crate::model::{DetectedProfile, Profile};
+use crate::model::{DetectedProfile, MAX_FAVORITE_PROFILES, MAX_NORMAL_PROFILES, Profile};
 use crate::profile_scan::BackgroundProfileScan;
 use crate::storage::{MAX_ESCAPE_HOLD_DURATION_TENTHS, MIN_ESCAPE_HOLD_DURATION_TENTHS};
 use crate::ui_layout::SelectorLayout;
-use crate::ui_support::{self as common, Page, Theme};
+use crate::ui_support::{self as common, Page, Theme, wide};
 use crate::url_input::ValidatedUrl;
-use anyhow::ensure;
 use std::collections::HashMap;
-use std::mem::size_of;
 use std::ptr::{null, null_mut};
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{GetLastError, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
@@ -24,7 +22,7 @@ use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const WINDOW_CLASS: &str = "HttpSelector.MainWindow";
-const MAX_TILES: usize = 25;
+const MAX_TILES: usize = MAX_FAVORITE_PROFILES + MAX_NORMAL_PROFILES;
 const TIMER_HOLD: usize = 1;
 const TIMER_PROFILE_SCAN: usize = 2;
 const WM_URL_RECEIVED: u32 = WM_APP + 1;
@@ -263,7 +261,12 @@ fn run_selector_window(
     let style = WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_VSCROLL;
     let ex_style = WS_EX_TOPMOST | window_style | WS_EX_CONTROLPARENT;
     let bounds = common::initial_bounds(1120, 900, style, ex_style);
-    register_window_class()?;
+    let class = common::register_window_class(
+        WINDOW_CLASS,
+        Some(window_proc),
+        CS_HREDRAW | CS_VREDRAW,
+        "画面",
+    )?;
     let escape_hold_duration_tenths = escape_hold_duration_tenths.clamp(
         MIN_ESCAPE_HOLD_DURATION_TENTHS,
         MAX_ESCAPE_HOLD_DURATION_TENTHS,
@@ -281,7 +284,7 @@ fn run_selector_window(
     let window = unsafe {
         CreateWindowExW(
             ex_style,
-            wide(&crate::app_identity::AppIdentity::current()?.window_class(WINDOW_CLASS)).as_ptr(),
+            class.as_ptr(),
             wide(&app_title::main()).as_ptr(),
             style,
             bounds.x,
@@ -308,53 +311,20 @@ fn run_selector_window(
         SetForegroundWindow(window);
     }
     crate::management::set_active_window(window);
-    let mut message: MSG = unsafe { std::mem::zeroed() };
-    loop {
-        let status = unsafe { GetMessageW(&mut message, null_mut(), 0, 0) };
-        ensure!(status != -1, "Windowsメッセージを取得できません");
-        if status == 0 {
-            break;
-        }
-        if common::handle_edit_shortcut(&message) {
-            continue;
-        }
-        if handle_navigation_message(window, state_pointer, &message) {
-            continue;
-        }
-        if unsafe { IsDialogMessageW(window, &message) } == 0 {
-            unsafe {
-                TranslateMessage(&message);
-                DispatchMessageW(&message);
-            }
-        }
-        if message.message == WM_KEYDOWN && unsafe { IsWindow(window) } != 0 {
+    // 取得失敗時は画面が残るため、状態を解放せずにエラーを返す。
+    common::run_message_loop(
+        window,
+        "Windowsメッセージを取得できません",
+        |message| handle_navigation_message(window, state_pointer, message),
+        || {
             let state = unsafe { &mut *state_pointer };
             state
                 .page
                 .reveal(window, unsafe { GetFocus() }, state.theme.dpi);
-        }
-    }
+        },
+    )?;
     let state = unsafe { Box::from_raw(state_pointer) };
     Ok(state.result.clone())
-}
-
-fn register_window_class() -> anyhow::Result<()> {
-    let class = wide(&crate::app_identity::AppIdentity::current()?.window_class(WINDOW_CLASS));
-    let mut window_class: WNDCLASSEXW = unsafe { std::mem::zeroed() };
-    window_class.cbSize = size_of::<WNDCLASSEXW>() as u32;
-    window_class.style = CS_HREDRAW | CS_VREDRAW;
-    window_class.lpfnWndProc = Some(window_proc);
-    window_class.hInstance = unsafe { GetModuleHandleW(null()) };
-    window_class.hCursor = unsafe { LoadCursorW(null_mut(), IDC_ARROW) };
-    window_class.lpszClassName = class.as_ptr();
-    if unsafe { RegisterClassExW(&window_class) } == 0 {
-        let error = unsafe { GetLastError() };
-        ensure!(
-            error == 1410,
-            "画面クラスを登録できません: Win32 error {error}"
-        );
-    }
-    Ok(())
 }
 
 unsafe extern "system" fn window_proc(
@@ -368,13 +338,7 @@ unsafe extern "system" fn window_proc(
     {
         return result;
     }
-    if message == WM_NCCREATE {
-        let create = unsafe { &*(lparam as *const CREATESTRUCTW) };
-        unsafe {
-            SetWindowLongPtrW(window, GWLP_USERDATA, create.lpCreateParams as isize);
-        }
-    }
-    let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut UiState };
+    let pointer = unsafe { common::window_state::<UiState>(window, message, lparam) };
     match message {
         WM_SYSCOMMAND if common::is_maximize_command(wparam) => 0,
         WM_CREATE if !pointer.is_null() => {
@@ -937,15 +901,16 @@ fn refresh_url(window: HWND, state: &mut UiState) {
 }
 
 fn refresh_tiles(window: HWND, state: &mut UiState) {
-    let favorites = state.filtered_indices[..5].iter().flatten().count();
-    let normal = state.filtered_indices[5..].iter().flatten().count();
+    let (favorite_slots, normal_slots) = state.filtered_indices.split_at(MAX_FAVORITE_PROFILES);
+    let favorites = favorite_slots.iter().flatten().count();
+    let normal = normal_slots.iter().flatten().count();
     common::set_text(
         state.favorites_heading,
-        &format!("お気に入り  {favorites} / 5"),
+        &format!("お気に入り  {favorites} / {MAX_FAVORITE_PROFILES}"),
     );
     common::set_text(
         state.normal_heading,
-        &format!("プロファイル  {normal} / 20"),
+        &format!("プロファイル  {normal} / {MAX_NORMAL_PROFILES}"),
     );
     common::set_text(
         state.favorite_empty,
@@ -1011,12 +976,16 @@ fn refresh_selection_visuals(state: &UiState) {
             state.favorite_pin,
             i32::from(
                 focused.is_some()
-                    && (focused.is_some_and(|profile| profile.favorite) || favorite_count < 5),
+                    && (focused.is_some_and(|profile| profile.favorite)
+                        || favorite_count < MAX_FAVORITE_PROFILES),
             ),
         );
         EnableWindow(
             state.favorite_up,
-            i32::from(focused.is_some_and(|profile| !profile.favorite) && favorite_count < 5),
+            i32::from(
+                focused.is_some_and(|profile| !profile.favorite)
+                    && favorite_count < MAX_FAVORITE_PROFILES,
+            ),
         );
         EnableWindow(
             state.favorite_down,
@@ -1261,25 +1230,22 @@ fn handle_navigation_message(window: HWND, pointer: *mut UiState, message: &MSG)
     false
 }
 
+/// 先頭のお気に入り枠と後続の通常枠へ、選択可能なプロファイルの添字を割り当てる。
 fn profile_slots(profiles: &[Profile]) -> Vec<Option<usize>> {
     let mut slots = vec![None; MAX_TILES];
-    for (slot, (profile_index, _)) in profiles
-        .iter()
-        .enumerate()
-        .filter(|(_, profile)| profile.favorite && profile.available && profile.enabled)
-        .take(5)
-        .enumerate()
-    {
-        slots[slot] = Some(profile_index);
+    let selectable = |favorite: bool| {
+        profiles
+            .iter()
+            .enumerate()
+            .filter(move |(_, profile)| profile.favorite == favorite && profile.is_selectable())
+            .map(|(index, _)| index)
+    };
+    let (favorite_slots, normal_slots) = slots.split_at_mut(MAX_FAVORITE_PROFILES);
+    for (slot, index) in favorite_slots.iter_mut().zip(selectable(true)) {
+        *slot = Some(index);
     }
-    for (offset, (profile_index, _)) in profiles
-        .iter()
-        .enumerate()
-        .filter(|(_, profile)| !profile.favorite && profile.available && profile.enabled)
-        .take(20)
-        .enumerate()
-    {
-        slots[5 + offset] = Some(profile_index);
+    for (slot, index) in normal_slots.iter_mut().zip(selectable(false)) {
+        *slot = Some(index);
     }
     slots
 }
@@ -1288,27 +1254,51 @@ pub fn show_error(title: &str, message: &str) {
     show_error_for(null_mut(), title, message);
 }
 
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn show_error_for(owner: HWND, title: &str, message: &str) {
-    common::release_topmost(owner);
-    let title = wide(title);
-    let message = wide(message);
-    unsafe {
-        MessageBoxW(
-            owner,
-            message.as_ptr(),
-            title.as_ptr(),
-            MB_OK | MB_APPLMODAL | MB_ICONERROR | MB_SETFOREGROUND,
-        );
-    }
+    message_box(owner, title, message, MB_OK | MB_ICONERROR);
 }
 
 pub fn show_information(title: &str, message: &str) {
     show_information_for(null_mut(), title, message);
 }
 
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn show_information_for(owner: HWND, title: &str, message: &str) {
+    message_box(owner, title, message, MB_OK | MB_ICONINFORMATION);
+}
+
+pub fn ask_integrity_recovery(has_valid_backup: bool) -> IntegrityRecoveryAction {
+    let title = app_title::settings_file_error();
+    if has_valid_backup {
+        match message_box(
+            null_mut(),
+            &title,
+            "設定ファイルが変更または破損しています。\r\n\r\n「はい」: バックアップから復旧\r\n「いいえ」: 破損ファイルを退避して初期化\r\n「キャンセル」: 終了",
+            MB_YESNOCANCEL | MB_ICONWARNING,
+        ) {
+            IDYES => IntegrityRecoveryAction::Restore,
+            IDNO => IntegrityRecoveryAction::Initialize,
+            _ => IntegrityRecoveryAction::Exit,
+        }
+    } else {
+        match message_box(
+            null_mut(),
+            &title,
+            "設定ファイルが変更または破損しており、有効なバックアップもありません。\r\n\r\n「OK」: 破損ファイルを退避して初期化\r\n「キャンセル」: 終了",
+            MB_OKCANCEL | MB_ICONWARNING,
+        ) {
+            IDOK => IntegrityRecoveryAction::Initialize,
+            _ => IntegrityRecoveryAction::Exit,
+        }
+    }
+}
+
+/// 所有画面の最前面属性を外し、アプリケーションモーダルで前面に表示する。
+fn message_box(
+    owner: HWND,
+    title: &str,
+    message: &str,
+    style: MESSAGEBOX_STYLE,
+) -> MESSAGEBOX_RESULT {
     common::release_topmost(owner);
     let title = wide(title);
     let message = wide(message);
@@ -1317,49 +1307,9 @@ pub fn show_information_for(owner: HWND, title: &str, message: &str) {
             owner,
             message.as_ptr(),
             title.as_ptr(),
-            MB_OK | MB_APPLMODAL | MB_ICONINFORMATION | MB_SETFOREGROUND,
-        );
+            style | MB_APPLMODAL | MB_SETFOREGROUND,
+        )
     }
-}
-
-pub fn ask_integrity_recovery(has_valid_backup: bool) -> IntegrityRecoveryAction {
-    let title = wide(&app_title::settings_file_error());
-    if has_valid_backup {
-        let message = wide(
-            "設定ファイルが変更または破損しています。\r\n\r\n「はい」: バックアップから復旧\r\n「いいえ」: 破損ファイルを退避して初期化\r\n「キャンセル」: 終了",
-        );
-        match unsafe {
-            MessageBoxW(
-                null_mut(),
-                message.as_ptr(),
-                title.as_ptr(),
-                MB_YESNOCANCEL | MB_APPLMODAL | MB_ICONWARNING | MB_SETFOREGROUND,
-            )
-        } {
-            IDYES => IntegrityRecoveryAction::Restore,
-            IDNO => IntegrityRecoveryAction::Initialize,
-            _ => IntegrityRecoveryAction::Exit,
-        }
-    } else {
-        let message = wide(
-            "設定ファイルが変更または破損しており、有効なバックアップもありません。\r\n\r\n「OK」: 破損ファイルを退避して初期化\r\n「キャンセル」: 終了",
-        );
-        match unsafe {
-            MessageBoxW(
-                null_mut(),
-                message.as_ptr(),
-                title.as_ptr(),
-                MB_OKCANCEL | MB_APPLMODAL | MB_ICONWARNING | MB_SETFOREGROUND,
-            )
-        } {
-            IDOK => IntegrityRecoveryAction::Initialize,
-            _ => IntegrityRecoveryAction::Exit,
-        }
-    }
-}
-
-fn wide(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 const fn low_word(value: usize) -> u16 {
@@ -1368,11 +1318,6 @@ const fn low_word(value: usize) -> u16 {
 
 const fn high_word(value: usize) -> u16 {
     ((value >> 16) & 0xffff) as u16
-}
-
-#[allow(dead_code)]
-fn _rect_width(rect: RECT) -> i32 {
-    rect.right - rect.left
 }
 
 #[cfg(test)]

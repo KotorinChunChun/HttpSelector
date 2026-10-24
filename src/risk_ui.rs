@@ -217,11 +217,7 @@ unsafe extern "system" fn window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    if message == WM_NCCREATE {
-        let create = unsafe { &*(lparam as *const CREATESTRUCTW) };
-        unsafe { SetWindowLongPtrW(window, GWLP_USERDATA, create.lpCreateParams as isize) };
-    }
-    let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut State };
+    let pointer = unsafe { common::window_state::<State>(window, message, lparam) };
     match message {
         WM_COMMAND if !pointer.is_null() => {
             let id = wparam & 0xffff;

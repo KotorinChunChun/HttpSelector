@@ -291,6 +291,7 @@ fn read_name(message: &[u8], cursor: &mut usize) -> Result<Vec<Vec<u8>>, String>
 #[cfg(windows)]
 mod transport {
     use super::MAX_DNS_MESSAGE;
+    use crate::win32::wide;
     use std::ffi::c_void;
     use std::ptr::{null, null_mut};
     use std::time::{Duration, Instant};
@@ -506,10 +507,6 @@ mod transport {
             "Quad9への安全な接続を確認できませんでした（{}）。",
             std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
         )
-    }
-
-    fn wide(value: &str) -> Vec<u16> {
-        value.encode_utf16().chain(Some(0)).collect()
     }
 }
 

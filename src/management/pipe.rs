@@ -1,5 +1,6 @@
 //! 利用者専用パイプと期限付きI/Oを画面・管理プロトコルから分離する。
-use super::{MAX_REQUEST_BYTES, wide};
+use super::MAX_REQUEST_BYTES;
+use crate::win32::wide;
 use anyhow::ensure;
 use std::ptr::{null, null_mut};
 use std::time::{Duration, Instant};

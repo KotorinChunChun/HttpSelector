@@ -2,6 +2,9 @@ use std::fmt;
 use std::str::FromStr;
 
 pub const GUEST_PROFILE_ID: &str = "__httpselector_guest__";
+/// 選択画面のお気に入り枠と通常枠の上限。
+pub const MAX_FAVORITE_PROFILES: usize = 5;
+pub const MAX_NORMAL_PROFILES: usize = 20;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(i64)]
@@ -79,6 +82,11 @@ pub struct Profile {
 impl Profile {
     pub fn is_guest(&self) -> bool {
         self.profile_id == GUEST_PROFILE_ID
+    }
+
+    /// 検出済みで、利用者が無効にしていないプロファイルだけを選択・自動起動の対象にする。
+    pub fn is_selectable(&self) -> bool {
+        self.available && self.enabled
     }
 
     pub fn display_name(&self) -> &str {

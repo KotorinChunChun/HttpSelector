@@ -1,4 +1,6 @@
-use crate::model::{BrowserType, DefaultRule, DetectedProfile, Profile};
+use crate::model::{
+    BrowserType, DefaultRule, DetectedProfile, MAX_FAVORITE_PROFILES, MAX_NORMAL_PROFILES, Profile,
+};
 use anyhow::{Context, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::{Path, PathBuf};
@@ -8,15 +10,23 @@ pub struct Storage {
     database_path: PathBuf,
 }
 
+/// 入れ子条件を知らない旧版が外側ホストだけで自動起動しないように上げた版。
+const SCHEMA_VERSION: i64 = 5;
 const SETTING_INITIAL_SCAN_COMPLETED: &str = "initial_scan_completed";
 const SETTING_RECORD_URL_HISTORY: &str = "record_url_history";
 const SETTING_ESCAPE_HOLD_DURATION_TENTHS: &str = "escape_hold_duration_tenths";
 const SETTING_OPEN_PROFILE_ON_DOUBLE_CLICK: &str = "open_profile_on_double_click";
 const SETTING_INTERRUPTION_ENABLED: &str = "interruption_enabled";
+const SETTING_QUAD9_ENABLED: &str = "quad9_enabled";
+const SETTING_RISK_APPROVED_DOMAINS: &str = "risk_approved_domains";
 pub const DEFAULT_ESCAPE_HOLD_DURATION_TENTHS: u32 = 0;
 pub const MIN_ESCAPE_HOLD_DURATION_TENTHS: u32 = 0;
 pub const MAX_ESCAPE_HOLD_DURATION_TENTHS: u32 = 100;
 pub const DEFAULT_OPEN_PROFILE_ON_DOUBLE_CLICK: bool = true;
+
+fn escape_hold_duration_in_range(tenths: u32) -> bool {
+    (MIN_ESCAPE_HOLD_DURATION_TENTHS..=MAX_ESCAPE_HOLD_DURATION_TENTHS).contains(&tenths)
+}
 
 impl Storage {
     pub fn new(database_path: impl Into<PathBuf>) -> Self {
@@ -31,8 +41,11 @@ impl Storage {
 
     pub fn initialize(&self) -> anyhow::Result<()> {
         let mut connection = self.open()?;
-        let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        anyhow::ensure!(version <= 5, "新しい版の設定DBはこの版では開けません");
+        let version = schema_version(&connection)?;
+        anyhow::ensure!(
+            version <= SCHEMA_VERSION,
+            "新しい版の設定DBはこの版では開けません"
+        );
         connection.pragma_update(None, "journal_mode", "DELETE")?;
         let transaction = connection.transaction()?;
         transaction.execute_batch(
@@ -89,16 +102,13 @@ impl Storage {
                  ALTER TABLE DefaultRulesV4 RENAME TO DefaultRules;",
             )?;
         }
-        // 入れ子条件を知らない旧版が外側ホストだけで自動起動しないように版を上げる。
-        transaction.pragma_update(None, "user_version", 5)?;
+        transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         transaction.commit()?;
         Ok(())
     }
 
     pub fn schema_needs_migration(&self) -> anyhow::Result<bool> {
-        let connection = self.open()?;
-        let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        Ok(version < 5)
+        Ok(schema_version(&self.open()?)? < SCHEMA_VERSION)
     }
 
     pub fn profile_count(&self) -> anyhow::Result<i64> {
@@ -166,18 +176,25 @@ impl Storage {
             .context("プロファイルを読み取れません")
     }
 
+    pub fn find_profile(&self, id: i64) -> anyhow::Result<Option<Profile>> {
+        Ok(self
+            .load_all_profiles()?
+            .into_iter()
+            .find(|profile| profile.id == id))
+    }
+
     pub fn load_selection_profiles(&self) -> anyhow::Result<Vec<Profile>> {
         let all = self.load_all_profiles()?;
         let mut favorites: Vec<_> = all
             .iter()
-            .filter(|profile| profile.available && profile.enabled && profile.favorite)
-            .take(5)
+            .filter(|profile| profile.is_selectable() && profile.favorite)
+            .take(MAX_FAVORITE_PROFILES)
             .cloned()
             .collect();
         favorites.extend(
             all.into_iter()
-                .filter(|profile| profile.available && profile.enabled && !profile.favorite)
-                .take(20),
+                .filter(|profile| profile.is_selectable() && !profile.favorite)
+                .take(MAX_NORMAL_PROFILES),
         );
         Ok(favorites)
     }
@@ -230,12 +247,11 @@ impl Storage {
         quad9_enabled: bool,
     ) -> anyhow::Result<()> {
         anyhow::ensure!(
-            profiles.iter().filter(|profile| profile.favorite).count() <= 5,
+            profiles.iter().filter(|profile| profile.favorite).count() <= MAX_FAVORITE_PROFILES,
             "お気に入りに登録できるプロファイルは5件までです"
         );
         anyhow::ensure!(
-            (MIN_ESCAPE_HOLD_DURATION_TENTHS..=MAX_ESCAPE_HOLD_DURATION_TENTHS)
-                .contains(&escape_hold_duration_tenths),
+            escape_hold_duration_in_range(escape_hold_duration_tenths),
             "ESC長押し時間が範囲外です"
         );
         let mut connection = self.open()?;
@@ -244,7 +260,7 @@ impl Storage {
             Self::write_profile(&transaction, profile)?;
         }
         for (key, value) in [
-            ("quad9_enabled", u32::from(quad9_enabled)),
+            (SETTING_QUAD9_ENABLED, u32::from(quad9_enabled)),
             (SETTING_RECORD_URL_HISTORY, u32::from(record_url_history)),
             (
                 SETTING_ESCAPE_HOLD_DURATION_TENTHS,
@@ -255,11 +271,7 @@ impl Storage {
                 u32::from(open_profile_on_double_click),
             ),
         ] {
-            transaction.execute(
-                "INSERT INTO Settings(Key, Value) VALUES (?1, ?2)
-                ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value",
-                params![key, value.to_string()],
-            )?;
+            upsert_setting(&transaction, key, &value.to_string())?;
         }
         transaction.commit()?;
         Ok(())
@@ -275,24 +287,30 @@ impl Storage {
     }
 
     pub fn set_setting(&self, key: &str, value: &str) -> anyhow::Result<()> {
-        let connection = self.open()?;
-        connection.execute(
-            "INSERT INTO Settings(Key, Value) VALUES (?1, ?2)
-             ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value",
-            params![key, value],
-        )?;
-        Ok(())
+        upsert_setting(&self.open()?, key, value)
+    }
+
+    /// 既定値と逆の値（既定OFFなら"1"、既定ONなら"0"）が明示された場合だけ切り替える。
+    /// 欠落・不正値は既定値として扱う。
+    fn flag(&self, key: &str, default: bool) -> anyhow::Result<bool> {
+        Ok(match self.get_setting(key)? {
+            Some(value) if default => value != "0",
+            Some(value) => value == "1",
+            None => default,
+        })
+    }
+
+    fn set_flag(&self, key: &str, enabled: bool) -> anyhow::Result<()> {
+        self.set_setting(key, if enabled { "1" } else { "0" })
     }
 
     pub fn initial_scan_completed(&self) -> anyhow::Result<bool> {
-        Ok(self
-            .get_setting(SETTING_INITIAL_SCAN_COMPLETED)?
-            .is_some_and(|value| value == "1"))
+        self.flag(SETTING_INITIAL_SCAN_COMPLETED, false)
     }
 
     pub fn approved_domains(&self) -> anyhow::Result<Vec<String>> {
         let domains: Vec<String> = self
-            .get_setting("risk_approved_domains")?
+            .get_setting(SETTING_RISK_APPROVED_DOMAINS)?
             .map(|json| serde_json::from_str(&json))
             .transpose()?
             .unwrap_or_default();
@@ -301,76 +319,62 @@ impl Storage {
 
     /// 設定のない既存DBも、明示した1以外は外部照会しない。
     pub fn quad9_enabled(&self) -> anyhow::Result<bool> {
-        Ok(self.get_setting("quad9_enabled")?.as_deref() == Some("1"))
+        self.flag(SETTING_QUAD9_ENABLED, false)
     }
 
     pub fn set_approved_domains(&self, domains: &[String]) -> anyhow::Result<()> {
         let domains = crate::risk::normalize_approved_domains(domains)?;
-        self.set_setting("risk_approved_domains", &serde_json::to_string(&domains)?)
+        self.set_setting(
+            SETTING_RISK_APPROVED_DOMAINS,
+            &serde_json::to_string(&domains)?,
+        )
     }
 
     pub fn mark_initial_scan_completed(&self) -> anyhow::Result<()> {
-        self.set_setting(SETTING_INITIAL_SCAN_COMPLETED, "1")
+        self.set_flag(SETTING_INITIAL_SCAN_COMPLETED, true)
     }
 
     pub fn record_url_history_enabled(&self) -> anyhow::Result<bool> {
-        Ok(self
-            .get_setting(SETTING_RECORD_URL_HISTORY)?
-            .is_some_and(|value| value == "1"))
+        self.flag(SETTING_RECORD_URL_HISTORY, false)
     }
 
     pub fn set_record_url_history_enabled(&self, enabled: bool) -> anyhow::Result<()> {
-        self.set_setting(SETTING_RECORD_URL_HISTORY, if enabled { "1" } else { "0" })
+        self.set_flag(SETTING_RECORD_URL_HISTORY, enabled)
     }
 
     pub fn escape_hold_duration_tenths(&self) -> anyhow::Result<u32> {
-        let Some(value) = self.get_setting(SETTING_ESCAPE_HOLD_DURATION_TENTHS)? else {
-            return Ok(DEFAULT_ESCAPE_HOLD_DURATION_TENTHS);
-        };
-        let Ok(value) = value.parse::<u32>() else {
-            return Ok(DEFAULT_ESCAPE_HOLD_DURATION_TENTHS);
-        };
-        if (MIN_ESCAPE_HOLD_DURATION_TENTHS..=MAX_ESCAPE_HOLD_DURATION_TENTHS).contains(&value) {
-            Ok(value)
-        } else {
-            Ok(DEFAULT_ESCAPE_HOLD_DURATION_TENTHS)
-        }
+        Ok(self
+            .get_setting(SETTING_ESCAPE_HOLD_DURATION_TENTHS)?
+            .and_then(|value| value.parse::<u32>().ok())
+            .filter(|value| escape_hold_duration_in_range(*value))
+            .unwrap_or(DEFAULT_ESCAPE_HOLD_DURATION_TENTHS))
     }
 
     pub fn set_escape_hold_duration_tenths(&self, tenths: u32) -> anyhow::Result<()> {
         anyhow::ensure!(
-            (MIN_ESCAPE_HOLD_DURATION_TENTHS..=MAX_ESCAPE_HOLD_DURATION_TENTHS).contains(&tenths),
+            escape_hold_duration_in_range(tenths),
             "ESC長押し時間は0秒から10.0秒の範囲で指定してください"
         );
         self.set_setting(SETTING_ESCAPE_HOLD_DURATION_TENTHS, &tenths.to_string())
     }
 
     pub fn open_profile_on_double_click(&self) -> anyhow::Result<bool> {
-        Ok(self
-            .get_setting(SETTING_OPEN_PROFILE_ON_DOUBLE_CLICK)?
-            .map(|value| value != "0")
-            .unwrap_or(DEFAULT_OPEN_PROFILE_ON_DOUBLE_CLICK))
+        self.flag(
+            SETTING_OPEN_PROFILE_ON_DOUBLE_CLICK,
+            DEFAULT_OPEN_PROFILE_ON_DOUBLE_CLICK,
+        )
     }
 
     pub fn set_open_profile_on_double_click(&self, enabled: bool) -> anyhow::Result<()> {
-        self.set_setting(
-            SETTING_OPEN_PROFILE_ON_DOUBLE_CLICK,
-            if enabled { "1" } else { "0" },
-        )
+        self.set_flag(SETTING_OPEN_PROFILE_ON_DOUBLE_CLICK, enabled)
     }
 
     pub fn interruption_enabled(&self) -> anyhow::Result<bool> {
-        Ok(self
-            .get_setting(SETTING_INTERRUPTION_ENABLED)?
-            .map(|value| value != "0")
-            .unwrap_or(true))
+        self.flag(SETTING_INTERRUPTION_ENABLED, true)
     }
 
     pub fn set_interruption_enabled(&self, enabled: bool) -> anyhow::Result<()> {
-        self.set_setting(
-            SETTING_INTERRUPTION_ENABLED,
-            if enabled { "1" } else { "0" },
-        )
+        self.set_flag(SETTING_INTERRUPTION_ENABLED, enabled)
     }
 
     pub fn load_default_rules(&self) -> anyhow::Result<Vec<DefaultRule>> {
@@ -449,6 +453,8 @@ impl Storage {
         rule: &crate::association::StoredRule,
     ) -> anyhow::Result<()> {
         let pattern = rule.encode()?;
+        // 質問省略ルールはプロファイルに依存させない。
+        let profile_id = if rule.suppress_prompt { 0 } else { profile_id };
         let mut rules = self.load_default_rules()?;
         let existing = rules.iter_mut().find(|entry| {
             crate::association::StoredRule::decode(&entry.pattern)
@@ -461,12 +467,12 @@ impl Storage {
         });
         if let Some(existing) = existing {
             existing.pattern = pattern;
-            existing.profile_id = if rule.suppress_prompt { 0 } else { profile_id };
+            existing.profile_id = profile_id;
             existing.enabled = true;
         } else {
             rules.push(DefaultRule {
                 id: 0,
-                profile_id: if rule.suppress_prompt { 0 } else { profile_id },
+                profile_id,
                 pattern,
                 enabled: true,
                 sort_order: rules.len() as i64,
@@ -573,6 +579,19 @@ impl Storage {
         connection.pragma_update(None, "foreign_keys", true)?;
         Ok(connection)
     }
+}
+
+fn schema_version(connection: &Connection) -> anyhow::Result<i64> {
+    Ok(connection.pragma_query_value(None, "user_version", |row| row.get(0))?)
+}
+
+fn upsert_setting(connection: &Connection, key: &str, value: &str) -> anyhow::Result<()> {
+    connection.execute(
+        "INSERT INTO Settings(Key, Value) VALUES (?1, ?2)
+         ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value",
+        params![key, value],
+    )?;
+    Ok(())
 }
 
 fn profile_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Profile> {

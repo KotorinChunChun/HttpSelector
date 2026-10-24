@@ -68,33 +68,42 @@ impl<'a> IntegrityManager<'a> {
         Ok(())
     }
 
+    /// 署名済みバックアップを作成してから変更し、変更後のDBを署名する。
+    /// 変更・署名のどちらかが失敗した場合は、変更前のバックアップへ戻してから失敗を返す。
+    pub fn update<T>(&self, change: impl FnOnce() -> anyhow::Result<T>) -> anyhow::Result<T> {
+        self.backup_current()?;
+        match change().and_then(|value| self.sign_current().map(|()| value)) {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                self.restore_backup()
+                    .context("保存失敗後の設定復元に失敗しました")?;
+                Err(error)
+            }
+        }
+    }
+
     pub fn quarantine_current(&self) -> anyhow::Result<()> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        if self.paths.database.exists() {
+        for (source, message) in [
+            (&self.paths.database, "破損DBを退避できません"),
+            (&self.paths.signature, "破損署名を退避できません"),
+            (&self.paths.protected_key, "破損した保護鍵を退避できません"),
+        ] {
+            if !source.exists() {
+                continue;
+            }
+            let file_name = source
+                .file_name()
+                .and_then(|name| name.to_str())
+                .context("退避するファイル名が不正です")?;
             let destination = self
                 .paths
                 .data_dir
-                .join(format!("HttpSelector.db.corrupt-{timestamp}"));
-            std::fs::rename(&self.paths.database, destination).context("破損DBを退避できません")?;
-        }
-        if self.paths.signature.exists() {
-            let destination = self
-                .paths
-                .data_dir
-                .join(format!("HttpSelector.db.sig.corrupt-{timestamp}"));
-            std::fs::rename(&self.paths.signature, destination)
-                .context("破損署名を退避できません")?;
-        }
-        if self.paths.protected_key.exists() {
-            let destination = self
-                .paths
-                .data_dir
-                .join(format!("integrity.key.corrupt-{timestamp}"));
-            std::fs::rename(&self.paths.protected_key, destination)
-                .context("破損した保護鍵を退避できません")?;
+                .join(format!("{file_name}.corrupt-{timestamp}"));
+            std::fs::rename(source, destination).context(message)?;
         }
         Ok(())
     }
@@ -268,5 +277,60 @@ mod tests {
         manager.restore_backup().unwrap();
         assert_eq!(manager.verify_current().unwrap(), IntegrityStatus::Valid);
         assert_eq!(std::fs::read(&paths.database).unwrap(), b"first");
+    }
+
+    #[test]
+    fn update_signs_changes_and_restores_the_backup_on_failure() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::from_data_dir(temp.path());
+        paths.ensure_data_dir().unwrap();
+        std::fs::write(&paths.database, b"first").unwrap();
+        let manager = IntegrityManager::new(&paths);
+        manager.sign_current().unwrap();
+
+        let value = manager
+            .update(|| {
+                std::fs::write(&paths.database, b"second")?;
+                Ok(7)
+            })
+            .unwrap();
+        assert_eq!(value, 7);
+        assert_eq!(manager.verify_current().unwrap(), IntegrityStatus::Valid);
+        assert_eq!(std::fs::read(&paths.database).unwrap(), b"second");
+
+        let result = manager.update(|| -> anyhow::Result<()> {
+            std::fs::write(&paths.database, b"partial")?;
+            anyhow::bail!("write failed")
+        });
+        assert_eq!(result.unwrap_err().to_string(), "write failed");
+        assert_eq!(manager.verify_current().unwrap(), IntegrityStatus::Valid);
+        assert_eq!(std::fs::read(&paths.database).unwrap(), b"second");
+    }
+
+    #[test]
+    fn quarantine_moves_every_existing_file_aside() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::from_data_dir(temp.path());
+        paths.ensure_data_dir().unwrap();
+        std::fs::write(&paths.database, b"broken").unwrap();
+        IntegrityManager::new(&paths).sign_current().unwrap();
+        IntegrityManager::new(&paths).quarantine_current().unwrap();
+        assert!(!paths.database.exists());
+        assert!(!paths.signature.exists());
+        assert!(!paths.protected_key.exists());
+        let mut names: Vec<_> = std::fs::read_dir(temp.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .map(|name| name.rsplit_once('-').unwrap().0.to_owned())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "HttpSelector.db.corrupt",
+                "HttpSelector.db.sig.corrupt",
+                "integrity.key.corrupt"
+            ]
+        );
     }
 }

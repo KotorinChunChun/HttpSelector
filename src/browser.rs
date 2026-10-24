@@ -1,6 +1,7 @@
 use crate::app_paths::AppPaths;
 use crate::model::{BrowserType, DetectedProfile, Profile};
 use crate::url_input::ValidatedUrl;
+use crate::win32::wide;
 use anyhow::{Context, bail};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -466,10 +467,6 @@ fn read_default_registry_string(root: HKEY, subkey: &str) -> Option<String> {
         .position(|value| *value == 0)
         .unwrap_or(buffer.len());
     String::from_utf16(&buffer[..end]).ok()
-}
-
-fn wide(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 fn candidate_executables(browser_type: BrowserType) -> Vec<PathBuf> {

@@ -1,5 +1,6 @@
 //! KotorinToys管理契約2と、画面・検査の寿命に依存しないURL受付窓口。
 use crate::url_input::ValidatedUrl;
+use crate::win32::{wide, window_state};
 use anyhow::{Context, ensure};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -10,7 +11,6 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Graphics::Gdi::UpdateWindow;
-use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -168,30 +168,21 @@ impl Shared {
             && !self.processing_url.load(Ordering::Acquire)
             && queue_empty
             && !self.forwarded.swap(true, Ordering::AcqRel)
+            && crate::single_instance::send_url(active, &url, 500)
+                .is_some_and(|accepted| accepted != 0)
         {
-            let mut encoded = wide(url.original());
-            let data = COPYDATASTRUCT {
-                dwData: url.copy_data_kind(),
-                cbData: (encoded.len() * size_of::<u16>()) as u32,
-                lpData: encoded.as_mut_ptr().cast(),
-            };
-            let mut accepted = 0;
-            let sent = unsafe {
-                SendMessageTimeoutW(
-                    active,
-                    WM_COPYDATA,
-                    0,
-                    (&data as *const COPYDATASTRUCT) as isize,
-                    SMTO_ABORTIFHUNG,
-                    500,
-                    &mut accepted,
-                )
-            };
-            if sent != 0 && accepted != 0 {
-                return true;
-            }
+            return true;
         }
         self.enqueue(Event::Url(url), None)
+    }
+
+    /// 設定編集中・確認中の停止要求は拒否する。
+    fn stop_result(&self) -> UiResult {
+        if self.busy.load(Ordering::Acquire) > 0 {
+            UiResult::Refused
+        } else {
+            UiResult::Accepted
+        }
     }
 
     fn commit_stop(&self) {
@@ -394,11 +385,7 @@ pub unsafe fn handle_window_message(window: HWND, message: u32, token: usize) ->
     };
     // URLなしの二重起動は管理パイプ外の、期限付き応答を持たない表示要求。
     if message == WM_MANAGEMENT_SHOW && token == 0 {
-        unsafe {
-            ShowWindow(window, SW_RESTORE);
-            UpdateWindow(window);
-            SetForegroundWindow(window);
-        }
+        bring_to_front(window);
         return Some(0);
     }
     if message == WM_MANAGEMENT_EXIT {
@@ -418,19 +405,22 @@ pub unsafe fn handle_window_message(window: HWND, message: u32, token: usize) ->
     }
     let result = match message {
         WM_MANAGEMENT_SHOW => {
-            unsafe {
-                ShowWindow(window, SW_RESTORE);
-                UpdateWindow(window);
-                SetForegroundWindow(window);
-            }
+            bring_to_front(window);
             UiResult::Completed
         }
-        WM_MANAGEMENT_STOP if shared.busy.load(Ordering::Acquire) > 0 => UiResult::Refused,
-        WM_MANAGEMENT_STOP => UiResult::Accepted,
+        WM_MANAGEMENT_STOP => shared.stop_result(),
         _ => UiResult::Completed,
     };
     shared.complete(token, result);
     Some(0)
+}
+
+fn bring_to_front(window: HWND) {
+    unsafe {
+        ShowWindow(window, SW_RESTORE);
+        UpdateWindow(window);
+        SetForegroundWindow(window);
+    }
 }
 
 pub fn normalize_origin(origin: &str) -> &str {
@@ -614,19 +604,12 @@ unsafe extern "system" fn broker_proc(
     wparam: usize,
     lparam: isize,
 ) -> isize {
-    if message == WM_NCCREATE {
-        let create = unsafe { &*(lparam as *const CREATESTRUCTW) };
-        unsafe { SetWindowLongPtrW(window, GWLP_USERDATA, create.lpCreateParams as isize) };
-    }
-    let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) } as *const Shared;
+    let pointer = unsafe { window_state::<Shared>(window, message, lparam) }.cast_const();
     if !pointer.is_null() {
         let shared = unsafe { &*pointer };
         if matches!(message, WM_MANAGEMENT_STOP | WM_MANAGEMENT_STATUS) {
-            let result = if message == WM_MANAGEMENT_STOP && shared.busy.load(Ordering::Acquire) > 0
-            {
-                UiResult::Refused
-            } else if message == WM_MANAGEMENT_STOP {
-                UiResult::Accepted
+            let result = if message == WM_MANAGEMENT_STOP {
+                shared.stop_result()
             } else {
                 UiResult::Completed
             };
@@ -671,9 +654,6 @@ unsafe extern "system" fn broker_proc(
 mod pipe;
 use pipe::ManagementPipe;
 pub use pipe::current_user_sid;
-fn wide(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain(Some(0)).collect()
-}
 
 #[cfg(test)]
 mod tests {
