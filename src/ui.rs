@@ -733,7 +733,16 @@ fn focused_profile_id(state: &UiState) -> Option<i64> {
 fn create_controls(window: HWND, state: &mut UiState) {
     let font = state.theme.font;
     let title = common::label(window, &app_title::main(), state.theme.title);
-    let close = common::button(window, "閉じる(ESC長押)", ID_CLOSE, font);
+    let close = common::button(
+        window,
+        if state.escape_hold_duration_tenths == 0 {
+            "閉じる(ESC)"
+        } else {
+            "閉じる(ESC長押)"
+        },
+        ID_CLOSE,
+        font,
+    );
     state.status = common::label(window, "", font);
     let original_label = common::label(window, "受信したURL", state.theme.bold);
     state.original_edit = common::edit(window, 0, true, true, font);
@@ -1680,6 +1689,7 @@ mod tests {
         let mut state = Box::new(UiState::new(None, vec![], 0, true, None, true));
         let window =
             common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
+        assert_eq!(common::window_text(state.fixed[1]), "閉じる(ESC)");
         let mut message: MSG = unsafe { std::mem::zeroed() };
         message.message = WM_KEYDOWN;
         message.wParam = VK_ESCAPE as usize;

@@ -129,6 +129,107 @@ pub fn button_text_width(window: HWND, text: &str, font: HFONT, dpi: u32) -> i32
     }
 }
 
+pub struct Tooltips {
+    window: HWND,
+    texts: Vec<Vec<u16>>,
+    controls: Vec<HWND>,
+}
+
+impl Tooltips {
+    pub fn new(owner: HWND, dpi: u32) -> Self {
+        use windows_sys::Win32::UI::Controls::*;
+        let controls = INITCOMMONCONTROLSEX {
+            dwSize: size_of::<INITCOMMONCONTROLSEX>() as u32,
+            dwICC: ICC_WIN95_CLASSES,
+        };
+        unsafe {
+            InitCommonControlsEx(&controls);
+        }
+        let window = unsafe {
+            CreateWindowExW(
+                WS_EX_TOPMOST,
+                TOOLTIPS_CLASSW,
+                null(),
+                WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                owner,
+                null_mut(),
+                GetModuleHandleW(null()),
+                null(),
+            )
+        };
+        if !window.is_null() {
+            unsafe {
+                SendMessageW(window, TTM_SETMAXTIPWIDTH, 0, scale(420, dpi) as isize);
+                SendMessageW(window, TTM_SETDELAYTIME, TTDT_INITIAL as usize, 350);
+                SendMessageW(window, TTM_SETDELAYTIME, TTDT_AUTOPOP as usize, 20000);
+            }
+        }
+        Self {
+            window,
+            texts: Vec::new(),
+            controls: Vec::new(),
+        }
+    }
+
+    pub fn add(&mut self, owner: HWND, control: HWND, text: &str) {
+        use windows_sys::Win32::UI::Controls::*;
+        if self.window.is_null() || control.is_null() {
+            return;
+        }
+        let mut text = wide(text);
+        let mut info: TTTOOLINFOW = unsafe { std::mem::zeroed() };
+        // v6の有効化コンテキストがないWin32画面でも使えるV2サイズを渡す。
+        info.cbSize = std::mem::offset_of!(TTTOOLINFOW, lpReserved) as u32;
+        info.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+        info.hwnd = owner;
+        info.uId = control as usize;
+        info.lpszText = text.as_mut_ptr();
+        if unsafe {
+            SendMessageW(
+                self.window,
+                TTM_ADDTOOLW,
+                0,
+                (&info as *const TTTOOLINFOW) as isize,
+            )
+        } != 0
+        {
+            self.texts.push(text);
+            self.controls.push(control);
+        }
+    }
+
+    #[cfg(test)]
+    pub fn count(&self) -> usize {
+        unsafe {
+            SendMessageW(
+                self.window,
+                windows_sys::Win32::UI::Controls::TTM_GETTOOLCOUNT,
+                0,
+                0,
+            ) as usize
+        }
+    }
+
+    #[cfg(test)]
+    pub fn contains(&self, control: HWND) -> bool {
+        self.controls.contains(&control)
+    }
+}
+
+impl Drop for Tooltips {
+    fn drop(&mut self) {
+        if !self.window.is_null() && unsafe { IsWindow(self.window) } != 0 {
+            unsafe {
+                DestroyWindow(self.window);
+            }
+        }
+    }
+}
+
 pub fn initial_bounds(width: i32, height: i32, style: u32, ex_style: u32) -> Bounds {
     unsafe {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);

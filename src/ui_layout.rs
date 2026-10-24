@@ -65,60 +65,73 @@ impl SettingsLayout {
         let content = width - 48;
         let split = width >= 760;
         let list_width = if split {
-            (content - 24) * 2 / 5
+            ((content - 24) * 2 / 5).max(260)
         } else {
             content
         };
-        let list_height = if split { 350 } else { 240 };
+        let list_height = if split { 216 } else { 160 };
         let editor_x = if split { 48 + list_width } else { 24 };
         let editor_width = if split {
             content - list_width - 24
         } else {
             content
         };
-        let editor_top = if split { 112 } else { 142 + list_height + 80 };
-        let general_top = (editor_top + 380).max(142 + list_height + 44) + 28;
-        let actions_top = general_top + 410;
-        let half = (content - 12) / 2;
+        let editor_top = if split { 66 } else { 326 };
+        let general_top = editor_top + 310;
+        let stacked = width < 760;
+        let row2 = general_top + if stacked { 132 } else { 80 };
+        let half = (content - 16) / 2;
+        let bottom = row2 + if stacked { 124 } else { 72 };
         let fixed = vec![
             Bounds::new(24, 18, content, 34),
-            Bounds::new(24, 62, content, 36),
-            Bounds::new(24, 112, list_width, 24),
-            Bounds::new(24, 142, list_width, list_height),
-            Bounds::new(24, 142 + list_height + 12, (list_width - 12) / 2, 32),
+            Bounds::new(24, 66, list_width, 22),
+            Bounds::new(24, 94, list_width, list_height),
+            Bounds::new(24, 106 + list_height, 60, 32),
+            Bounds::new(92, 106 + list_height, 60, 32),
+            Bounds::new(160, 106 + list_height, list_width - 136, 32),
+            Bounds::new(editor_x, editor_top, editor_width, 22),
+            Bounds::new(editor_x, editor_top + 28, editor_width, 36),
+            Bounds::new(editor_x, editor_top + 76, editor_width, 22),
+            Bounds::new(editor_x, editor_top + 102, editor_width, 32),
+            Bounds::new(editor_x, editor_top + 146, editor_width, 22),
+            Bounds::new(editor_x, editor_top + 172, editor_width, 54),
+            Bounds::new(editor_x, editor_top + 238, editor_width, 24),
+            Bounds::new(editor_x, editor_top + 274, editor_width, 24),
+            Bounds::new(24, general_top, content, 22),
+            Bounds::new(24, general_top + 38, 220.min(content - 88), 24),
+            Bounds::new(24 + 220.min(content - 88), general_top + 32, 88, 32),
             Bounds::new(
-                24 + (list_width - 12) / 2 + 12,
-                142 + list_height + 12,
-                (list_width - 12) / 2,
+                if stacked { 24 } else { 360 },
+                general_top + if stacked { 84 } else { 38 },
+                if stacked { content } else { width - 384 },
+                28,
+            ),
+            Bounds::new(24, row2, if stacked { content } else { half }, 28),
+            Bounds::new(
+                if stacked { 24 } else { 40 + half },
+                row2 + if stacked { 40 } else { 0 },
+                if stacked { content } else { half },
+                28,
+            ),
+            Bounds::new(24, row2 + if stacked { 80 } else { 36 }, content, 24),
+            Bounds::new(
+                24,
+                bottom,
+                if stacked { content } else { content - 252 },
                 32,
             ),
-            Bounds::new(editor_x, editor_top, editor_width, 24),
-            Bounds::new(editor_x, editor_top + 30, editor_width, 44),
-            Bounds::new(editor_x, editor_top + 86, editor_width, 22),
-            Bounds::new(editor_x, editor_top + 112, editor_width, 32),
-            Bounds::new(editor_x, editor_top + 152, editor_width, 36),
-            Bounds::new(editor_x, editor_top + 200, editor_width, 22),
-            Bounds::new(editor_x, editor_top + 226, editor_width, 76),
-            Bounds::new(editor_x, editor_top + 314, editor_width, 28),
-            Bounds::new(editor_x, editor_top + 352, editor_width, 28),
-            Bounds::new(24, general_top, content, 24),
-            Bounds::new(24, general_top + 32, content, 24),
-            Bounds::new(24, general_top + 60, 180, 32),
-            Bounds::new(24, general_top + 96, content, 24),
-            Bounds::new(24, general_top + 128, content, 28),
-            Bounds::new(24, general_top + 164, content, 28),
-            Bounds::new(24, general_top + 200, content, 68),
-            Bounds::new(24, general_top + 282, content, 28),
-            Bounds::new(24, general_top + 318, content, 80),
-            Bounds::new(24, actions_top, content, 32),
-            Bounds::new(24, actions_top + 44, half, 36),
-            Bounds::new(24 + half + 12, actions_top + 44, half, 36),
-            Bounds::new(24, actions_top + 92, content, 36),
-            Bounds::new(24, actions_top + 136, content, 36),
+            Bounds::new(
+                if stacked { 24 } else { width - 264 },
+                bottom + if stacked { 44 } else { 0 },
+                124,
+                32,
+            ),
+            Bounds::new(width - 124, bottom + if stacked { 44 } else { 0 }, 100, 32),
+            Bounds::new(24, bottom + if stacked { 88 } else { 44 }, content, 24),
         ];
         Self {
+            height: bottom + if stacked { 140 } else { 92 },
             fixed,
-            height: actions_top + 196,
         }
     }
 }

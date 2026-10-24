@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "entryScript": "dev/scripts/publish-msix-release.ps1",
-  "packageVersion": "0.0.3.7",
+  "packageVersion": "0.0.3.8",
   "architecture": "x64",
   "minimumOSVersion": "10.0.17763.0",
   "maximumTestedOSVersion": "10.0.22631.0",
@@ -39,7 +39,7 @@
       "httpselector-certificate",
       "assets/httpselector-icon.png",
       "beta/HttpSelector.appinstaller",
-      "beta/HttpSelector_0.0.3.7_x64_dev.msix",
+      "beta/HttpSelector_0.0.3.8_x64_dev.msix",
       "beta/HttpSelector.Development.cer"
     ]
   }

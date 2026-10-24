@@ -9,7 +9,9 @@ use http_selector::integrity::{IntegrityManager, IntegrityStatus};
 use http_selector::management::{self, Event};
 use http_selector::model::{DefaultRule, DetectedProfile, Profile};
 use http_selector::profile_scan;
-use http_selector::settings_ui::{SettingsAction, run_settings_with_quad9 as run_settings};
+use http_selector::settings_ui::{
+    SettingsAction, SettingsPreferences, run_settings_live as run_settings,
+};
 use http_selector::single_instance::{InstanceStatus, acquire};
 use http_selector::storage::Storage;
 use http_selector::ui::{
@@ -401,34 +403,40 @@ fn run_session(
             SelectorResult::Settings { url: current_url } => {
                 let _busy = management::busy_guard();
                 url = current_url;
+                let mut save = |preferences: &SettingsPreferences| -> anyhow::Result<()> {
+                    integrity.backup_current()?;
+                    let result = (|| {
+                        storage.save_preferences_with_quad9(
+                            &preferences.profiles,
+                            preferences.record_url_history,
+                            preferences.escape_hold_duration_tenths,
+                            preferences.open_profile_on_double_click,
+                            preferences.quad9_enabled,
+                        )?;
+                        integrity.sign_current()
+                    })();
+                    if let Err(error) = result {
+                        integrity.restore_backup()?;
+                        return Err(error);
+                    }
+                    Ok(())
+                };
+                let mut test = |profile: &Profile| http_selector::browser::launch_test(profile);
                 let outcome = run_settings(
                     storage.load_all_profiles()?,
                     storage.record_url_history_enabled()?,
                     escape_hold_duration_tenths,
                     open_profile_on_double_click,
                     storage.quad9_enabled()?,
+                    &mut save,
+                    &mut test,
                 )?;
                 if outcome.pending_url.is_some() {
                     url = outcome.pending_url;
                     apply_default_rules = true;
                 }
-                // 再スキャンでも編集中の表示名・メモ・並び順を先に保存する。
-                if matches!(
-                    outcome.action,
-                    SettingsAction::Saved | SettingsAction::Rescan | SettingsAction::RuleList
-                ) {
-                    integrity.backup_current()?;
-                    storage.save_preferences_with_quad9(
-                        &outcome.profiles,
-                        outcome.record_url_history,
-                        outcome.escape_hold_duration_tenths,
-                        outcome.open_profile_on_double_click,
-                        outcome.quad9_enabled,
-                    )?;
-                    escape_hold_duration_tenths = outcome.escape_hold_duration_tenths;
-                    open_profile_on_double_click = outcome.open_profile_on_double_click;
-                    integrity.sign_current()?;
-                }
+                escape_hold_duration_tenths = storage.escape_hold_duration_tenths()?;
+                open_profile_on_double_click = storage.open_profile_on_double_click()?;
                 match outcome.action {
                     SettingsAction::ClearDomainApprovals => {
                         integrity.backup_current()?;
@@ -450,23 +458,7 @@ fn run_session(
                             &format!("プロファイル再スキャンに失敗しました。\n{error:#}"),
                         ),
                     },
-                    SettingsAction::RuleList => {
-                        let rules_outcome = run_rules(
-                            storage.load_all_profiles()?,
-                            storage.load_default_rules()?,
-                            None,
-                        )?;
-                        if rules_outcome.action == RulesAction::Saved {
-                            integrity.backup_current()?;
-                            storage.replace_default_rules(&rules_outcome.rules)?;
-                            integrity.sign_current()?;
-                        }
-                        if let Some(pending_url) = rules_outcome.pending_url {
-                            url = Some(pending_url);
-                            apply_default_rules = true;
-                        }
-                    }
-                    SettingsAction::Saved | SettingsAction::Cancelled => {}
+                    SettingsAction::Closed => {}
                 }
             }
             SelectorResult::Cancelled => break,
