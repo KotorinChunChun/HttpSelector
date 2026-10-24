@@ -1,6 +1,6 @@
 # HttpSelector 開発ガイド
 
-更新日: 2026-10-24。開発ソース・配布対象MSIX 0.0.3.8。正本の配置は `C:\develop\KotorinToys\tools\HttpSelector` で、独立Gitリポジトリを維持します。管理連携の契約と運用は[KotorinToys連携](kotorintoys-integration.md)を参照してください。
+更新日: 2026-10-25。開発ソース・配布対象MSIX 0.0.3.9。正本の配置は `C:\develop\KotorinToys\tools\HttpSelector` で、独立Gitリポジトリを維持します。管理連携の契約と運用は[KotorinToys連携](kotorintoys-integration.md)を参照してください。
 
 ## 必要環境
 
@@ -147,7 +147,7 @@ Shift指定はrun開始時にGetAsyncKeyState(VK_SHIFT)の上位ビットで採�
 
 Beta配布は[GitHub Releases](https://github.com/KotorinChunChun/HttpSelector/releases/latest)と既存公開サイトの二拠点です。手順は[二拠点配布](GITHUB_RELEASE.md)を正本とします。distribution.mode=dualでWeb向けStage/Publish/Verify/Fullを使用します。App Installerの参照先は公開サイトです。
 
-開発ソースの表示版・MSIX生成設定は `0.0.3.8`、Cargo版は `0.0.3+8` です。Quad9の既定OFF・任意送信設定を含みます。本版の署名付きBeta MSIXは0.0.3.8です。実機への導入・更新操作は未実施です。KotorinToys向けの `distributionStatus: unpublished` は本体対応インストーラーの台帳とは未連携であることを示し、Beta MSIXの公開状況とは別です。
+開発ソースの表示版・MSIX生成設定は `0.0.3.9`、Cargo版は `0.0.3+9` です。Quad9の既定OFF・任意送信設定を含みます。本版の署名付きBeta MSIXは0.0.3.9です。実機への導入・更新操作は未実施です。KotorinToys向けの `distributionStatus: unpublished` は本体対応インストーラーの台帳とは未連携であることを示し、Beta MSIXの公開状況とは別です。
 
 [Microsoft Store公開準備](MICROSOFT_STORE.md)に、Plan/Build/Verifyのコマンド、自己署名証明書の再利用、正式Identityへの切り替え、ローカル導入と残課題を記載しています。StoreチャネルはStoreの更新管理を使い、BetaチャネルのApp Installerとは分けます。独自アップデーターは実装しません。
 

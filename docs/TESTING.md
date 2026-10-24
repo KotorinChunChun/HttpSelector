@@ -27,7 +27,7 @@ PythonはPATHまたはCodex同梱ランタイム、CargoはPATHまたはユー�
 ./dev/scripts/test-all.ps1 -ReleaseBuild
 
 # 署名済みMSIXのペイロード・BlockMap改変拒否まで検証する。インストールしない。
-./dev/scripts/test-all.ps1 -SignedPackagePath ./release/msix/beta/0.0.3.8/HttpSelector_0.0.3.8_x64_dev.msix
+./dev/scripts/test-all.ps1 -SignedPackagePath ./release/msix/beta/0.0.3.9/HttpSelector_0.0.3.9_x64_dev.msix
 
 # 前面化・最小化復帰と、実EXEの画面表示・ESC・正常停止。一時的に前面が変わる。
 ./dev/scripts/test-all.ps1 -InteractiveDesktop
