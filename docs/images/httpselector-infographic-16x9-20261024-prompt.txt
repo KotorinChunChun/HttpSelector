@@ -1,0 +1,69 @@
+HttpSelector インフォグラフィック生成記録
+作成日: 2026-10-24
+生成方式: 組み込みimage_gen（CLI/APIキー不使用）
+対象版: v0.0.3.6
+出典: README.md、docs/USERS_GUIDE.md、packaging/release-config.json
+用途: 日本語・16:9のアプリ紹介画像。Webへの公開と製品コードの変更は行わない。
+画像: httpselector-infographic-16x9-20261024.png
+
+保存画像の実寸: 1672×941px。16:9向けレイアウト。生成側の整数ピクセル丸めがあり、厳密な16:9とは0.5px相当異なる。
+内容・文字・配置を目視確認済み。リサイズや切り抜きによる画像加工は行っていない。
+
+初回生成プロンプト:
+Use case: infographic-diagram
+Asset type: finished Japanese product explainer infographic for HttpSelector v0.0.3.6.
+Generate one polished landscape image, EXACT 16:9 aspect ratio, 2048 x 1152 pixels. Opaque background.
+Audience: Japanese Windows users with multiple browser profiles. Explain the app rather than depict an exact screenshot.
+Style: crisp editorial information design, clean vector-like illustrations, professional Japanese typography, elegant Windows-app feeling. White and very pale blue background, navy text and blue accents consistent with this application's interface; amber only for warnings. Generous whitespace and crisp arrows, consistent line icons, perfectly aligned modules. No photographs, mascots, stock art, invented official logo, or decorative filler. No logos of browser vendors required: browser names as text are enough.
+Composition: top 18% title and concise description; center 34% a clear left-to-right branching illustration; lower 36% three useful feature modules; bottom 12% thin installation/privacy strip. All text readable and fully within safe margins. Strong title and section hierarchy. Display content below verbatim, no extra claims or invented metrics.
+
+HEADER
+Large title: "HttpSelector"
+Small badge: "v0.0.3.6"
+Descriptive subtitle: "リンクを開くブラウザーとプロファイルを選択"
+Small environment label: "Windows 10 / 11・x64"
+
+CENTRAL EXPLANATORY ILLUSTRATION
+An incoming link card "リンク" with example "https://example.com"
+A bold arrow into an app-shaped blue hub labeled "HttpSelector".
+Three clear branching arrows from hub to browser/profile cards:
+"Edge" with profile "仕事用"
+"Chrome" with profile "個人用"
+"Firefox" with profile "検証用"
+Concise line under hub: "ルールで自動振り分け、または手動で選択"
+
+THREE FEATURE MODULES
+1. Shield with amber alert symbol; heading "開く前にリスクを確認"
+Copy in two readable lines:
+"類似ドメイン・全角英字などを検知"
+"外部照会はドメインのみ"
+Small caveat: "警告がないことは安全保証ではありません"
+
+2. URL split into selectable chips; heading "URLの一部を条件に"
+Three clear chips labeled "ドメイン" "パス" "クエリ"; selected chips blue and unselected chips white.
+Copy:
+"ONにした部分だけを固定"
+"Teamsのurl内の条件にも対応"
+Illustrate sample query chip "tenantId=..." as one unbroken unit. No real tenant or personal information.
+
+3. A large Shift keycap and a small hand/cursor; heading "Shiftで選び直す"
+Micro-flow text with small arrows:
+"Shift＋リンクを開く" → "プロファイル選択" → "保存"
+Copy:
+"既存条件を維持して登録先を置換"
+Small caveats, readable:
+"条件が一意に一致した場合"
+"保存だけではURLを開きません"
+
+FOOTER STRIP
+Installer/package line icon and text: "署名付きMSIXで導入"
+Privacy note: "URL履歴は既定OFF"
+Small source line: "github.com/KotorinChunChun/HttpSelector"
+
+Accuracy constraints: no claim of absolute safety, no claim of encrypted database, no claim of verified real-world E2E, no claim TeamsCID is a stable account identifier, no store listing badge or Store availability, no statement Shift saves automatically, no claim that saving also opens the URL. Keep original URL unchanged in conceptual illustration. Deliver a complete useful infographic, not a wireframe. Japanese spelling must be precise.
+
+仕上げに使用したプロンプト（生成側では同じ実寸で出力された）:
+Use case: precise-object-edit.
+Edit target: the supplied HttpSelector Japanese infographic.
+Single targeted correction: change ONLY the canvas/output pixel dimensions to EXACTLY 1536 × 864 pixels (16:9). The current file is 1672 × 941, which is very slightly off exact 16:9. Output must be a landscape rectangle of exact 16:9 aspect, not an approximate ratio.
+Preserve all Japanese text verbatim, layout, diagrams, blue-and-white visual style, icons, warning text, footer, and app version v0.0.3.6. Preserve the complete image without losing text or margins. No added information. No new redesign. Only normalize the canvas/aspect ratio to exactly 16:9. Opaque background.
