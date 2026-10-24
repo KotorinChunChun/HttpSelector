@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+import cli_test_report as report
 
 spec = importlib.util.spec_from_file_location('runner', Path(__file__).with_name('test-all.py'))
 runner = importlib.util.module_from_spec(spec)
@@ -12,6 +13,40 @@ spec.loader.exec_module(runner)
 
 
 class RunnerTests(unittest.TestCase):
+    def test_case_validation_rejects_missing_duplicate_and_empty_results(self):
+        good = {'status': 'passed', 'cases': [{'name': 'a', 'status': 'passed'}, {'name': 'b', 'status': 'passed'}]}
+        self.assertEqual(report.validate_rust_result(good, ['a', 'b'])['status'], 'passed')
+        for names in [[], ['a'], ['a', 'a', 'b']]:
+            self.assertEqual(report.validate_rust_result(good, names)['status'], 'failed')
+        duplicate = {**good, 'cases': good['cases'] + [good['cases'][0]]}
+        self.assertEqual(report.validate_rust_result(duplicate, ['a', 'b'])['status'], 'failed')
+
+    def test_explicit_tests_cannot_be_skipped_and_process_failure_is_preserved(self):
+        skipped = {'status': 'passed', 'cases': [{'name': 'a', 'status': 'skipped'}]}
+        self.assertEqual(report.validate_rust_result(skipped, ['a'])['status'], 'passed')
+        self.assertEqual(report.validate_rust_result(skipped, ['a'], require_success=True)['status'], 'failed')
+        failed_process = {'status': 'failed', 'cases': [{'name': 'a', 'status': 'passed'}]}
+        self.assertEqual(report.validate_rust_result(failed_process, ['a'])['status'], 'failed')
+        failed_case = {'status': 'passed', 'cases': [{'name': 'a', 'status': 'failed'}]}
+        self.assertEqual(report.validate_rust_result(failed_case, ['a'])['status'], 'failed')
+
+    def test_optional_cases_are_selected_from_inventory_without_a_fixed_count(self):
+        names = report.rust_inventory('a::interactive_desktop_one: test\na::interactive_desktop_two: test\na::interactive_desktop_three: test\nquad9::live: test\n')
+        self.assertEqual(len(report.selected_cases(names, 'interactive_desktop_')), 3)
+        self.assertEqual(report.selected_cases(names, 'quad9::live', exact=True), ['quad9::live'])
+        self.assertEqual(report.selected_cases(names, 'quad9', exact=True), [])
+
+    def test_json_and_junit_reports_preserve_schema_and_unicode(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            original = {'version': '0.0.3.8', 'passed': True, 'steps': [{'name': '通常試験', 'status': 'passed'}],
+                        'features': [{'id': 'F01', 'feature': 'URL受付'}], 'external_boundaries': [], 'signed_package': None}
+            report.write_reports(original, directory)
+            import json
+            self.assertEqual(json.loads((directory / 'results.json').read_text(encoding='utf-8')), original)
+            self.assertEqual(json.loads((directory / 'cases.json').read_text(encoding='utf-8')), original['features'])
+            self.assertEqual(ET.parse(directory / 'junit.xml').getroot().find('testsuite').get('name'), '通常試験')
+
     def test_rust_results_keep_ignored_and_failed_separate_from_passes(self):
         parsed = runner.rust_cases('test a::one ... ok\ntest a::two ... FAILED\ntest a::three ... ignored, requires network\n')
         self.assertEqual([case['status'] for case in parsed], ['passed', 'failed', 'skipped'])

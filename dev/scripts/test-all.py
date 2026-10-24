@@ -10,31 +10,9 @@ import subprocess
 import sys
 import time
 import uuid
-import xml.etree.ElementTree as ET
+from cli_test_report import check_case_map, rust_cases, write_junit
 
 ROOT = Path(__file__).resolve().parents[2]
-RESULT_LINE = re.compile(r'^test (\S+) \.\.\. (ok|FAILED|ignored)(?:,.*)?$', re.MULTILINE)
-
-
-def rust_cases(output):
-    statuses = {'ok': 'passed', 'FAILED': 'failed', 'ignored': 'skipped'}
-    return [{'name': name, 'status': statuses[result]} for name, result in RESULT_LINE.findall(output)]
-
-
-def check_case_map(features, names):
-    """削除・改名されて対応表だけが残った場合は失敗する。"""
-    resolved = []
-    for feature in features:
-        matches = []
-        for prefix in feature.get('test_prefixes', []):
-            found = sorted(name for name in names if name.startswith(prefix))
-            if not found:
-                raise ValueError(f"{feature['id']}: 実在しないテスト指定 {prefix}")
-            matches.extend(found)
-        resolved.append({**feature, 'resolved_tests': sorted(set(matches))})
-    return resolved
-
-
 def execute(name, command, directory, timeout, env=None):
     started = time.monotonic()
     log = directory / f'{name}.log'
@@ -66,24 +44,6 @@ def execute(name, command, directory, timeout, env=None):
     if status == 'failed':
         print('\n'.join(output.splitlines()[-25:]), flush=True)
     return result, output
-
-
-def write_junit(steps, path):
-    root = ET.Element('testsuites')
-    for step in steps:
-        cases = list(step.get('cases', []))
-        # プロセス失敗・構文検査等もケースとして残す。Rustの全ケースが成功でもコマンド失敗を隠さない。
-        cases.append({'name': step['name'], 'status': step['status']})
-        suite = ET.SubElement(root, 'testsuite', name=step['name'], tests=str(len(cases)),
-                              failures=str(sum(case['status'] == 'failed' for case in cases)),
-                              skipped=str(sum(case['status'] == 'skipped' for case in cases)))
-        for case in cases:
-            node = ET.SubElement(suite, 'testcase', name=case['name'], classname=step['name'])
-            if case['status'] == 'failed':
-                ET.SubElement(node, 'failure', message=step.get('reason', '試験失敗')).text = step.get('log', '')
-            if case['status'] == 'skipped':
-                ET.SubElement(node, 'skipped', message=step.get('reason', '明示実行が必要'))
-    ET.ElementTree(root).write(path, encoding='utf-8', xml_declaration=True)
 
 
 def main():
