@@ -1,5 +1,5 @@
 use crate::app_title;
-use crate::model::Profile;
+use crate::model::{MAX_FAVORITE_PROFILES, Profile};
 use crate::storage::{MAX_ESCAPE_HOLD_DURATION_TENTHS, MIN_ESCAPE_HOLD_DURATION_TENTHS};
 use crate::ui_layout::SettingsLayout;
 use crate::ui_support::{self as common, Page, Theme, wide, window_text};
@@ -791,7 +791,7 @@ fn persist_settings(window: HWND, state: &mut SettingsState<'_>) -> bool {
         .iter()
         .filter(|profile| profile.favorite)
         .count()
-        > 5
+        > MAX_FAVORITE_PROFILES
     {
         common::set_text(state.status, "保存できません: お気に入りは5件までです。");
         return false;

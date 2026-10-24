@@ -409,7 +409,7 @@ fn create_controls(window: HWND, state: &mut RulesState) {
             "{} | {}{}",
             profile.display_name(),
             profile.browser_type,
-            if profile.available && profile.enabled {
+            if profile.is_selectable() {
                 ""
             } else {
                 "（利用不可）"

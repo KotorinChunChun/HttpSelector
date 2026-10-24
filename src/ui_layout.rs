@@ -1,4 +1,5 @@
 //! 論理ピクセルで計算し、描画時にDPI変換する。
+use crate::model::MAX_FAVORITE_PROFILES;
 use crate::ui_support::Bounds;
 
 pub const TILE_HEIGHT: i32 = 92;
@@ -164,8 +165,8 @@ impl SelectorLayout {
         let available = width - MARGIN * 2;
         let columns = ((available + GAP) / (196 + GAP)).clamp(1, 5) as usize;
         let tile_width = (available - GAP * (columns as i32 - 1)) / columns as i32;
-        let favorites = slots[..5].iter().flatten().count();
-        let normal = slots[5..].iter().flatten().count();
+        let favorites = slots[..MAX_FAVORITE_PROFILES].iter().flatten().count();
+        let normal = slots[MAX_FAVORITE_PROFILES..].iter().flatten().count();
         let settings_width = 72;
         let rule_list_width = 126;
         let windows_width = windows_button_width.max(160).min(available);
@@ -227,7 +228,10 @@ impl SelectorLayout {
         };
         let action_x = MARGIN + ((available - action_width).max(0) / 2);
         let mut tiles = vec![None; slots.len()];
-        for (start, end, top) in [(0, 5, favorite_top), (5, slots.len(), normal_top)] {
+        for (start, end, top) in [
+            (0, MAX_FAVORITE_PROFILES, favorite_top),
+            (MAX_FAVORITE_PROFILES, slots.len(), normal_top),
+        ] {
             for (position, slot) in (start..end)
                 .filter(|index| slots[*index].is_some())
                 .enumerate()

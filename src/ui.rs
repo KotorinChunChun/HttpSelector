@@ -1,5 +1,5 @@
 use crate::app_title;
-use crate::model::{DetectedProfile, Profile};
+use crate::model::{DetectedProfile, MAX_FAVORITE_PROFILES, MAX_NORMAL_PROFILES, Profile};
 use crate::profile_scan::BackgroundProfileScan;
 use crate::storage::{MAX_ESCAPE_HOLD_DURATION_TENTHS, MIN_ESCAPE_HOLD_DURATION_TENTHS};
 use crate::ui_layout::SelectorLayout;
@@ -24,7 +24,7 @@ use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const WINDOW_CLASS: &str = "HttpSelector.MainWindow";
-const MAX_TILES: usize = 25;
+const MAX_TILES: usize = MAX_FAVORITE_PROFILES + MAX_NORMAL_PROFILES;
 const TIMER_HOLD: usize = 1;
 const TIMER_PROFILE_SCAN: usize = 2;
 const WM_URL_RECEIVED: u32 = WM_APP + 1;
@@ -937,15 +937,16 @@ fn refresh_url(window: HWND, state: &mut UiState) {
 }
 
 fn refresh_tiles(window: HWND, state: &mut UiState) {
-    let favorites = state.filtered_indices[..5].iter().flatten().count();
-    let normal = state.filtered_indices[5..].iter().flatten().count();
+    let (favorite_slots, normal_slots) = state.filtered_indices.split_at(MAX_FAVORITE_PROFILES);
+    let favorites = favorite_slots.iter().flatten().count();
+    let normal = normal_slots.iter().flatten().count();
     common::set_text(
         state.favorites_heading,
-        &format!("お気に入り  {favorites} / 5"),
+        &format!("お気に入り  {favorites} / {MAX_FAVORITE_PROFILES}"),
     );
     common::set_text(
         state.normal_heading,
-        &format!("プロファイル  {normal} / 20"),
+        &format!("プロファイル  {normal} / {MAX_NORMAL_PROFILES}"),
     );
     common::set_text(
         state.favorite_empty,
@@ -1011,12 +1012,16 @@ fn refresh_selection_visuals(state: &UiState) {
             state.favorite_pin,
             i32::from(
                 focused.is_some()
-                    && (focused.is_some_and(|profile| profile.favorite) || favorite_count < 5),
+                    && (focused.is_some_and(|profile| profile.favorite)
+                        || favorite_count < MAX_FAVORITE_PROFILES),
             ),
         );
         EnableWindow(
             state.favorite_up,
-            i32::from(focused.is_some_and(|profile| !profile.favorite) && favorite_count < 5),
+            i32::from(
+                focused.is_some_and(|profile| !profile.favorite)
+                    && favorite_count < MAX_FAVORITE_PROFILES,
+            ),
         );
         EnableWindow(
             state.favorite_down,
@@ -1261,25 +1266,22 @@ fn handle_navigation_message(window: HWND, pointer: *mut UiState, message: &MSG)
     false
 }
 
+/// 先頭のお気に入り枠と後続の通常枠へ、選択可能なプロファイルの添字を割り当てる。
 fn profile_slots(profiles: &[Profile]) -> Vec<Option<usize>> {
     let mut slots = vec![None; MAX_TILES];
-    for (slot, (profile_index, _)) in profiles
-        .iter()
-        .enumerate()
-        .filter(|(_, profile)| profile.favorite && profile.available && profile.enabled)
-        .take(5)
-        .enumerate()
-    {
-        slots[slot] = Some(profile_index);
+    let selectable = |favorite: bool| {
+        profiles
+            .iter()
+            .enumerate()
+            .filter(move |(_, profile)| profile.favorite == favorite && profile.is_selectable())
+            .map(|(index, _)| index)
+    };
+    let (favorite_slots, normal_slots) = slots.split_at_mut(MAX_FAVORITE_PROFILES);
+    for (slot, index) in favorite_slots.iter_mut().zip(selectable(true)) {
+        *slot = Some(index);
     }
-    for (offset, (profile_index, _)) in profiles
-        .iter()
-        .enumerate()
-        .filter(|(_, profile)| !profile.favorite && profile.available && profile.enabled)
-        .take(20)
-        .enumerate()
-    {
-        slots[5 + offset] = Some(profile_index);
+    for (slot, index) in normal_slots.iter_mut().zip(selectable(false)) {
+        *slot = Some(index);
     }
     slots
 }
