@@ -13,7 +13,7 @@ use http_selector::url_input::ValidatedUrl;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<_> = std::env::args().collect();
-    let profiles = if args.iter().any(|arg| arg == "--empty") {
+    let mut profiles: Vec<Profile> = if args.iter().any(|arg| arg == "--empty") {
         vec![]
     } else {
         (0..25)
@@ -42,6 +42,16 @@ fn main() -> anyhow::Result<()> {
             })
             .collect()
     };
+    if args.iter().any(|arg| arg == "--guests") && profiles.len() >= 7 {
+        for (index, browser_type) in [(5, BrowserType::Chrome), (6, BrowserType::Edge)] {
+            let profile = &mut profiles[index];
+            profile.browser_type = browser_type;
+            profile.profile_id = http_selector::model::GUEST_PROFILE_ID.into();
+            profile.detected_name = "ゲスト".into();
+            profile.alias_name.clear();
+            profile.comment.clear();
+        }
+    }
     if args
         .iter()
         .any(|arg| arg == "--association" || arg == "--teams" || arg == "--replace")
@@ -123,6 +133,9 @@ fn main() -> anyhow::Result<()> {
                     DEFAULT_ESCAPE_HOLD_DURATION_TENTHS,
                     DEFAULT_OPEN_PROFILE_ON_DOUBLE_CLICK,
                 )?;
+            }
+            SelectorResult::RuleList { .. } => {
+                http_selector::default_rule_ui::run_rules(profiles, vec![], None)?;
             }
             result => println!("選択プレビュー: {result:?}（ブラウザ起動なし）"),
         }

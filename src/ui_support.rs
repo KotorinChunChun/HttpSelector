@@ -163,6 +163,16 @@ impl Tooltips {
         };
         if !window.is_null() {
             unsafe {
+                SetWindowPos(
+                    window,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                );
+                SendMessageW(window, TTM_ACTIVATE, 1, 0);
                 SendMessageW(window, TTM_SETMAXTIPWIDTH, 0, scale(420, dpi) as isize);
                 SendMessageW(window, TTM_SETDELAYTIME, TTDT_INITIAL as usize, 350);
                 SendMessageW(window, TTM_SETDELAYTIME, TTDT_AUTOPOP as usize, 20000);
