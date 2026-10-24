@@ -13,8 +13,8 @@ const SETTING_RECORD_URL_HISTORY: &str = "record_url_history";
 const SETTING_ESCAPE_HOLD_DURATION_TENTHS: &str = "escape_hold_duration_tenths";
 const SETTING_OPEN_PROFILE_ON_DOUBLE_CLICK: &str = "open_profile_on_double_click";
 const SETTING_INTERRUPTION_ENABLED: &str = "interruption_enabled";
-pub const DEFAULT_ESCAPE_HOLD_DURATION_TENTHS: u32 = 10;
-pub const MIN_ESCAPE_HOLD_DURATION_TENTHS: u32 = 1;
+pub const DEFAULT_ESCAPE_HOLD_DURATION_TENTHS: u32 = 0;
+pub const MIN_ESCAPE_HOLD_DURATION_TENTHS: u32 = 0;
 pub const MAX_ESCAPE_HOLD_DURATION_TENTHS: u32 = 100;
 pub const DEFAULT_OPEN_PROFILE_ON_DOUBLE_CLICK: bool = true;
 
@@ -340,7 +340,7 @@ impl Storage {
     pub fn set_escape_hold_duration_tenths(&self, tenths: u32) -> anyhow::Result<()> {
         anyhow::ensure!(
             (MIN_ESCAPE_HOLD_DURATION_TENTHS..=MAX_ESCAPE_HOLD_DURATION_TENTHS).contains(&tenths),
-            "ESC長押し時間は0.1秒から10.0秒の範囲で指定してください"
+            "ESC長押し時間は0秒から10.0秒の範囲で指定してください"
         );
         self.set_setting(SETTING_ESCAPE_HOLD_DURATION_TENTHS, &tenths.to_string())
     }
@@ -763,7 +763,7 @@ mod tests {
     }
 
     #[test]
-    fn escape_hold_duration_defaults_to_one_second_and_uses_tenths() {
+    fn escape_hold_duration_defaults_to_zero_and_preserves_saved_values() {
         let temp = tempfile::tempdir().unwrap();
         let storage = Storage::new(temp.path().join("test.db"));
         storage.initialize().unwrap();
@@ -773,7 +773,14 @@ mod tests {
         );
         storage.set_escape_hold_duration_tenths(11).unwrap();
         assert_eq!(storage.escape_hold_duration_tenths().unwrap(), 11);
-        assert!(storage.set_escape_hold_duration_tenths(0).is_err());
+        assert_eq!(
+            Storage::new(storage.database_path())
+                .escape_hold_duration_tenths()
+                .unwrap(),
+            11
+        );
+        storage.set_escape_hold_duration_tenths(0).unwrap();
+        assert_eq!(storage.escape_hold_duration_tenths().unwrap(), 0);
         assert!(storage.set_escape_hold_duration_tenths(101).is_err());
     }
 
@@ -1029,7 +1036,7 @@ mod tests {
         );
         assert!(
             storage
-                .save_preferences_with_quad9(&[], false, 0, true, false)
+                .save_preferences_with_quad9(&[], false, 101, true, false)
                 .is_err()
         );
         assert!(storage.quad9_enabled().unwrap());

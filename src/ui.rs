@@ -1147,6 +1147,13 @@ fn cancel_escape(window: HWND, state: &mut UiState) {
 fn handle_navigation_message(window: HWND, pointer: *mut UiState, message: &MSG) -> bool {
     let state = unsafe { &mut *pointer };
     if message.message == WM_KEYDOWN && message.wParam == VK_ESCAPE as usize {
+        if state.escape_hold_duration_tenths == 0 {
+            state.result = SelectorResult::Cancelled;
+            unsafe {
+                DestroyWindow(window);
+            }
+            return true;
+        }
         if state.escape_started.is_none() {
             state.escape_started = Some(Instant::now());
             unsafe {
@@ -1566,6 +1573,20 @@ mod tests {
         );
         unsafe { SendMessageW(window.0, WM_URL_RECEIVED, 0, 0) };
         assert_eq!(state.result, SelectorResult::UrlReceived(incoming));
+    }
+
+    #[test]
+    fn zero_escape_duration_closes_on_first_press_without_a_timer() {
+        let mut state = Box::new(UiState::new(None, vec![], 0, true, None, true));
+        let window =
+            common::HiddenTestWindow::new(Some(window_proc), (&mut *state as *mut UiState).cast());
+        let mut message: MSG = unsafe { std::mem::zeroed() };
+        message.message = WM_KEYDOWN;
+        message.wParam = VK_ESCAPE as usize;
+        assert!(handle_navigation_message(window.0, &mut *state, &message));
+        assert_eq!(unsafe { IsWindow(window.0) }, 0);
+        assert!(state.escape_started.is_none());
+        assert_eq!(state.result, SelectorResult::Cancelled);
     }
 
     #[test]

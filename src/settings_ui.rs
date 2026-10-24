@@ -653,7 +653,7 @@ fn capture_general_settings(window: HWND, state: &mut SettingsState) -> bool {
         show_error_for(
             window,
             &app_title::settings(),
-            "ESC長押し終了時間は0.1秒から10.0秒まで、0.1秒刻みで指定してください。",
+            "ESC長押し終了時間は0秒から10.0秒まで、0.1秒刻みで指定してください。",
         );
         unsafe {
             SetFocus(state.escape_hold_duration);
@@ -943,7 +943,8 @@ mod tests {
         assert_eq!(parse_escape_hold_duration("0.1"), Some(1));
         assert_eq!(parse_escape_hold_duration("10"), Some(100));
         assert_eq!(parse_escape_hold_duration("1.05"), None);
-        assert_eq!(parse_escape_hold_duration("0.0"), None);
+        assert_eq!(parse_escape_hold_duration("0.0"), Some(0));
+        assert_eq!(parse_escape_hold_duration("0"), Some(0));
         assert_eq!(parse_escape_hold_duration("10.1"), None);
         assert_eq!(format_escape_hold_duration(10), "1.0");
     }
