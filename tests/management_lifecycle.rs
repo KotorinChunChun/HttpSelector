@@ -10,6 +10,17 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
 use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW, WM_KEYDOWN};
 
+fn wait_for<T>(timeout: Duration, message: &str, mut probe: impl FnMut() -> Option<T>) -> T {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(value) = probe() {
+            return value;
+        }
+        assert!(Instant::now() < deadline, "{message}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 struct RunningApp {
     child: Child,
     _data: tempfile::TempDir,
@@ -54,16 +65,14 @@ impl RunningApp {
             ),
             window_class: format!("HttpSelector.MainWindow.{hash}"),
         };
-        let deadline = Instant::now() + Duration::from_secs(8);
-        loop {
-            if let Some(reply) = app.request(json!({"command":"status","requestId":"ready"}))
-                && reply["ready"] == true
-            {
-                break;
-            }
-            assert!(Instant::now() < deadline, "隔離EXEの起動が時間切れ");
-            std::thread::sleep(Duration::from_millis(25));
-        }
+        wait_for(
+            Duration::from_secs(8),
+            "隔離EXEの起動が時間切れ",
+            || {
+                app.request(json!({"command":"status","requestId":"ready"}))
+                    .filter(|reply| reply["ready"] == true)
+            },
+        );
         app
     }
     fn request(&self, value: Value) -> Option<Value> {
@@ -79,16 +88,11 @@ impl RunningApp {
         serde_json::from_str(&line).ok()
     }
     fn call(&self, command: &str, pid: u32) -> Value {
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            if let Some(reply) =
-                self.request(json!({"command":command,"expectedPid":pid,"requestId":command}))
-            {
-                return reply;
-            }
-            assert!(Instant::now() < deadline, "管理要求が時間切れ: {command}");
-            std::thread::sleep(Duration::from_millis(20));
-        }
+        wait_for(
+            Duration::from_secs(5),
+            &format!("管理要求が時間切れ: {command}"),
+            || self.request(json!({"command":command,"expectedPid":pid,"requestId":command})),
+        )
     }
     fn window(&self) -> windows_sys::Win32::Foundation::HWND {
         let class: Vec<_> = self.window_class.encode_utf16().chain(Some(0)).collect();
@@ -96,15 +100,12 @@ impl RunningApp {
     }
     fn stop(&mut self) {
         assert_eq!(self.call("stop", self.child.id())["result"], "accepted");
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            if let Some(status) = self.child.try_wait().unwrap() {
-                assert!(status.success());
-                return;
-            }
-            assert!(Instant::now() < deadline, "受理後に正常終了しない");
-            std::thread::sleep(Duration::from_millis(20));
-        }
+        let status = wait_for(
+            Duration::from_secs(5),
+            "受理後に正常終了しない",
+            || self.child.try_wait().unwrap(),
+        );
+        assert!(status.success());
     }
 }
 impl Drop for RunningApp {
@@ -139,11 +140,11 @@ fn interactive_desktop_show_escape_and_stop_use_the_real_executable() {
     unsafe {
         assert_ne!(PostMessageW(window, WM_KEYDOWN, VK_ESCAPE as usize, 0), 0);
     }
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while !app.window().is_null() {
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    wait_for(
+        Duration::from_secs(3),
+        "ESCで画面が閉じない",
+        || app.window().is_null().then_some(()),
+    );
     assert_eq!(app.call("show", app.child.id())["result"], "completed");
     app.stop();
 }

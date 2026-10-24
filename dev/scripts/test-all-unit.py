@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 import xml.etree.ElementTree as ET
 import cli_test_report as report
 
@@ -13,6 +14,36 @@ spec.loader.exec_module(runner)
 
 
 class RunnerTests(unittest.TestCase):
+    def test_plan_preserves_order_and_requires_explicit_external_options(self):
+        args = SimpleNamespace(cargo='cargo', pwsh='pwsh', signed_package=None, release_build=False,
+                               live_quad9=False, interactive_desktop=False)
+        plan = runner.build_test_plan(args)
+        self.assertEqual([step.name for step in plan], ['fmt', 'rust-list', 'rust', 'clippy', 'runner-unit',
+                         'ftps-plan', 'signing-policy', 'msix-scripts', 'release-build', 'quad9-live', 'desktop-live'])
+        self.assertTrue(all(step.enabled for step in plan[:8]))
+        self.assertTrue(all(not step.enabled for step in plan[8:]))
+        args.interactive_desktop = True
+        self.assertTrue(runner.build_test_plan(args)[-1].enabled)
+
+    def test_orchestration_uses_inventory_for_optional_cases_and_keeps_skips(self):
+        names = [f'suite::interactive_desktop_{i}' for i in range(3)]
+        calls = []
+        def fake_execute(name, command, directory, timeout, env):
+            calls.append(name)
+            output = '\n'.join(f'{case}: test' for case in names) if name == 'list' else '\n'.join(f'test {case} ... ok' for case in names)
+            return {'name': name, 'status': 'passed', 'cases': report.rust_cases(output)}, output
+        run = runner.TestRun(SimpleNamespace(timeout=1, signed_package=None), Path('.'), {},
+                             executor=fake_execute, features=[{'id': 'UI', 'test_prefixes': ['suite::']}])
+        self.assertFalse(run.report('0.0.3.8')['passed'])
+        run.run([runner.TestCommand('list', [], kind='inventory'),
+                 runner.TestCommand('desktop', [], kind='rust', selection='interactive_desktop_'),
+                 runner.TestCommand('network', [], enabled=False)])
+        result = run.report('0.0.3.8')
+        self.assertTrue(result['passed'])
+        self.assertEqual(calls, ['list', 'desktop'])
+        self.assertEqual(result['steps'][-1]['status'], 'skipped')
+        self.assertEqual(len(result['steps'][-2]['cases']), 3)
+
     def test_case_validation_rejects_missing_duplicate_and_empty_results(self):
         good = {'status': 'passed', 'cases': [{'name': 'a', 'status': 'passed'}, {'name': 'b', 'status': 'passed'}]}
         self.assertEqual(report.validate_rust_result(good, ['a', 'b'])['status'], 'passed')
@@ -48,19 +79,19 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(ET.parse(directory / 'junit.xml').getroot().find('testsuite').get('name'), '通常試験')
 
     def test_rust_results_keep_ignored_and_failed_separate_from_passes(self):
-        parsed = runner.rust_cases('test a::one ... ok\ntest a::two ... FAILED\ntest a::three ... ignored, requires network\n')
+        parsed = report.rust_cases('test a::one ... ok\ntest a::two ... FAILED\ntest a::three ... ignored, requires network\n')
         self.assertEqual([case['status'] for case in parsed], ['passed', 'failed', 'skipped'])
 
     def test_case_map_rejects_deleted_or_renamed_tests(self):
         with self.assertRaises(ValueError):
-            runner.check_case_map([{'id': 'URL', 'test_prefixes': ['missing::']}], {'actual::test'})
-        matched = runner.check_case_map([{'id': 'URL', 'test_prefixes': ['actual::']}], {'actual::test'})
+            report.check_case_map([{'id': 'URL', 'test_prefixes': ['missing::']}], {'actual::test'})
+        matched = report.check_case_map([{'id': 'URL', 'test_prefixes': ['actual::']}], {'actual::test'})
         self.assertEqual(matched[0]['resolved_tests'], ['actual::test'])
 
     def test_junit_cannot_hide_a_process_failure_behind_successful_cases(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'junit.xml'
-            runner.write_junit([{'name': 'rust', 'status': 'failed', 'cases': [{'name': 'ok', 'status': 'passed'}]}], path)
+            report.write_junit([{'name': 'rust', 'status': 'failed', 'cases': [{'name': 'ok', 'status': 'passed'}]}], path)
             root = ET.parse(path).getroot()
             self.assertEqual(len(root.findall('.//failure')), 1)
 
