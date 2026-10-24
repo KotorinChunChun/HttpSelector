@@ -1272,7 +1272,6 @@ mod tests {
         assert_eq!(state.action, Action::Back);
         assert_ne!(unsafe { IsWindow(window.0) }, 0);
         drop(state);
-        drop(save);
         assert_eq!(saved.len(), 1);
         let encoded = saved[0].encode().unwrap();
         assert!(
@@ -1305,7 +1304,6 @@ mod tests {
         assert_eq!(common::window_text(state.save_domain), "登録先を保存");
         command(window.0, &mut state, SAVE_DOMAIN);
         drop(state);
-        drop(save);
         assert_eq!(saved[0], original);
 
         let wrapper = ValidatedUrl::parse("https://teams.public.onecdn.static.microsoft/evergreen-assets/safelinks/2/atp-safelinks.html?url=https%3A%2F%2Fexample.sharepoint.com%2Fsite%3FTeamsCID%3Dnot-stable&pc=secret").unwrap();
@@ -1345,7 +1343,6 @@ mod tests {
         command(window.0, &mut state, BACK);
         assert_eq!(state.action, Action::Back);
         drop(state);
-        drop(save);
         assert_eq!(calls, 0);
     }
 
@@ -1380,7 +1377,6 @@ mod tests {
         assert_ne!(unsafe { IsWindow(window.0) }, 0);
         command(window.0, &mut state, BACK);
         drop(state);
-        drop(save);
         assert_eq!(saved.len(), 1);
         assert_eq!(saved[0].condition, original.condition);
         assert!(!saved[0].suppress_prompt);
@@ -1421,7 +1417,6 @@ mod tests {
             assert!(common::window_text(state.status).contains("保存しました"));
             assert_ne!(unsafe { IsWindow(window.0) }, 0); // 保存は起動・終了しない。
             drop(state);
-            drop(save);
             assert_eq!(saved.len(), 1);
             assert!(saved[0].matches_teams_target(&input));
             let encoded = saved[0].encode().unwrap();
@@ -1487,7 +1482,6 @@ mod tests {
         assert_eq!(state.action, Action::Back);
         assert_ne!(unsafe { IsWindow(window.0) }, 0);
         drop(state);
-        drop(save);
         assert_eq!(saved.len(), 1);
         assert!(saved[0].matches_teams_target(&input));
         let encoded = saved[0].encode().unwrap();
