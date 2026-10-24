@@ -1,9 +1,12 @@
 use crate::url_input::ValidatedUrl;
-use anyhow::ensure;
+use crate::win32::wide;
+use anyhow::{Context, ensure};
 use std::ptr::{null, null_mut};
 use std::thread;
 use std::time::Duration;
-use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE};
+use windows_sys::Win32::Foundation::{
+    CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND,
+};
 use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 use windows_sys::Win32::System::Threading::CreateMutexW;
@@ -51,6 +54,30 @@ pub(crate) unsafe fn received_url(lparam: isize) -> Option<ValidatedUrl> {
             .ok()?
             .with_forced_confirmation(data.dwData == 3),
     )
+}
+
+/// `received_url`が受け付ける形式でURLを送り、受信側の戻り値を返す。
+/// 送信できなかった・時間切れの場合は`None`。
+pub(crate) fn send_url(window: HWND, url: &ValidatedUrl, timeout_ms: u32) -> Option<usize> {
+    let mut encoded = wide(url.original());
+    let data = COPYDATASTRUCT {
+        dwData: url.copy_data_kind(),
+        cbData: (encoded.len() * size_of::<u16>()) as u32,
+        lpData: encoded.as_mut_ptr().cast(),
+    };
+    let mut receiver_result = 0_usize;
+    let sent = unsafe {
+        SendMessageTimeoutW(
+            window,
+            WM_COPYDATA,
+            0,
+            (&data as *const COPYDATASTRUCT) as isize,
+            SMTO_ABORTIFHUNG,
+            timeout_ms,
+            &mut receiver_result,
+        )
+    };
+    (sent != 0).then_some(receiver_result)
 }
 
 impl Drop for SingleInstanceGuard {
@@ -142,25 +169,8 @@ fn forward_to_existing(url: Option<&ValidatedUrl>) -> anyhow::Result<()> {
     );
     unsafe { AllowSetForegroundWindow(process_id) };
     if let Some(url) = url {
-        let mut encoded = wide(url.original());
-        let copy_data = COPYDATASTRUCT {
-            dwData: url.copy_data_kind(),
-            cbData: (encoded.len() * size_of::<u16>()) as u32,
-            lpData: encoded.as_mut_ptr().cast(),
-        };
-        let mut receiver_result = 0_usize;
-        let sent = unsafe {
-            SendMessageTimeoutW(
-                existing,
-                WM_COPYDATA,
-                0,
-                (&copy_data as *const COPYDATASTRUCT) as isize,
-                SMTO_ABORTIFHUNG,
-                2_000,
-                &mut receiver_result,
-            )
-        };
-        ensure!(sent != 0, "起動済みのHttpSelectorへURLを転送できません");
+        let receiver_result = send_url(existing, url, 2_000)
+            .context("起動済みのHttpSelectorへURLを転送できません")?;
         ensure!(
             receiver_result != 0,
             "起動済みのHttpSelectorがURLを拒否しました"
@@ -188,14 +198,6 @@ fn forward_to_existing(url: Option<&ValidatedUrl>) -> anyhow::Result<()> {
         }
     }
     Ok(())
-}
-
-fn size_of<T>() -> usize {
-    std::mem::size_of::<T>()
-}
-
-fn wide(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 #[cfg(test)]

@@ -19,9 +19,7 @@ pub const MUTED: u32 = 0x0076695B;
 pub const ACCENT: u32 = 0x00A66620;
 pub const BORDER: u32 = 0x00DFD8CF;
 
-pub fn wide(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain(std::iter::once(0)).collect()
-}
+pub use crate::win32::wide;
 
 pub fn is_maximize_command(wparam: usize) -> bool {
     (wparam & 0xfff0) == SC_MAXIMIZE as usize
