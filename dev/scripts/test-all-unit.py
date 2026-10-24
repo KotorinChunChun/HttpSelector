@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 import xml.etree.ElementTree as ET
+sys.dont_write_bytecode = True
 import cli_test_report as report
 
 spec = importlib.util.spec_from_file_location('runner', Path(__file__).with_name('test-all.py'))

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import uuid
+sys.dont_write_bytecode = True
 from cli_test_report import check_case_map, rust_cases, rust_inventory, selected_cases, validate_rust_result, write_reports
 
 ROOT = Path(__file__).resolve().parents[2]
