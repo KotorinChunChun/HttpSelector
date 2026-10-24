@@ -12,6 +12,8 @@ use crate::url_input::ValidatedUrl;
 use crate::{association, association_ui, nested_url, risk, risk_ui, url_pattern};
 use anyhow::Context;
 mod host;
+#[cfg(test)]
+mod scenarios;
 pub use host::{
     NativeHost, SaveAssociation, SavePreferences, SelectorInput, SessionHost, TestProfile,
 };

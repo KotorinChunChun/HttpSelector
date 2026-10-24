@@ -548,17 +548,59 @@ pub fn guest_mode_allowed(browser_type: BrowserType) -> bool {
                     &mut size,
                 )
             };
-            match result {
-                0 => value != 0,
-                2 | 3 => true,
-                _ => false,
-            }
+            guest_policy_allows(result, value)
         })
+}
+
+fn guest_policy_allows(result: u32, value: u32) -> bool {
+    match result {
+        0 => value != 0,
+        2 | 3 => true,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guest_policy_denial_and_read_errors_are_not_overridden() {
+        assert!(!guest_policy_allows(0, 0));
+        assert!(guest_policy_allows(0, 1));
+        assert!(guest_policy_allows(2, 0) && guest_policy_allows(3, 0));
+        assert!(!guest_policy_allows(5, 1) && !guest_policy_allows(13, 1));
+        assert!(!guest_mode_allowed(BrowserType::Firefox));
+    }
+
+    #[test]
+    #[ignore = "対話デスクトップの前面を一時変更するためCLIの明示オプションで実行"]
+    fn interactive_desktop_restores_and_foregrounds_window() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            DefWindowProcW, SW_SHOWMINIMIZED, ShowWindow,
+        };
+        struct RestoreFocus(HWND);
+        impl Drop for RestoreFocus {
+            fn drop(&mut self) {
+                if !self.0.is_null() {
+                    unsafe {
+                        SetForegroundWindow(self.0);
+                    }
+                }
+            }
+        }
+        let _focus = RestoreFocus(unsafe { GetForegroundWindow() });
+        let executable = std::env::current_exe().unwrap();
+        let before = browser_windows(&executable);
+        let window = crate::ui_support::HiddenTestWindow::new(Some(DefWindowProcW), null_mut());
+        unsafe {
+            ShowWindow(window.0, SW_SHOWMINIMIZED);
+        }
+        assert_ne!(unsafe { IsIconic(window.0) }, 0);
+        activate_browser_window(&executable, &before);
+        assert_eq!(unsafe { IsIconic(window.0) }, 0);
+        assert_eq!(unsafe { GetForegroundWindow() }, window.0);
+    }
 
     fn profile(browser_type: BrowserType, profile_id: &str) -> Profile {
         Profile {

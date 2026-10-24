@@ -205,6 +205,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn native_send_url_round_trip_preserves_shift_original_and_acceptance() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW;
+        unsafe extern "system" fn receiver(
+            window: HWND,
+            message: u32,
+            wparam: usize,
+            lparam: isize,
+        ) -> isize {
+            if message == WM_COPYDATA {
+                let state = unsafe {
+                    crate::win32::window_state::<Option<ValidatedUrl>>(window, message, lparam)
+                };
+                unsafe {
+                    *state = received_url(lparam);
+                }
+                return 1;
+            }
+            unsafe {
+                crate::win32::window_state::<Option<ValidatedUrl>>(window, message, lparam);
+                DefWindowProcW(window, message, wparam, lparam)
+            }
+        }
+        let mut received = None;
+        let window = crate::ui_support::HiddenTestWindow::new(
+            Some(receiver),
+            (&mut received as *mut Option<ValidatedUrl>).cast(),
+        );
+        let original = ValidatedUrl::parse("HTTPS://example.com/a?code=one%20time#private")
+            .unwrap()
+            .with_forced_confirmation(true);
+        assert_eq!(send_url(window.0, &original, 250), Some(1));
+        assert_eq!(received, Some(original.clone()));
+        assert_eq!(send_url(null_mut(), &original, 10), None);
+    }
+
+    #[test]
     fn takes_over_if_the_primary_exits_before_url_forwarding() {
         let name = format!(
             "Local\\HttpSelector.Test.{}.{:?}",

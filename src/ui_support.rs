@@ -786,6 +786,117 @@ impl Drop for HiddenTestWindow {
 mod tests {
     use super::*;
 
+    unsafe extern "system" fn loop_probe(
+        window: HWND,
+        message: u32,
+        wparam: usize,
+        lparam: isize,
+    ) -> isize {
+        let state = unsafe { window_state::<usize>(window, message, lparam) };
+        match message {
+            WM_KEYDOWN if !state.is_null() => {
+                unsafe {
+                    *state += 1;
+                }
+                0
+            }
+            WM_CLOSE => {
+                unsafe {
+                    DestroyWindow(window);
+                }
+                0
+            }
+            WM_DESTROY => {
+                unsafe {
+                    PostQuitMessage(0);
+                }
+                0
+            }
+            WM_NCDESTROY => unsafe {
+                SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+                DefWindowProcW(window, message, wparam, lparam)
+            },
+            _ => unsafe { DefWindowProcW(window, message, wparam, lparam) },
+        }
+    }
+
+    #[test]
+    fn native_message_loop_filters_keys_dispatches_and_closes_without_mouse_operations() {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_F6, VK_F7};
+        let mut dispatched = 0_usize;
+        let parent =
+            HiddenTestWindow::new(Some(loop_probe), (&mut dispatched as *mut usize).cast());
+        unsafe {
+            PostMessageW(parent.0, WM_KEYDOWN, VK_F6 as usize, 0);
+            PostMessageW(parent.0, WM_KEYDOWN, VK_F7 as usize, 0);
+            PostMessageW(parent.0, WM_CLOSE, 0, 0);
+        }
+        let mut revealed = 0;
+        run_message_loop(
+            parent.0,
+            "メッセージ取得失敗",
+            |message| message.wParam == VK_F6 as usize,
+            || revealed += 1,
+        )
+        .unwrap();
+        assert_eq!(dispatched, 1);
+        assert_eq!(revealed, 1);
+        assert_eq!(unsafe { IsWindow(parent.0) }, 0);
+    }
+
+    #[test]
+    fn dialog_escape_closes_through_the_production_message_loop() {
+        let mut dispatched = 0_usize;
+        let parent =
+            HiddenTestWindow::new(Some(loop_probe), (&mut dispatched as *mut usize).cast());
+        unsafe {
+            PostMessageW(parent.0, WM_KEYDOWN, VK_ESCAPE as usize, 0);
+        }
+        run_message_loop(
+            parent.0,
+            "メッセージ取得失敗",
+            |message| handle_dialog_key(parent.0, message),
+            || panic!("ESCは配送しない"),
+        )
+        .unwrap();
+        assert_eq!(dispatched, 0);
+        assert_eq!(unsafe { IsWindow(parent.0) }, 0);
+    }
+
+    #[test]
+    fn native_tooltip_returns_registered_text_after_many_more_tools_are_added() {
+        use windows_sys::Win32::UI::Controls::*;
+        let parent = HiddenTestWindow::new(Some(DefWindowProcW), null_mut());
+        let theme = Theme::new(96);
+        let mut tips = Tooltips::new(parent.0, 96);
+        let first = button(parent.0, "設定", 1, theme.font);
+        tips.add(parent.0, first, "この設定は変更すると自動保存されます。");
+        for id in 2..30 {
+            let control = button(parent.0, "項目", id, theme.font);
+            tips.add(parent.0, control, "別の説明");
+        }
+        let mut text = [0_u16; 1024];
+        let mut info: TTTOOLINFOW = unsafe { std::mem::zeroed() };
+        info.cbSize = std::mem::offset_of!(TTTOOLINFOW, lpReserved) as u32;
+        info.hwnd = parent.0;
+        info.uId = first as usize;
+        info.lpszText = text.as_mut_ptr();
+        unsafe {
+            SendMessageW(
+                tips.window,
+                TTM_GETTEXTW,
+                text.len(),
+                (&mut info as *mut TTTOOLINFOW) as isize,
+            );
+        }
+        let end = text.iter().position(|v| *v == 0).unwrap();
+        assert_eq!(
+            String::from_utf16(&text[..end]).unwrap(),
+            "この設定は変更すると自動保存されます。"
+        );
+        assert_eq!(tips.count(), 29);
+    }
+
     #[test]
     fn standard_controls_are_identified_by_class_name() {
         let parent = HiddenTestWindow::new(Some(DefWindowProcW), null_mut());
