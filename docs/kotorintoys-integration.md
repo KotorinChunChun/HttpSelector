@@ -4,7 +4,7 @@
 
 ## 配置と管理対象
 
-正本は `C:\develop\KotorinToys\tools\HttpSelector` です。HttpSelectorの独立したGit履歴を保持し、KotorinToys側は `catalog/tools.json` から子の [tool.json](../tool.json) を参照します。子の公開先は [KotorinChunChun/HttpSelector](https://github.com/KotorinChunChun/HttpSelector) です。親の採用Gitリンクや配信configへの反映は、子のソース・Release公開とは別に管理します。
+HttpSelectorのソースは `C:\develop\KotorinToys\tools\HttpSelector` で管理し、独立したGit履歴を保持します。KotorinToys側は `catalog/tools.json` からHttpSelectorの [tool.json](../tool.json) を参照します。HttpSelectorの公開先は [KotorinChunChun/HttpSelector](https://github.com/KotorinChunChun/HttpSelector) です。KotorinToys側の採用Gitリンクや配信configへの反映は、HttpSelectorのソース・Release公開とは別に管理します。
 
 通常利用はWindows 11 x64の署名付きMSIXを必須とします。[MSIX導入手順](INSTALL_MSIX.md)に従ってインストール・HTTP/HTTPS関連付けを行ってください。開発ソースの表示・管理定義・生成設定は `0.0.3.6`、Cargo版は `0.0.3+6` です。公開済み実MSIXも0.0.3.6です。今回このPCへのインストール・本体配信一覧の変更は行っていません。定義の `distributionStatus: unpublished` は本体対応インストーラー台帳へ載せないことを表します。
 
@@ -47,7 +47,7 @@ pwsh -NoProfile -File .\dev\scripts\run-test.ps1 -Url "https://example.com/path?
 | `show` | 対象PIDを確認して、画面の表示・前面化を要求する。UI応答後に完了を返す |
 | `stop` | 対象PIDと処理状態を確認し、正常終了を受理する。プロセス終了は別に確認する |
 
-要求はUTF-8の1行JSONで、`command`、操作対象の `expectedPid`、照合用の `requestId` を使用します。`status` には従来の文字列要求も利用できます。`show` と `stop` の対象PID欠落・不一致は拒否します。要求サイズは8,192バイト、要求IDは128バイトまでです。`shortcuts` 操作は未対応として返し、未対応操作を成功扱いしません。
+要求はUTF-8の1行JSONで、`command`、操作対象の `expectedPid`、照合用の `requestId` を使用します。`status` には従来の文字列要求も利用できます。`show` と `stop` は対象PIDがない場合や一致しない場合に拒否します。要求サイズは8,192バイト、要求IDは128バイトまでです。`shortcuts` 操作は未対応として返し、未対応操作を成功扱いしません。
 
 接続後の管理要求は読み込み・UI応答・応答書き込みを含め約2秒の期限を持ちます。期限内にUIへ処理を渡せない場合は失敗を返し、期限切れの表示要求を後で勝手に実行しません。`stop` の `accepted` は正常終了の受理であり、終了完了ではありません。
 
@@ -57,7 +57,7 @@ pwsh -NoProfile -File .\dev\scripts\run-test.ps1 -Url "https://example.com/path?
 
 画面とは独立したURL受付窓口で後続URLを保持します。処理中のURLを上書きせず、受理したURLはFIFOで扱います。保留URLは最大256件で、上限超過は送信側へ拒否を返します。
 
-手動選択、既定ルール、割り込みオフの起動は同じ検査ゲートを通ります。ローカルの表記・ブランド照合とQuad9のHTTP/2 DNS over HTTPSを組み合わせ、必要な警告はキャンセルを初期選択にします。キャンセルでは対象URLの起動・ドメイン連携追加・自動履歴記録を行いません。
+手動選択、既定ルール、割り込みオフで起動する場合は、いずれも同じ処理でURLを検査します。ローカルの表記・ブランド照合とQuad9のHTTP/2 DNS over HTTPSを組み合わせ、警告が必要な場合はキャンセルを初期選択にします。キャンセルすると対象URLを開かず、ドメイン連携の追加や履歴の自動記録も行いません。
 
 Quad9へ送るのはサブドメインを含むASCIIホスト名だけです。元URL・パス・クエリ・フラグメント・認証情報・ポートは送りません。ローカル名、IPリテラル、予約名、公開suffixを確認できない名前は外部照会から除外します。Quad9は接続元IPなどの通信情報を認識できるため、匿名化の仕組みではありません。WindowsのDNS設定は変更しません。
 

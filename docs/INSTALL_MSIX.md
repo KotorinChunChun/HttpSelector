@@ -14,7 +14,7 @@ HttpSelectorの通常利用には、署名付きMSIXのインストールが必�
 
 推奨は[公開サイト](https://excel-chunchun.sakura.ne.jp/download/HttpSelector.html)のApp Installerです。GitHubから取得するApp Installerも更新先は同サイトです。GitHubのMSIXを直接開いて手動導入もできます。両拠点の署名付きMSIXは同一です。HTTPSのMIME・参照版・内容一致を検証しましたが、実機の導入・自動更新操作は未検証です。詳細は[二拠点配布手順](GITHUB_RELEASE.md)を参照してください。
 
-ソースから署名付き成果物を作る場合:
+ソースから署名付き成果物を作るには、次のコマンドを使います。
 
 ```powershell
 cd C:\develop\KotorinToys\tools\HttpSelector
@@ -31,7 +31,7 @@ pwsh -NoProfile -File dev/scripts/release-msix.ps1 -Mode Build -Channel beta -Re
 
 ## 3. MSIXをインストールする
 
-MSIXをダブルクリックし、App Installerの発行元・バージョンを確認して「インストール」または「更新」を選びます。現在利用者へ導入します。コマンドから行う場合も、署名検証付きの入口を使用できます。
+MSIXをダブルクリックし、App Installerで発行元とバージョンを確認してから「インストール」または「更新」を選びます。現在の利用者にインストールされます。コマンドで導入する場合は、次の署名検証付きスクリプトを使えます。
 
 ```powershell
 cd C:\develop\KotorinToys\tools\HttpSelector

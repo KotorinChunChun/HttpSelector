@@ -14,7 +14,7 @@
 
 現行手順の更新日: 2026-10-25。署名付きBeta MSIXをGitHubと公開サイトへ公開済み。下記の日付付き結果は当時の版の記録として区別する。今回、インストール・証明書の信頼登録は行っていない。
 
-HttpSelectorの正式配布はMicrosoft StoreのMSIXを予定する。正式版とは別に、GitHub Releasesと既存公開サイトで自己署名MSIXを配布するbetaチャネルを用意する。v0.0.3.4の二拠点公開依頼により、公開サイトは維持する。App Installerは適切なMIMEを提供できる公開サイトを参照し、GitHubでも同一MSIXを直接取得できる。手順は[二拠点配布](GITHUB_RELEASE.md)を正本とする。開発用MSIXとStore提出用MSIXを分離する。
+HttpSelectorの正式版は、Microsoft StoreでMSIXとして配布する予定。GitHub Releasesと既存公開サイトには、自己署名MSIXを配布するbetaチャネルを用意する。v0.0.3.4の二拠点公開依頼により、公開サイトは維持する。App Installerは適切なMIMEを提供できる公開サイトを参照し、GitHubでも同じMSIXを直接取得できる。配布は[二拠点配布](GITHUB_RELEASE.md)の手順に従う。開発用とStore提出用のMSIXは分けて扱う。
 
 ## 現在の構成
 
@@ -128,7 +128,7 @@ Verifyは既存パッケージを読むだけで、生成・修復・インス�
 8. 同一証明書・同一IdentityでPackage Versionを上げ、上書き更新後に設定が残ることを確認する。
 9. アプリ削除時の候補登録とLocalStateの扱いを確認する。最後に検証で追加した証明書だけを拇印で特定して信頼ストアから取り除く。
 
-登録例（検証端末で明示的に実行する。管理者権限が必要なのは信頼登録の操作であり、アプリ本体は要求しない）:
+検証端末で証明書を明示的に信頼登録するときは、次のコマンドを使用する。信頼登録には管理者権限が必要で、アプリ本体は管理者権限を要求しない。
 
 ```powershell
 Import-Certificate -FilePath <公開CERのパス> -CertStoreLocation Cert:\LocalMachine\TrustedPeople

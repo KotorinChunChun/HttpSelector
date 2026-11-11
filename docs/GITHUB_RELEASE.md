@@ -8,7 +8,7 @@
 - 公開サイト: 導入案内、証明書案内、App InstallerとMSIXの更新先。既存サイトは廃止しません。
 - App InstallerのUriとMainPackageのUriは公開サイトです。GitHubから取得するApp Installerも同じ内容です。
 
-前版と同様、GitHub APIに正しいMIMEを登録しても匿名取得時はapplication/octet-streamでした。このため、GitHubをApp Installerの直接更新先にはしません。公開サイトではapplication/appinstaller・application/msix・application/pkix-cert、正のContent-LengthとHTTPS取得を確認済みです。自動更新の実機操作は別に検証が必要です。
+前版と同様、GitHub APIに正しいMIMEを登録しても、認証なしで取得したときのMIMEはapplication/octet-streamでした。このため、GitHubをApp Installerの直接更新先にはしません。公開サイトではapplication/appinstaller・application/msix・application/pkix-cert、正のContent-LengthとHTTPS取得を確認済みです。自動更新の実機操作は別途検証が必要です。
 
 ## 利用者向け
 
@@ -21,7 +21,7 @@
 
 - `packaging/release-config.json` のpackageVersionと表示版を一致させます。distribution.modeはdual、beta.baseUriとbeta.appInstallerUriは既存公開サイトです。
 - `publish-msix-release.ps1 -Mode Build -Channel beta -ReleaseIntentConfirmed` で既存証明書による署名と検証、App Installer生成を行います。公開済み同版MSIXは再生成・差し替えず、同一の署名済みバイト列を再利用します。
-- `-Mode Stage` で対象をステージ・検証し、`-Mode Publish -ReleaseIntentConfirmed -PublishConfirmed` でFTPS dry-run・公開前退避・対象限定配信・匿名HTTPS検証を実施します。対象は製品ページ、証明書案内、アイコン、MSIX、公開CER、App Installerの6ファイルだけです。共有メニュー・他製品を含めません。
+- `-Mode Stage` で対象をステージングして検証します。`-Mode Publish -ReleaseIntentConfirmed -PublishConfirmed` ではFTPSのdry-run、公開前の退避、対象を限定した配信、認証なしのHTTPS取得による検証を行います。対象は製品ページ、証明書案内、アイコン、MSIX、公開CER、App Installerの6ファイルだけです。共有メニュー・他製品を含めません。
 - ソース・版タグをpushし、GitHub Releaseをdraftで準備します。MSIX、公開CER、App Installer、SHA256SUMS.txtの4ファイルを添付し、Web公開検証後にReleaseを公開します。秘密鍵・PFX・利用者データ・生ログは公開しません。
 - アセットのAPI登録にはMSIX=application/msix、App Installer=application/appinstaller、CER=application/pkix-cert、チェックサム=text/plainを指定します。ただし配信時のMIMEとは区別します。
 - ベータ品質であることを名称・本文へ明記します。最新Releaseから入手できるようprereleaseではなくlatestを指定しますが、Store正式版を意味しません。

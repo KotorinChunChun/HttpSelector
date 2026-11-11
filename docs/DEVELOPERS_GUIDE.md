@@ -1,6 +1,6 @@
 # HttpSelector 開発ガイド
 
-更新日: 2026-10-25。開発ソース・配布対象MSIX 0.0.3.9。正本の配置は `C:\develop\KotorinToys\tools\HttpSelector` で、独立Gitリポジトリを維持します。管理連携の契約と運用は[KotorinToys連携](kotorintoys-integration.md)を参照してください。
+更新日: 2026-10-25。開発ソースと配布対象のMSIXは0.0.3.9です。開発ソースは `C:\develop\KotorinToys\tools\HttpSelector` の独立したGitリポジトリで管理します。管理連携の契約と運用は[KotorinToys連携](kotorintoys-integration.md)を参照してください。
 
 ## 必要環境
 
@@ -22,7 +22,7 @@ cargo clippy --all-targets -- -D warnings
 cargo build --release
 ```
 
-テストURLでの起動:
+テストURLを渡して起動するには、次のコマンドを使います。
 
 ```powershell
 pwsh -NoProfile -File .\dev\scripts\run-test.ps1 -Url "https://example.com/path?a=b%20c"
@@ -39,7 +39,7 @@ cargo build --target-dir target/management
 
 `--startup` は管理用の常駐待機です。初期化後に選択画面を出さず、URL・表示・停止要求を待ちます。初回のデータ初期化・プロファイル探索と、設定破損時の復旧確認は行います。`--launch-origin` は `standalone`、`host_manual`、`direct_task`、`via_kotorintoys` を受け付けます。
 
-実データやブラウザ起動に触れないUIプレビュー:
+実データを使わず、ブラウザも起動せずにUIを確認できます。
 
 ```powershell
 cargo run --example ui_preview
@@ -83,7 +83,7 @@ UIの回帰テストでは、100/125/150/200%相当の幅・お気に入り0〜5
 - `association_ui`: 初期折りたたみの連携フォーム。保存コールバックと開く／戻るの結果を分離
 - `risk_local`: 元ホスト表記・IDNA・Unicode類似文字・8サービスのtypoと偽装名を副作用なしで判定し、外部照会可能なASCIIホストだけを抽出
 - `quad9`: HTTP/2のDNS over HTTPSとDNS応答検証。対象ページのHTTP取得は行わない
-- `risk`: ローカル・外部結果の集約と、承認前の起動・保存を抑止する共通ゲート
+- `risk`: 端末内と外部の検査結果をまとめ、承認前の起動・保存を共通の処理で止める
 - `risk_ui`: キャンセルを初期選択にした起動前確認画面
 - `profile_scan`: ChromiumのLocal StateとFirefoxのprofiles.iniを解析
 - `storage`: SQLiteスキーマと利用者編集項目を維持する再スキャンマージ
@@ -145,7 +145,7 @@ Shift指定はrun開始時にGetAsyncKeyState(VK_SHIFT)の上位ビットで採�
 
 一意の既存ルールは条件・ID・順序を保ったフォームを表示します。UPDATEのWHEREでID・元Pattern・ProfileId・Enabled・SortOrder・CreatedAt・UpdatedAtを照合し、競合・削除・FK失敗時は書き換えません。署名失敗はバックアップへ復元します。重複ルールの自動選択は行いません。
 
-Beta配布は[GitHub Releases](https://github.com/KotorinChunChun/HttpSelector/releases/latest)と既存公開サイトの二拠点です。手順は[二拠点配布](GITHUB_RELEASE.md)を正本とします。distribution.mode=dualでWeb向けStage/Publish/Verify/Fullを使用します。App Installerの参照先は公開サイトです。
+Beta配布は[GitHub Releases](https://github.com/KotorinChunChun/HttpSelector/releases/latest)と既存公開サイトの二拠点です。配布は[二拠点配布](GITHUB_RELEASE.md)の手順に従います。distribution.mode=dualでWeb向けStage/Publish/Verify/Fullを使用します。App Installerの参照先は公開サイトです。
 
 開発ソースの表示版・MSIX生成設定は `0.0.3.9`、Cargo版は `0.0.3+9` です。Quad9の既定OFF・任意送信設定を含みます。本版の署名付きBeta MSIXは0.0.3.9です。実機への導入・更新操作は未実施です。KotorinToys向けの `distributionStatus: unpublished` は本体対応インストーラーの台帳とは未連携であることを示し、Beta MSIXの公開状況とは別です。
 
