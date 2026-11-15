@@ -110,3 +110,13 @@ URLパターンの自動記録は既定OFFです。有効にした場合は末�
 Windows 10 1809以降 / Windows 11、x64。
 
 [利用ガイド](docs/USERS_GUIDE.md) ／ [よくある質問](docs/FAQ.md) ／ [プライバシーポリシー案](docs/PRIVACY_POLICY.md)
+
+## 使用言語とライブラリ
+
+- 使用言語はRustです。
+- windows-sys（Windows API）、rusqlite（設定・履歴用のSQLite）、url・idna・psl・unicode-security（URLやドメインの解析・確認）、serde・serde_json（データの読み書き）。
+- 依存定義と資料 [Cargoの依存定義](Cargo.toml)
+
+## ライセンス
+
+本アプリの独自コードと文書には[MITライセンス](LICENSE)が適用されます。第三者のコンポーネントや素材には、それぞれのライセンスが適用されます。
