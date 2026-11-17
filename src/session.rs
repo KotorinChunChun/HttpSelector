@@ -173,7 +173,7 @@ impl<'a, H: SessionHost> Session<'a, H> {
                 self.background_scan = None;
                 self.url = url;
                 self.selected_profile_id = selected_profile_id;
-                apply_detected_profiles(self.storage, self.integrity, &detected)?;
+                self.apply_detected(&detected)?;
             }
             SelectorResult::Settings { url } => {
                 self.url = url;
@@ -203,14 +203,7 @@ impl<'a, H: SessionHost> Session<'a, H> {
         ) else {
             return Ok(Flow::Continue);
         };
-        match open_profile(
-            &profile,
-            url,
-            self.storage,
-            self.integrity,
-            self.host,
-            || Ok(true),
-        ) {
+        match self.open_profile(&profile, url, || Ok(true)) {
             Ok(Some(_)) => {
                 self.record_history(profile.id, url)?;
                 Ok(Flow::Finish)
@@ -234,25 +227,17 @@ impl<'a, H: SessionHost> Session<'a, H> {
         profile_id: i64,
         selected_url: Option<ValidatedUrl>,
     ) -> anyhow::Result<Flow> {
-        let (storage, integrity) = (self.storage, self.integrity);
-        let profile = storage
+        let profile = self
+            .storage
             .find_profile(profile_id)?
             .context("選択したプロファイルが見つかりません")?;
         let url = selected_url
             .as_ref()
             .context("開くURLが指定されていません")?;
-        let mut replacements = replacement_candidates(storage, url)?;
+        let mut replacements = self.replacement_candidates(url)?;
         let mut pending_url = None;
-        let launched = open_profile(&profile, url, storage, integrity, self.host, || {
-            confirm_association(
-                storage,
-                integrity,
-                &profile,
-                url,
-                &mut replacements,
-                &mut pending_url,
-                self.host,
-            )
+        let launched = self.open_profile(&profile, url, || {
+            self.confirm_association(&profile, url, &mut replacements, &mut pending_url)
         });
         let opened = match launched {
             Ok(Some(opened)) => opened,
@@ -335,7 +320,7 @@ impl<'a, H: SessionHost> Session<'a, H> {
     fn rescan(&self, failure_message: &str) -> anyhow::Result<()> {
         match self.host.scan(self.paths) {
             Ok(detected) => {
-                let changes = apply_detected_profiles(self.storage, self.integrity, &detected)?;
+                let changes = self.apply_detected(&detected)?;
                 if changes.changed() {
                     self.host.notify(Notice::Information, &changes.message());
                 }
@@ -345,6 +330,18 @@ impl<'a, H: SessionHost> Session<'a, H> {
                 .notify(Notice::Error, &format!("{failure_message}\n{error:#}")),
         }
         Ok(())
+    }
+
+    /// 検出結果に変化がある場合だけ、利用者の設定を保ったまま署名付きで保存する。
+    fn apply_detected(&self, detected: &[DetectedProfile]) -> anyhow::Result<ProfileChanges> {
+        let changes = profile_scan::changes(&self.storage.load_all_profiles()?, detected);
+        if changes.changed() {
+            self.integrity.update(|| {
+                self.storage.sync_detected(detected)?;
+                self.storage.mark_initial_scan_completed()
+            })?;
+        }
+        Ok(changes)
     }
 
     fn open_settings(&mut self) -> anyhow::Result<()> {
@@ -387,98 +384,104 @@ impl<'a, H: SessionHost> Session<'a, H> {
         }
         Ok(())
     }
-}
 
-/// Shift指定で確認するURLだけ、一致する既存ルールを置換候補にする。
-fn replacement_candidates(
-    storage: &Storage,
-    url: &ValidatedUrl,
-) -> anyhow::Result<Vec<DefaultRule>> {
-    if !url.force_confirmation() {
-        return Ok(vec![]);
-    }
-    Ok(storage
-        .load_default_rules()?
-        .into_iter()
-        .filter(|rule| rule.enabled && crate::rules::matches(&rule.pattern, url.original()))
-        .collect())
-}
-
-/// 連携フォームを表示し、開くが選ばれた場合だけ`true`を返す。
-/// 保存は署名付きで即時に行い、フォーム表示中に届いたURLは`pending_url`へ残す。
-fn confirm_association(
-    storage: &Storage,
-    integrity: &IntegrityManager,
-    profile: &Profile,
-    url: &ValidatedUrl,
-    replacements: &mut [DefaultRule],
-    pending_url: &mut Option<ValidatedUrl>,
-    host: &impl SessionHost,
-) -> anyhow::Result<bool> {
-    if !url.force_confirmation() && storage.association_prompt_suppressed(url)? {
-        return Ok(true);
-    }
-    let preset = (replacements.len() == 1).then(|| replacements[0].clone());
-    let outcome = host.association(url, profile, preset.as_ref(), &mut |rule| {
-        anyhow::ensure!(
-            replacements.len() <= 1,
-            "複数の登録ルールが一致します。誤置換を防ぐため既定ルール一覧で対象を確認してください"
+    /// プロファイル識別子の検証、危険性検査、必要な利用者確認、`before_launch`、起動の順に処理する。
+    /// 警告で取り消された場合は`None`、`before_launch`が起動を見送った場合は`Some(false)`を返す。
+    fn open_profile(
+        &self,
+        profile: &Profile,
+        url: &ValidatedUrl,
+        before_launch: impl FnOnce() -> anyhow::Result<bool>,
+    ) -> anyhow::Result<Option<bool>> {
+        let _busy = management::busy_guard();
+        self.host.ensure_launchable(profile)?;
+        let report = self.host.inspect(
+            url,
+            &self.storage.approved_domains()?,
+            self.storage.quad9_enabled()?,
         );
-        integrity.update(|| match replacements.first() {
-            Some(existing) => {
-                storage.replace_association_target(existing, profile.id, rule.suppress_prompt)
+        let decision = if report.requires_confirmation() {
+            self.host.confirm_risk(url, &report)
+        } else {
+            risk_ui::Decision {
+                accepted: true,
+                approve_domains: false,
             }
-            None => storage.save_association(profile.id, rule),
-        })?;
-        // 続けて保存しても置換対象の照合が古いスナップショットにならないよう読み直す。
-        if let Some(existing) = replacements.first_mut() {
-            *existing = storage
-                .load_default_rules()?
-                .into_iter()
-                .find(|entry| entry.id == existing.id)
-                .context("保存後のルールを取得できません")?;
-        }
-        Ok(())
-    })?;
-    *pending_url = outcome.pending_url;
-    Ok(outcome.action == association_ui::Action::Open)
-}
+        };
+        risk::guarded(
+            &report,
+            |_| decision.accepted,
+            || {
+                if decision.approve_domains {
+                    let mut approved = self.storage.approved_domains()?;
+                    approved.extend(report.approvable_domains.iter().cloned());
+                    self.integrity
+                        .update(|| self.storage.set_approved_domains(&approved))?;
+                }
+                if !before_launch()? {
+                    return Ok(false);
+                }
+                self.host.launch(profile, url)?;
+                Ok(true)
+            },
+        )
+    }
 
-fn open_profile(
-    profile: &Profile,
-    url: &ValidatedUrl,
-    storage: &Storage,
-    integrity: &IntegrityManager,
-    host: &impl SessionHost,
-    before_launch: impl FnOnce() -> anyhow::Result<bool>,
-) -> anyhow::Result<Option<bool>> {
-    let _busy = management::busy_guard();
-    host.ensure_launchable(profile)?;
-    let report = host.inspect(url, &storage.approved_domains()?, storage.quad9_enabled()?);
-    let decision = if report.requires_confirmation() {
-        host.confirm_risk(url, &report)
-    } else {
-        risk_ui::Decision {
-            accepted: true,
-            approve_domains: false,
+    /// Shift指定で確認するURLだけ、一致する既存ルールを置換候補にする。
+    fn replacement_candidates(&self, url: &ValidatedUrl) -> anyhow::Result<Vec<DefaultRule>> {
+        if !url.force_confirmation() {
+            return Ok(vec![]);
         }
-    };
-    risk::guarded(
-        &report,
-        |_| decision.accepted,
-        || {
-            if decision.approve_domains {
-                let mut approved = storage.approved_domains()?;
-                approved.extend(report.approvable_domains.iter().cloned());
-                integrity.update(|| storage.set_approved_domains(&approved))?;
-            }
-            if !before_launch()? {
-                return Ok(false);
-            }
-            host.launch(profile, url)?;
-            Ok(true)
-        },
-    )
+        Ok(self
+            .storage
+            .load_default_rules()?
+            .into_iter()
+            .filter(|rule| rule.enabled && crate::rules::matches(&rule.pattern, url.original()))
+            .collect())
+    }
+
+    /// 連携フォームを表示し、開くが選ばれた場合だけ`true`を返す。
+    /// 保存は署名付きで即時に行い、フォーム表示中に届いたURLは`pending_url`へ残す。
+    fn confirm_association(
+        &self,
+        profile: &Profile,
+        url: &ValidatedUrl,
+        replacements: &mut [DefaultRule],
+        pending_url: &mut Option<ValidatedUrl>,
+    ) -> anyhow::Result<bool> {
+        let (storage, integrity) = (self.storage, self.integrity);
+        if !url.force_confirmation() && storage.association_prompt_suppressed(url)? {
+            return Ok(true);
+        }
+        let preset = (replacements.len() == 1).then(|| replacements[0].clone());
+        let outcome = self
+            .host
+            .association(url, profile, preset.as_ref(), &mut |rule| {
+                anyhow::ensure!(
+                    replacements.len() <= 1,
+                    "複数の登録ルールが一致します。誤置換を防ぐため既定ルール一覧で対象を確認してください"
+                );
+                integrity.update(|| match replacements.first() {
+                    Some(existing) => storage.replace_association_target(
+                        existing,
+                        profile.id,
+                        rule.suppress_prompt,
+                    ),
+                    None => storage.save_association(profile.id, rule),
+                })?;
+                // 続けて保存しても置換対象の照合が古いスナップショットにならないよう読み直す。
+                if let Some(existing) = replacements.first_mut() {
+                    *existing = storage
+                        .load_default_rules()?
+                        .into_iter()
+                        .find(|entry| entry.id == existing.id)
+                        .context("保存後のルールを取得できません")?;
+                }
+                Ok(())
+            })?;
+        *pending_url = outcome.pending_url;
+        Ok(outcome.action == association_ui::Action::Open)
+    }
 }
 
 fn resolve_profile(
@@ -530,21 +533,6 @@ fn resolve_profile(
             }
         })
         .cloned()
-}
-
-fn apply_detected_profiles(
-    storage: &Storage,
-    integrity: &IntegrityManager,
-    detected: &[DetectedProfile],
-) -> anyhow::Result<ProfileChanges> {
-    let changes = profile_scan::changes(&storage.load_all_profiles()?, detected);
-    if changes.changed() {
-        integrity.update(|| {
-            storage.sync_detected(detected)?;
-            storage.mark_initial_scan_completed()
-        })?;
-    }
-    Ok(changes)
 }
 
 #[cfg(test)]
