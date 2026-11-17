@@ -1,5 +1,5 @@
 [
-  {"id":"F01","feature":"URL受付・デコード・引数・元URL保持","test_prefixes":["url_input::tests::","session::tests::arguments_","session::scenarios::auto_rule_"]},
+  {"id":"F01","feature":"URL受付・デコード・引数・元URL保持","test_prefixes":["url_input::tests::","app_options::tests::arguments_","session::scenarios::auto_rule_"]},
   {"id":"F02","feature":"ブラウザープロファイル検出・ゲスト・ポリシー","test_prefixes":["profile_scan::tests::","browser::tests::guest_","session::scenarios::guest_selection_"]},
   {"id":"F03","feature":"お気に入り・既定表示・表示名・コメント・並べ替え","test_prefixes":["session::scenarios::favorite_changes_","settings_ui::tests::profile_edits_","ui::tests::first_available_favorite_"]},
   {"id":"F04","feature":"保存ルール優先・割り込みOFF・未一致時の先頭お気に入り","test_prefixes":["session::tests::route_prioritizes_","session::scenarios::interruption_"]},

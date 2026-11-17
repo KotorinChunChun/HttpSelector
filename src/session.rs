@@ -548,28 +548,7 @@ fn apply_detected_profiles(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app_options::parse_arguments;
     use crate::model::BrowserType;
-
-    #[test]
-    fn arguments_preserve_urls_and_validate_management_options() {
-        let args = [
-            "--startup",
-            "--launch-origin",
-            "host_manual",
-            "HTTPS://example.com/a?secret=1",
-        ]
-        .map(String::from);
-        let options = parse_arguments(&args).unwrap();
-        assert!(options.startup);
-        assert_eq!(options.origin, "host_manual");
-        assert_eq!(
-            options.url.unwrap().original(),
-            "HTTPS://example.com/a?secret=1"
-        );
-        assert!(parse_arguments(&["--launch-origin".into()]).is_err());
-        assert!(parse_arguments(&["file:///C:/secret".into()]).is_err());
-    }
 
     fn profile(id: i64, favorite: bool, available: bool) -> Profile {
         Profile {
