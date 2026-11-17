@@ -558,6 +558,18 @@ mod tests {
         }
     }
 
+    fn rule(id: i64, profile_id: i64, pattern: impl Into<String>) -> DefaultRule {
+        DefaultRule {
+            id,
+            profile_id,
+            pattern: pattern.into(),
+            enabled: true,
+            sort_order: 0,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
     #[test]
     fn route_prioritizes_rules_then_first_available_favorite_when_interruption_is_off() {
         let url = ValidatedUrl::parse("https://example.com/path").unwrap();
@@ -566,15 +578,7 @@ mod tests {
             profile(2, true, true),
             profile(3, false, true),
         ];
-        let rule = DefaultRule {
-            id: 1,
-            profile_id: 3,
-            pattern: "https://example.com/*".into(),
-            enabled: true,
-            sort_order: 0,
-            created_at: 0,
-            updated_at: 0,
-        };
+        let rule = rule(1, 3, "https://example.com/*");
         assert_eq!(
             resolve_profile(&profiles, std::slice::from_ref(&rule), &url, false)
                 .unwrap()
@@ -593,15 +597,11 @@ mod tests {
         let profiles = vec![profile(1, false, true), profile(2, false, true)];
         let parts = UrlParts::new(&url);
         let condition = parts.condition(&parts.defaults()).unwrap();
-        let skip = DefaultRule {
-            id: 1,
-            profile_id: 1,
-            pattern: StoredRule::new(condition.clone(), true).encode().unwrap(),
-            enabled: true,
-            sort_order: 0,
-            created_at: 0,
-            updated_at: 0,
-        };
+        let skip = rule(
+            1,
+            1,
+            StoredRule::new(condition.clone(), true).encode().unwrap(),
+        );
         assert!(resolve_profile(&profiles, std::slice::from_ref(&skip), &url, true).is_none());
         let route = DefaultRule {
             id: 2,
@@ -638,15 +638,7 @@ mod tests {
     fn forced_confirmation_bypasses_rules_and_favorites_without_changing_url() {
         let profiles = [profile(1, true, true)];
         let original = ValidatedUrl::parse("https://example.com/a").unwrap();
-        let rule = DefaultRule {
-            id: 1,
-            profile_id: 1,
-            pattern: "https://example.com/*".into(),
-            enabled: true,
-            sort_order: 0,
-            created_at: 0,
-            updated_at: 0,
-        };
+        let rule = rule(1, 1, "https://example.com/*");
         let forced = original.clone().with_forced_confirmation(true);
         for enabled in [true, false] {
             assert!(
@@ -675,17 +667,13 @@ mod tests {
         let parts = UrlParts::new(&initial);
         let mut selection = parts.defaults();
         selection.nested[0].paths[3] = true; // 画像と同じ、内側のパスだけを固定。
-        let route = DefaultRule {
-            id: 1,
-            profile_id: 2,
-            pattern: StoredRule::new(parts.condition(&selection).unwrap(), false)
+        let route = rule(
+            1,
+            2,
+            StoredRule::new(parts.condition(&selection).unwrap(), false)
                 .encode()
                 .unwrap(),
-            enabled: true,
-            sort_order: 0,
-            created_at: 0,
-            updated_at: 0,
-        };
+        );
         let profiles = [profile(1, true, true), profile(2, false, true)];
         for query in ["?TeamsCID=second", "", "?TeamsCID=a&TeamsCID=b"] {
             let changed = wrapper("person_example_com", query);
@@ -738,15 +726,7 @@ mod tests {
         let first = wrapper("11111111-2222-3333-4444-555555555555");
         let second = wrapper("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
         let profiles = [profile(1, true, true), profile(2, false, true)];
-        let base = DefaultRule {
-            id: 1,
-            profile_id: 1,
-            pattern: "https://teams.public.onecdn.static.microsoft/*".into(),
-            enabled: true,
-            sort_order: 0,
-            created_at: 0,
-            updated_at: 0,
-        };
+        let base = rule(1, 1, "https://teams.public.onecdn.static.microsoft/*");
         let parts = UrlParts::new(&first);
         let mut selection = parts.defaults();
         selection.nested[0].host = true;
