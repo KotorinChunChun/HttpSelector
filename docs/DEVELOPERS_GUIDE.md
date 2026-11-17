@@ -97,7 +97,7 @@ UIの回帰テストでは、100/125/150/200%相当の幅・お気に入り0〜5
 - `session` / `session::SessionHost`: 製品とCLI試験が共用する保存・振り分け・画面遷移。製品はNativeHostで画面・検出・通信・ブラウザーへ接続し、試験は外部境界だけを代替する
 - `win32` / `ui_support`: UTF-16変換、ウィンドウ状態の受け渡し、画面クラス登録、共通メッセージループなど、各画面・IPCで共有するWin32処理
 
-手動選択・ルール一致・割り込みオフの起動は `session::open_profile` へ集約し、プロファイル識別子の検証、危険性検査、必要な利用者確認、連携フォーム、ブラウザ起動の順で処理します。フォームは手動選択かつ質問省略ルールに一致しない場合だけ表示します。DBを更新する処理は `IntegrityManager::update` に集約し、署名済みバックアップ→DB保存→署名の順で実行します。保存・署名のどちらかが失敗した場合はバックアップを復元します。開くを選んだ場合だけ起動し、保存後に戻っても設定は残ります。警告キャンセルではルール追加やURL履歴を保存しません。全角表記を失わないよう `ValidatedUrl::original()` を保持し、ブラウザへは元の文字列を渡します。
+手動選択・ルール一致・割り込みオフの起動は `Session::open_profile` へ集約し、プロファイル識別子の検証、危険性検査、必要な利用者確認、連携フォーム、ブラウザ起動の順で処理します。フォームは手動選択かつ質問省略ルールに一致しない場合だけ表示します。DBを更新する処理は `IntegrityManager::update` に集約し、署名済みバックアップ→DB保存→署名の順で実行します。保存・署名のどちらかが失敗した場合はバックアップを復元します。開くを選んだ場合だけ起動し、保存後に戻っても設定は残ります。警告キャンセルではルール追加やURL履歴を保存しません。全角表記を失わないよう `ValidatedUrl::original()` を保持し、ブラウザへは元の文字列を渡します。
 
 URLの検査・警告中も独立した受付窓口で後続URLを保持し、処理中のURLを置き換えません。受理済みURLはFIFOで扱い、上限超過は送信側へ拒否を返します。管理用 `stop` は検査・確認・設定編集中に拒否し、`show` / `status` はUI応答を確認して返します。
 
@@ -105,7 +105,7 @@ URLの検査・警告中も独立した受付窓口で後続URLを保持し、�
 
 元authorityのホストだけを調べ、パス・クエリ内のサービス名や全角文字は類似ドメイン判定に使いません。Unicode正規化、Punycode復元、UTS39のskeletonを組み合わせます。Google・Microsoft・Apple・Amazon・PayPal・LINE・Yahoo! JAPAN・楽天を対象とし、公式ドメインはラベル境界で照合します。確認済み公式ドメイン表は網羅的ではありません。LINEの短語や一部一般語は誤検知を抑える条件を設けています。
 
-Settings.quad9_enabledは文字列1だけをONとして解釈し、欠落・0・不正値はOFFです。session::open_profileがURLごとに読み、risk::inspect_approved_with_quad9で通常URLと内側URLへ同じ方針を適用します。OFFではquad9::lookupを呼ばず、未実施を照会失敗やブロックなしとして扱いません。既定のinspect/inspect_approvedも端末内検査だけです。設定はsave_preferences_with_quad9で他の一般設定・プロファイルと同じトランザクションに保存します。既存のsave_preferencesは現在の同意状態を保持します。schema 5を維持します。
+Settings.quad9_enabledは文字列1だけをONとして解釈し、欠落・0・不正値はOFFです。`Session::open_profile`がURLごとに読み、risk::inspect_approved_with_quad9で通常URLと内側URLへ同じ方針を適用します。OFFではquad9::lookupを呼ばず、未実施を照会失敗やブロックなしとして扱いません。既定のinspect/inspect_approvedも端末内検査だけです。設定はsave_preferences_with_quad9で他の一般設定・プロファイルと同じトランザクションに保存します。既存のsave_preferencesは現在の同意状態を保持します。schema 5を維持します。
 
 有効時のQuad9の照会先は `https://dns.quad9.net/dns-query` 固定です。WindowsのWinHTTPを使い、HTTP/2使用・TLS検証・応答サイズ・DNS質問との一致を確認し、HTTPリダイレクトを禁止します。DNS本文にはサブドメインを含むASCIIホストのA照会だけを含め、ECSは付けません。パス・クエリ・フラグメント・認証情報・元URLは渡しません。IPリテラル、ローカル・予約名、PSL未知suffixなどは照会前に除外します。組織内でのみ使う公開形式のドメインをすべて識別することはできません。
 

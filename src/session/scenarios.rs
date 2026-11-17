@@ -50,7 +50,7 @@ struct ScriptedHost {
     scan_fails: Cell<bool>,
     recovery: Cell<IntegrityRecoveryAction>,
     recovery_prompts: RefCell<Vec<bool>>,
-    notifications: RefCell<Vec<(bool, String)>>,
+    notifications: RefCell<Vec<(Notice, String)>>,
 }
 impl Default for ScriptedHost {
     fn default() -> Self {
@@ -79,6 +79,34 @@ impl Default for ScriptedHost {
         }
     }
 }
+/// 画面の応答を表示順に予約する。予約が余った場合は`Fixture::run`で失敗させる。
+impl ScriptedHost {
+    fn push_selection(&self, result: SelectorResult) {
+        self.selections.borrow_mut().push_back(result);
+    }
+    fn select(&self, profile_id: i64, url: &ValidatedUrl) {
+        self.push_selection(SelectorResult::Profile {
+            profile_id,
+            url: Some(url.clone()),
+        });
+    }
+    fn cancel(&self) {
+        self.push_selection(SelectorResult::Cancelled);
+    }
+    fn push_association(&self, step: AssociationStep) {
+        self.associations.borrow_mut().push_back(step);
+    }
+    fn push_decision(&self, decision: Decision) {
+        self.decisions.borrow_mut().push_back(decision);
+    }
+    fn push_settings(&self, action: SettingsAction) {
+        self.settings.borrow_mut().push_back(action);
+    }
+    fn push_rules(&self, outcome: RulesOutcome) {
+        self.rules.borrow_mut().push_back(outcome);
+    }
+}
+
 impl SessionHost for ScriptedHost {
     fn start_scan(&self, _: &AppPaths) -> Option<BackgroundProfileScan> {
         None
@@ -208,10 +236,10 @@ impl SessionHost for ScriptedHost {
         self.recovery_prompts.borrow_mut().push(has_backup);
         self.recovery.get()
     }
-    fn notify(&self, error: bool, message: &str) {
+    fn notify(&self, notice: Notice, message: &str) {
         self.notifications
             .borrow_mut()
-            .push((error, message.into()));
+            .push((notice, message.into()));
     }
 }
 
@@ -292,20 +320,6 @@ fn domain(url: &ValidatedUrl, suppress: bool) -> StoredRule {
     let p = UrlParts::new(url);
     StoredRule::new(p.condition(&p.defaults()).unwrap(), suppress)
 }
-fn select(host: &ScriptedHost, id: i64, value: &ValidatedUrl) {
-    host.selections
-        .borrow_mut()
-        .push_back(SelectorResult::Profile {
-            profile_id: id,
-            url: Some(value.clone()),
-        });
-}
-fn cancel(host: &ScriptedHost) {
-    host.selections
-        .borrow_mut()
-        .push_back(SelectorResult::Cancelled);
-}
-
 #[test]
 fn auto_rule_opens_original_url_without_questions_history_or_external_lookup() {
     let f = Fixture::new();
@@ -328,12 +342,10 @@ fn interruption_toggle_persists_and_routes_the_pending_url_to_first_favorite() {
     f.favorite(2);
     let h = ScriptedHost::default();
     let u = url("https://example.com/a");
-    h.selections
-        .borrow_mut()
-        .push_back(SelectorResult::InterruptionChanged {
-            enabled: false,
-            url: Some(u.clone()),
-        });
+    h.push_selection(SelectorResult::InterruptionChanged {
+        enabled: false,
+        url: Some(u.clone()),
+    });
     f.run(&h, Some(u));
     assert!(!f.storage.interruption_enabled().unwrap());
     assert_eq!(h.launches.borrow()[0].0, 2);
@@ -349,7 +361,7 @@ fn interruption_off_prefers_rule_and_shows_selector_if_no_available_favorite() {
             f.favorite(1);
             f.rule(2, &u, false);
         } else {
-            cancel(&h);
+            h.cancel();
         }
         f.run(&h, Some(u));
         if has_rule {
@@ -364,9 +376,9 @@ fn saving_then_back_keeps_rule_but_never_launches_and_keeps_selection() {
     let f = Fixture::new();
     let h = ScriptedHost::default();
     let u = url("https://example.com/document?secret=not-saved");
-    select(&h, 2, &u);
-    cancel(&h);
-    h.associations.borrow_mut().push_back(AssociationStep {
+    h.select(2, &u);
+    h.cancel();
+    h.push_association(AssociationStep {
         rules: vec![domain(&u, false)],
         action: association_ui::Action::Back,
         ..AssociationStep::open()
@@ -387,7 +399,7 @@ fn suppression_skips_association_but_still_requires_profile_selection() {
     let h = ScriptedHost::default();
     let u = url("https://example.com/a");
     f.rule(1, &u, true);
-    select(&h, 3, &u);
+    h.select(3, &u);
     f.run(&h, Some(u));
     assert_eq!(h.inputs.borrow().len(), 1);
     assert!(h.presets.borrow().is_empty());
@@ -400,8 +412,8 @@ fn shift_replaces_only_target_and_can_save_twice_without_stale_snapshot() {
     let u = url("https://example.com/a?tenant=1").with_forced_confirmation(true);
     let rule = f.rule(1, &u, false);
     let before = f.storage.load_default_rules().unwrap().remove(0);
-    select(&h, 2, &u);
-    h.associations.borrow_mut().push_back(AssociationStep {
+    h.select(2, &u);
+    h.push_association(AssociationStep {
         rules: vec![rule.clone(), rule],
         ..AssociationStep::open()
     });
@@ -428,9 +440,9 @@ fn shift_refuses_ambiguous_replacement_without_changing_either_rule() {
     rules.push(other);
     f.update(|| f.storage.replace_default_rules(&rules));
     let before = std::fs::read(&f.paths.database).unwrap();
-    select(&h, 3, &u);
-    cancel(&h);
-    h.associations.borrow_mut().push_back(AssociationStep {
+    h.select(3, &u);
+    h.cancel();
+    h.push_association(AssociationStep {
         rules: vec![domain(&u, false)],
         action: association_ui::Action::Back,
         rejected: true,
@@ -445,9 +457,9 @@ fn warning_cancel_has_no_rule_history_approval_or_launch_side_effect() {
     let f = Fixture::new();
     let h = ScriptedHost::default();
     let u = url("https://microsfot.com/a?code=secret");
-    select(&h, 1, &u);
+    h.select(1, &u);
     let before = std::fs::read(&f.paths.database).unwrap();
-    h.decisions.borrow_mut().push_back(Decision {
+    h.push_decision(Decision {
         accepted: false,
         approve_domains: false,
     });
@@ -461,21 +473,17 @@ fn explicit_domain_approval_is_signed_and_suppresses_only_later_name_warning() {
     let f = Fixture::new();
     let h = ScriptedHost::default();
     let u = url("https://microsfot.com/a");
-    select(&h, 1, &u);
-    h.decisions.borrow_mut().push_back(Decision {
+    h.select(1, &u);
+    h.push_decision(Decision {
         accepted: true,
         approve_domains: true,
     });
-    h.associations
-        .borrow_mut()
-        .push_back(AssociationStep::open());
+    h.push_association(AssociationStep::open());
     f.run(&h, Some(u.clone()));
     assert_eq!(f.storage.approved_domains().unwrap(), ["microsfot.com"]);
     let next = ScriptedHost::default();
-    select(&next, 1, &u);
-    next.associations
-        .borrow_mut()
-        .push_back(AssociationStep::open());
+    next.select(1, &u);
+    next.push_association(AssociationStep::open());
     f.run(&next, Some(u));
     assert_eq!(next.launches.borrow().len(), 1);
     assert_eq!(next.inspections.borrow()[0].1, ["microsfot.com"]);
@@ -491,7 +499,7 @@ fn quad9_opt_in_sends_domain_only_and_block_still_warns_for_approved_name() {
     });
     f.rule(1, &u, false);
     h.blocked.set(true);
-    h.decisions.borrow_mut().push_back(Decision {
+    h.push_decision(Decision {
         accepted: false,
         approve_domains: false,
     });
@@ -505,17 +513,15 @@ fn launch_failure_returns_to_selector_without_recording_history() {
     let h = ScriptedHost::default();
     let u = url("https://example.com/a");
     f.update(|| f.storage.set_record_url_history_enabled(true));
-    select(&h, 1, &u);
-    cancel(&h);
-    h.associations
-        .borrow_mut()
-        .push_back(AssociationStep::open());
+    h.select(1, &u);
+    h.cancel();
+    h.push_association(AssociationStep::open());
     h.launch_fails.set(true);
     f.run(&h, Some(u.clone()));
     assert_eq!(f.history_count(), 0);
     assert_eq!(h.inputs.borrow()[1].url, Some(u));
     assert_eq!(h.inputs.borrow()[1].selected_profile_id, Some(1));
-    assert!(h.notifications.borrow()[0].0);
+    assert_eq!(h.notifications.borrow()[0].0, Notice::Error);
 }
 #[test]
 fn later_url_after_association_is_routed_after_current_url_without_overwriting_it() {
@@ -524,8 +530,8 @@ fn later_url_after_association_is_routed_after_current_url_without_overwriting_i
     let first = url("https://first.example.com/a");
     let next = url("https://next.example.com/b");
     f.rule(2, &next, false);
-    select(&h, 1, &first);
-    h.associations.borrow_mut().push_back(AssociationStep {
+    h.select(1, &first);
+    h.push_association(AssociationStep {
         pending: Some(next.clone()),
         ..AssociationStep::open()
     });
@@ -560,11 +566,9 @@ fn settings_save_and_test_callbacks_persist_preferences_and_reload_selector() {
     let h = ScriptedHost::default();
     h.edit_settings.set(true);
     h.test_profile.set(true);
-    h.selections
-        .borrow_mut()
-        .push_back(SelectorResult::Settings { url: None });
-    cancel(&h);
-    h.settings.borrow_mut().push_back(SettingsAction::Closed);
+    h.push_selection(SelectorResult::Settings { url: None });
+    h.cancel();
+    h.push_settings(SettingsAction::Closed);
     f.run(&h, None);
     let p = f.storage.find_profile(1).unwrap().unwrap();
     assert_eq!(p.alias_name, "開発用");
@@ -584,13 +588,9 @@ fn clearing_approvals_does_not_change_other_settings_or_launch_a_browser() {
     let f = Fixture::new();
     let h = ScriptedHost::default();
     f.update(|| f.storage.set_approved_domains(&["example.com".into()]));
-    h.selections
-        .borrow_mut()
-        .push_back(SelectorResult::Settings { url: None });
-    cancel(&h);
-    h.settings
-        .borrow_mut()
-        .push_back(SettingsAction::ClearDomainApprovals);
+    h.push_selection(SelectorResult::Settings { url: None });
+    h.cancel();
+    h.push_settings(SettingsAction::ClearDomainApprovals);
     f.run(&h, None);
     assert!(f.storage.approved_domains().unwrap().is_empty());
     assert!(!f.storage.quad9_enabled().unwrap());
@@ -602,10 +602,8 @@ fn pending_settings_url_is_evaluated_against_saved_rules() {
     let h = ScriptedHost::default();
     let pending = url("https://example.com/a");
     f.rule(3, &pending, false);
-    h.selections
-        .borrow_mut()
-        .push_back(SelectorResult::Settings { url: None });
-    h.settings.borrow_mut().push_back(SettingsAction::Closed);
+    h.push_selection(SelectorResult::Settings { url: None });
+    h.push_settings(SettingsAction::Closed);
     *h.settings_pending.borrow_mut() = Some(pending);
     f.run(&h, None);
     assert_eq!(h.launches.borrow()[0].0, 3);
@@ -619,7 +617,7 @@ fn rule_list_and_new_rule_draft_save_before_routing_a_later_url() {
         f.rule(1, &u, false);
         let mut rules = f.storage.load_default_rules().unwrap();
         rules[0].profile_id = 2;
-        h.selections.borrow_mut().push_back(if draft {
+        h.push_selection(if draft {
             SelectorResult::ConfigureDefaultRule {
                 profile_id: 2,
                 url: u.clone(),
@@ -629,7 +627,7 @@ fn rule_list_and_new_rule_draft_save_before_routing_a_later_url() {
                 url: Some(u.clone()),
             }
         });
-        h.rules.borrow_mut().push_back(RulesOutcome {
+        h.push_rules(RulesOutcome {
             action: RulesAction::Saved,
             rules,
             pending_url: Some(u.clone()),
@@ -643,14 +641,12 @@ fn favorite_changes_preserve_url_and_are_visible_on_the_next_selector() {
     let f = Fixture::new();
     let h = ScriptedHost::default();
     let u = url("https://example.com/a");
-    h.selections
-        .borrow_mut()
-        .push_back(SelectorResult::FavoriteChanged {
-            profile_id: 2,
-            favorite: true,
-            url: Some(u.clone()),
-        });
-    cancel(&h);
+    h.push_selection(SelectorResult::FavoriteChanged {
+        profile_id: 2,
+        favorite: true,
+        url: Some(u.clone()),
+    });
+    h.cancel();
     f.run(&h, Some(u.clone()));
     assert!(f.storage.find_profile(2).unwrap().unwrap().favorite);
     assert_eq!(h.inputs.borrow()[1].selected_profile_id, Some(2));
@@ -663,13 +659,11 @@ fn unchanged_refresh_is_silent_and_scan_failure_keeps_the_url() {
         let h = ScriptedHost::default();
         let u = url("https://example.com/a");
         h.scan_fails.set(fail);
-        h.selections
-            .borrow_mut()
-            .push_back(SelectorResult::RefreshRequested {
-                url: Some(u.clone()),
-                selected_profile_id: Some(2),
-            });
-        cancel(&h);
+        h.push_selection(SelectorResult::RefreshRequested {
+            url: Some(u.clone()),
+            selected_profile_id: Some(2),
+        });
+        h.cancel();
         f.run(&h, Some(u.clone()));
         assert_eq!(h.inputs.borrow()[1].url, Some(u));
         assert_eq!(h.notifications.borrow().len(), usize::from(fail));
@@ -684,14 +678,12 @@ fn background_detection_is_saved_and_preserves_alias_and_selection() {
     f.update(|| f.storage.save_profile(&p));
     let mut changed = detected();
     changed[0].detected_name = "検出名変更".into();
-    h.selections
-        .borrow_mut()
-        .push_back(SelectorResult::ProfilesDetected {
-            detected: changed,
-            url: None,
-            selected_profile_id: Some(1),
-        });
-    cancel(&h);
+    h.push_selection(SelectorResult::ProfilesDetected {
+        detected: changed,
+        url: None,
+        selected_profile_id: Some(1),
+    });
+    h.cancel();
     f.run(&h, None);
     let p = f.storage.find_profile(1).unwrap().unwrap();
     assert_eq!(p.alias_name, "仕事用");
@@ -703,10 +695,8 @@ fn guest_selection_uses_guest_command_without_a_signed_in_profile_argument() {
     let f = Fixture::new();
     let h = ScriptedHost::default();
     let u = url("https://example.com/a");
-    select(&h, 4, &u);
-    h.associations
-        .borrow_mut()
-        .push_back(AssociationStep::open());
+    h.select(4, &u);
+    h.push_association(AssociationStep::open());
     f.run(&h, Some(u));
     let command = &h.launches.borrow()[0].1;
     assert!(command.arguments.iter().any(|a| a == "--guest"));

@@ -576,7 +576,10 @@ mod tests {
     #[test]
     #[ignore = "対話デスクトップの前面を一時変更するためCLIの明示オプションで実行"]
     fn interactive_desktop_restores_and_foregrounds_window() {
-        use windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            DefWindowProcW, DispatchMessageW, GetMessageW, MSG, PostMessageW, PostQuitMessage,
+            SW_SHOWMINNOACTIVE, ShowWindow, TranslateMessage, WM_CLOSE, WM_DESTROY,
+        };
         struct RestoreFocus(HWND);
         impl Drop for RestoreFocus {
             fn drop(&mut self) {
@@ -596,9 +599,9 @@ mod tests {
             wparam: usize,
             lparam: isize,
         ) -> isize {
-            if message == windows_sys::Win32::UI::WindowsAndMessaging::WM_DESTROY {
+            if message == WM_DESTROY {
                 unsafe {
-                    windows_sys::Win32::UI::WindowsAndMessaging::PostQuitMessage(0);
+                    PostQuitMessage(0);
                 }
             }
             unsafe { DefWindowProcW(window, message, wparam, lparam) }
@@ -607,7 +610,6 @@ mod tests {
         let before = browser_windows(&executable);
         let (ready, receive) = std::sync::mpsc::sync_channel(1);
         let thread = std::thread::spawn(move || {
-            use windows_sys::Win32::UI::WindowsAndMessaging::*;
             let window = crate::ui_support::HiddenTestWindow::new(Some(probe), null_mut());
             unsafe {
                 ShowWindow(window.0, SW_SHOWMINNOACTIVE);
@@ -625,12 +627,7 @@ mod tests {
         impl Drop for CloseProbe {
             fn drop(&mut self) {
                 unsafe {
-                    windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
-                        self.0,
-                        windows_sys::Win32::UI::WindowsAndMessaging::WM_CLOSE,
-                        0,
-                        0,
-                    );
+                    PostMessageW(self.0, WM_CLOSE, 0, 0);
                 }
                 if let Some(thread) = self.1.take() {
                     thread.join().unwrap();

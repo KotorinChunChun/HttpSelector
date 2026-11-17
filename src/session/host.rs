@@ -23,6 +23,13 @@ pub struct SelectorInput {
     pub interruption_enabled: bool,
 }
 
+/// 利用者へ知らせる内容の種類。製品ではメッセージボックスのアイコンを切り替える。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Notice {
+    Error,
+    Information,
+}
+
 pub type SavePreferences<'a> = dyn FnMut(&SettingsPreferences) -> anyhow::Result<()> + 'a;
 pub type TestProfile<'a> = dyn FnMut(&Profile) -> anyhow::Result<()> + 'a;
 pub type SaveAssociation<'a> = dyn FnMut(&StoredRule) -> anyhow::Result<()> + 'a;
@@ -58,7 +65,7 @@ pub trait SessionHost {
     fn launch_test(&self, profile: &Profile) -> anyhow::Result<()>;
     fn scan(&self, paths: &AppPaths) -> anyhow::Result<Vec<DetectedProfile>>;
     fn recovery(&self, has_backup: bool) -> IntegrityRecoveryAction;
-    fn notify(&self, error: bool, message: &str);
+    fn notify(&self, notice: Notice, message: &str);
 }
 
 pub struct NativeHost<'a> {
@@ -94,16 +101,16 @@ impl SessionHost for NativeHost<'_> {
     }
     fn settings(
         &self,
-        p: SettingsPreferences,
+        preferences: SettingsPreferences,
         save: &mut SavePreferences<'_>,
         test: &mut TestProfile<'_>,
     ) -> anyhow::Result<SettingsOutcome> {
         crate::settings_ui::run_settings_live(
-            p.profiles,
-            p.record_url_history,
-            p.escape_hold_duration_tenths,
-            p.open_profile_on_double_click,
-            p.quad9_enabled,
+            preferences.profiles,
+            preferences.record_url_history,
+            preferences.escape_hold_duration_tenths,
+            preferences.open_profile_on_double_click,
+            preferences.quad9_enabled,
             save,
             test,
         )
@@ -145,11 +152,10 @@ impl SessionHost for NativeHost<'_> {
     fn recovery(&self, has_backup: bool) -> IntegrityRecoveryAction {
         ui::ask_integrity_recovery(has_backup)
     }
-    fn notify(&self, error: bool, message: &str) {
-        if error {
-            ui::show_error(&app_title::main(), message);
-        } else {
-            ui::show_information(&app_title::main(), message);
+    fn notify(&self, notice: Notice, message: &str) {
+        match notice {
+            Notice::Error => ui::show_error(&app_title::main(), message),
+            Notice::Information => ui::show_information(&app_title::main(), message),
         }
     }
 }
