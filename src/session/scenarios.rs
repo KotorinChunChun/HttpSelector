@@ -50,7 +50,7 @@ struct ScriptedHost {
     scan_fails: Cell<bool>,
     recovery: Cell<IntegrityRecoveryAction>,
     recovery_prompts: RefCell<Vec<bool>>,
-    notifications: RefCell<Vec<(bool, String)>>,
+    notifications: RefCell<Vec<(Notice, String)>>,
 }
 impl Default for ScriptedHost {
     fn default() -> Self {
@@ -208,10 +208,10 @@ impl SessionHost for ScriptedHost {
         self.recovery_prompts.borrow_mut().push(has_backup);
         self.recovery.get()
     }
-    fn notify(&self, error: bool, message: &str) {
+    fn notify(&self, notice: Notice, message: &str) {
         self.notifications
             .borrow_mut()
-            .push((error, message.into()));
+            .push((notice, message.into()));
     }
 }
 
@@ -515,7 +515,7 @@ fn launch_failure_returns_to_selector_without_recording_history() {
     assert_eq!(f.history_count(), 0);
     assert_eq!(h.inputs.borrow()[1].url, Some(u));
     assert_eq!(h.inputs.borrow()[1].selected_profile_id, Some(1));
-    assert!(h.notifications.borrow()[0].0);
+    assert_eq!(h.notifications.borrow()[0].0, Notice::Error);
 }
 #[test]
 fn later_url_after_association_is_routed_after_current_url_without_overwriting_it() {

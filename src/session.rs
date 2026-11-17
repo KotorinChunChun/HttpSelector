@@ -15,7 +15,7 @@ mod host;
 #[cfg(test)]
 mod scenarios;
 pub use host::{
-    NativeHost, SaveAssociation, SavePreferences, SelectorInput, SessionHost, TestProfile,
+    NativeHost, Notice, SaveAssociation, SavePreferences, SelectorInput, SessionHost, TestProfile,
 };
 
 /// 署名を確認してDBを開き、スキーマ更新と初回のプロファイル検出を済ませる。
@@ -218,7 +218,7 @@ impl<'a, H: SessionHost> Session<'a, H> {
             Ok(None) => Ok(Flow::Finish),
             Err(error) => {
                 self.host.notify(
-                    true,
+                    Notice::Error,
                     &format!(
                         "既定ルールのプロファイルを起動できませんでした。別のプロファイルを選択できます。\n{error:#}"
                     ),
@@ -259,7 +259,7 @@ impl<'a, H: SessionHost> Session<'a, H> {
             Ok(None) => return Ok(Flow::Finish),
             Err(error) => {
                 self.host.notify(
-                    true,
+                    Notice::Error,
                     &format!("プロファイルを起動できませんでした。\n{error:#}"),
                 );
                 false
@@ -320,8 +320,10 @@ impl<'a, H: SessionHost> Session<'a, H> {
         if favorite
             && profiles.iter().filter(|profile| profile.favorite).count() >= MAX_FAVORITE_PROFILES
         {
-            self.host
-                .notify(false, "お気に入りに登録できるプロファイルは5件までです。");
+            self.host.notify(
+                Notice::Information,
+                "お気に入りに登録できるプロファイルは5件までです。",
+            );
             return Ok(());
         }
         profile.favorite = favorite;
@@ -335,12 +337,12 @@ impl<'a, H: SessionHost> Session<'a, H> {
             Ok(detected) => {
                 let changes = apply_detected_profiles(self.storage, self.integrity, &detected)?;
                 if changes.changed() {
-                    self.host.notify(false, &changes.message());
+                    self.host.notify(Notice::Information, &changes.message());
                 }
             }
             Err(error) => self
                 .host
-                .notify(true, &format!("{failure_message}\n{error:#}")),
+                .notify(Notice::Error, &format!("{failure_message}\n{error:#}")),
         }
         Ok(())
     }
